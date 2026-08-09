@@ -30,6 +30,11 @@ replacement.
 
 ## Notes
 
+- Reviewers exist twice after injection: `.ssdd/reviewers/` (what the gate's
+  block message points to) and `.claude/agents/` (what the harness loads).
+  The agent copies are seeded once and NOT refreshed by re-inject — when you
+  update a reviewer, diff `.claude/agents/<name>.md` against
+  `.ssdd/reviewers/<name>.md` and reconcile by hand.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Subagents may lack MCP access the main session has. If a reviewer's
