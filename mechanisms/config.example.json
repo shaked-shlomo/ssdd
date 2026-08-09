@@ -1,0 +1,30 @@
+{
+  "$comment": "SSDD per-project config — the injection contract. Copied to <repo>/.ssdd/config.json by inject.sh; fill in the project's routing/rules. All 'paths' / 'include' / 'exclude' values are JS regex sources tested against repo-relative POSIX paths.",
+
+  "routing": [
+    { "reviewer": "convention-compliance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$"] },
+    { "reviewer": "performance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$", "^server/", "^package\\.json$"] },
+    { "reviewer": "resilience-reviewer", "paths": ["^src/(stores|services|hooks|lib)/.+\\.(ts|tsx)$"] },
+    { "reviewer": "docs-sync-reviewer", "paths": ["^src/", "^server/", "^package\\.json$"] },
+    { "reviewer": "security-reviewer", "paths": ["^server/", "^src/(services|lib)/"] }
+  ],
+
+  "gitGuard": {
+    "blockBulkAdd": true,
+    "blockNoVerify": true,
+    "blockAmend": true,
+    "extraRules": [
+      { "pattern": "\\bgit\\s+push\\s+[^\\n]*--force\\b", "message": "Blocked: force push. Use --force-with-lease after explicit user go-ahead." }
+    ]
+  },
+
+  "lint": [
+    {
+      "name": "no-hardcoded-hex-colors",
+      "pattern": "#[0-9a-fA-F]{3,8}\\b",
+      "message": "Hardcoded color — import from the design tokens instead.",
+      "include": "^src/.+\\.(ts|tsx)$",
+      "exclude": "(tokens/|\\.test\\.|__tests__/)"
+    }
+  ]
+}

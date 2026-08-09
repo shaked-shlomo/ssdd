@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/git-guard.mjs\"" },
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\"" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/convention-lint.mjs\"" }
+        ]
+      }
+    ]
+  }
+}

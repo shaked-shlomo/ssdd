@@ -1,0 +1,25 @@
+#!/bin/sh
+# SSDD portable pre-commit — the harness-independent enforcement point.
+# Install: copy to <repo>/.githooks/pre-commit (chmod +x) and run
+#   git config core.hooksPath .githooks
+# Works under any agent/IDE/terminal because every harness ultimately runs
+# `git commit`. Node >= 18 required, no npm deps.
+
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+
+# 1. Block committing while ANY untracked file exists — strays (new plan docs,
+#    generated files) must be staged or cleaned up deliberately, never left to
+#    silently drift. Comment this block out if the project doesn't want it.
+UNTRACKED="$(git -C "$ROOT" ls-files --others --exclude-standard)"
+if [ -n "$UNTRACKED" ]; then
+  echo "[ssdd-pre-commit] untracked files exist — stage them or clean up before committing:" >&2
+  echo "$UNTRACKED" | sed 's/^/  • /' >&2
+  exit 1
+fi
+
+# 2. Convention lint over the staged files (rules: .ssdd/config.json → lint).
+node "$ROOT/.ssdd/hooks/convention-lint.mjs" --staged
+
+# 3. Review gate: staged paths → required reviewers → stamp check.
+node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit
