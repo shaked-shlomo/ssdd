@@ -12,12 +12,15 @@
 // Modes (no deps, Node >= 18):
 //   <file> [<file> …]     lint the given files (CI / manual)
 //   --staged              lint the currently staged files (git pre-commit)
-//   (default: JSON stdin) Claude Code PostToolUse(Edit|Write) hook mode
+//   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor afterFileEdit
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
+import { hookFilePath, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 
-const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
+const stdinMode = process.argv.length <= 2;
+const payload = stdinMode ? parseHookStdin(readFileSync(0, 'utf8')) : null;
+const repo = resolveHookRepo(payload);
 const git = (...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
@@ -67,9 +70,7 @@ if (process.argv[2] === '--staged') {
 } else if (process.argv.length > 2) {
   report(process.argv.slice(2).map(toRel).flatMap(lintFile), 1);
 } else {
-  // Claude Code PostToolUse(Edit|Write) hook mode
-  let path = '';
-  try { path = JSON.parse(readFileSync(0, 'utf8'))?.tool_input?.file_path ?? ''; } catch { process.exit(0); }
+  const path = hookFilePath(payload);
   if (!path) process.exit(0);
   const rel = toRel(path);
   if (rel.startsWith('..')) process.exit(0); // outside the repo

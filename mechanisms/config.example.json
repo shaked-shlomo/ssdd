@@ -6,15 +6,25 @@
     { "reviewer": "performance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$", "^server/", "^package\\.json$"] },
     { "reviewer": "resilience-reviewer", "paths": ["^src/(stores|services|hooks|lib)/.+\\.(ts|tsx)$"] },
     { "reviewer": "docs-sync-reviewer", "paths": ["^src/", "^server/", "^package\\.json$"] },
-    { "reviewer": "security-reviewer", "paths": ["^server/", "^src/(services|lib)/"] }
+    { "reviewer": "security-reviewer", "paths": ["^server/", "^src/(services|lib)/"],
+      "$comment": "Any route may carry a $comment recording WHY a path is in this lens (e.g. the incident that showed it was missing). The gate ignores it." }
   ],
+
+  "reviewGate": {
+    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10.",
+    "maxRoutedFiles": 10
+  },
 
   "gitGuard": {
     "blockBulkAdd": true,
     "blockNoVerify": true,
     "blockAmend": true,
     "extraRules": [
-      { "pattern": "\\bgit\\s+push\\s+[^\\n]*--force\\b", "message": "Blocked: force push. Use --force-with-lease after explicit user go-ahead." }
+      {
+        "$comment": "Matches --force (not --force-with-lease / --force-if-includes), bundled short -f, and +refspec.",
+        "pattern": "\\bgit\\s+push\\b[^\\n]*(\\s--force(?![-\\w])|\\s-[a-zA-Z]*f[a-zA-Z]*(?=\\s|$)|\\s\\+[^\\s+])",
+        "message": "Blocked: force push (--force, -f, or +refspec). Use --force-with-lease, and only after the user's explicit go-ahead."
+      }
     ]
   },
 

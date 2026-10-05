@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "node .ssdd/hooks/git-guard.mjs", "failClosed": true },
+      { "command": "node .ssdd/hooks/review-gate.mjs", "failClosed": true }
+    ],
+    "afterFileEdit": [
+      { "command": "node .ssdd/hooks/convention-lint.mjs" }
+    ]
+  }
+}

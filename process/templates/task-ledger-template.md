@@ -3,6 +3,8 @@
 Plan: `.ssdd/plans/NN-<slug>.md`
 Spec: `.ssdd/specs/NN-<slug>-spec.md`
 Branch: `<branch>`. Started <YYYY-MM-DD>. BASE commit `<hash>`.
+Execution: <inline | subagent-driven>; per task <who reviews: spec+quality
+reviewer, plus every reviewer the gate names>.
 
 <If parts are operator-gated (credentials, deploy access), say so up front and
 name the BUILD-then-DEFER boundary: which tasks build+test without them, what
@@ -18,6 +20,13 @@ deferred (with a home). Never a bare "done".>
       Fixed Important: <finding> (`<fix-hash>`). MINOR (deferred → final-review):
       <finding + why it can wait>.
 - [ ] Task 2 — …
+- [ ] — PR 1 ships; <operator-gated criterion, e.g. a ≥24 h production measurement> —
+- [ ] Task 3 — … *(a milestone row like the one above splits a plan into releases)*
+
+## Rulings
+
+<Owner decisions made mid-execution that change or settle the plan: numbered,
+dated, with what prompted them. Tasks and Follow-ups cite them ("Ruling 2").>
 
 ## Final whole-plan review
 

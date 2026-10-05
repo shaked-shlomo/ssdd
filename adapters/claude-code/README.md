@@ -8,35 +8,40 @@ replacement.
 
 ## Wiring (after `inject.sh <repo> claude-code`)
 
-1. **Hooks** — merge [settings-hooks.json](settings-hooks.json) into
-   `<repo>/.claude/settings.json` (top-level `hooks` key). Hook changes take
-   effect after a session reload.
-2. **Reviewer agents** — inject.sh copies `reviewers/*.md` (minus the domain
-   template) into `<repo>/.claude/agents/`; the frontmatter already matches
-   Claude Code's agent format. Add project domain reviewers there too, and
-   route them in `.ssdd/config.json`.
-3. **Skill** — inject.sh copies `skills/new-plan/` into
-   `<repo>/.claude/skills/`; invoke it as `/new-plan` when a plan is approved.
-4. **Instructions file** — add to the project's CLAUDE.md:
-   - a pointer to `.ssdd/process/SDD.md` as the workflow contract,
-   - the **Documentation Map** table (doc / purpose / when-to-update),
-   - the review-gate paragraph: dispatch missing reviewers in parallel via
-     the Agent tool, fix/triage, re-stage, `--stamp`, retry; stamping without
-     running them is forbidden; `SSDD_REVIEW_SKIP=1` needs the user's
-     explicit go-ahead in chat.
-   Keep CLAUDE.md under its session-load budget (~25KB / 200 lines in some
-   clients) — detail belongs in `.ssdd/` and scoped rules, not inline.
+1. **Hooks** — inject.sh seeds `.claude/settings.json` from
+   [settings-hooks.json](settings-hooks.json) when none exists; otherwise
+   merge its top-level `hooks` key by hand. Hook changes take effect after a
+   session reload.
+2. **Reviewer agents** — `.claude/agents/<name>.md` are **symlinks** to
+   `.ssdd/reviewers/<name>.md` (one source of truth; the frontmatter already
+   matches Claude Code's agent format). A project domain reviewer goes in
+   `.ssdd/reviewers/`, gets a route in `.ssdd/config.json`, and a symlink
+   (re-running inject.sh creates it).
+3. **Skills** — the skills tree is `.agents/skills/` (harness-neutral; Cursor
+   reads it natively). `.claude/skills/<name>` are symlinks to it. Invoke
+   `/new-plan`, `/cleanup`, `/docs-drift-audit`.
+4. **Instructions** — `AGENTS.md` is canonical; `CLAUDE.md` is
+   [`@AGENTS.md` plus Claude-only harness notes](CLAUDE.md). Put the
+   Documentation Map and review-gate paragraph in `AGENTS.md` once. Keep the
+   loaded total small — detail belongs in `.ssdd/` and skills.
 5. Commit the whole setup — the framework travels with the repo.
 
 ## Notes
 
-- Reviewers exist twice after injection: `.ssdd/reviewers/` (what the gate's
-  block message points to) and `.claude/agents/` (what the harness loads).
-  The agent copies are seeded once and NOT refreshed by re-inject — when you
-  update a reviewer, diff `.claude/agents/<name>.md` against
-  `.ssdd/reviewers/<name>.md` and reconcile by hand.
+- **Symlinks on Windows** need `git config core.symlinks true` (and Developer
+  Mode); without it git checks them out as text files holding the path.
+- Claude Code documents symlinked **skill** folders as supported. Symlinked
+  **agent** files aren't documented either way, but they have worked in the
+  source project since 2026-09. If a release stops loading them, inject.sh's
+  `link` step is the one place to switch back to copies.
+- inject.sh warns when it finds a *copied* agent or skill where a symlink
+  belongs (v1 layout): diff it against its source, keep the project's edits
+  in the source file, then replace the copy with the symlink.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
+- Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)
+  for Cursor's `failClosed`; Claude Code acts on the exit code (2 = block,
+  stderr is fed back to the agent).
 - Subagents may lack MCP access the main session has. If a reviewer's
   protocol needs MCP output (e.g. a platform's advisor/lint API), run that
   call in the MAIN session and paste the output into the reviewer's prompt.

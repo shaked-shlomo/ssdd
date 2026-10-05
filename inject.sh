@@ -1,80 +1,106 @@
 #!/bin/sh
 # SSDD injector — copies the framework into a target repo.
-# Usage: inject.sh <target-repo> [claude-code|generic]
+# Usage: inject.sh <target-repo> [adapters]
+#   adapters: comma-separated list of claude-code, cursor, generic
+#             (default: generic). e.g. `inject.sh ../app claude-code,cursor`
 #
 # Copy-based by design (projects diverge; the framework travels with the
-# repo). Re-running refreshes process/reviewers/mechanisms but NEVER
-# overwrites .ssdd/config.json or adapter files already customized —
+# repo). Re-running refreshes .ssdd/{process,reviewers,hooks} but NEVER
+# overwrites .ssdd/config.json, skills, or adapter files already present —
 # re-inject, then review the git diff in the target repo.
+#
+# One source of truth per artifact: reviewers live in .ssdd/reviewers/ and
+# skills in .agents/skills/; harness discovery paths (.claude/agents,
+# .claude/skills) are symlinks onto them, never copies.
 
 set -e
 SRC="$(cd "$(dirname "$0")" && pwd)"
 TARGET="$1"
-ADAPTER="${2:-generic}"
+ADAPTERS="${2:-generic}"
 
 if [ -z "$TARGET" ] || [ ! -d "$TARGET" ]; then
-  echo "usage: inject.sh <target-repo> [claude-code|generic]" >&2
+  echo "usage: inject.sh <target-repo> [claude-code,cursor,generic]" >&2
   exit 1
 fi
-case "$ADAPTER" in claude-code|generic) ;; *)
-  echo "unknown adapter: $ADAPTER (claude-code|generic)" >&2; exit 1 ;;
-esac
+for a in $(echo "$ADAPTERS" | tr ',' ' '); do
+  case "$a" in claude-code|cursor|generic) ;; *)
+    echo "unknown adapter: $a (claude-code|cursor|generic)" >&2; exit 1 ;;
+  esac
+done
+has() { case ",$ADAPTERS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
-echo "Injecting SSDD into $TARGET (adapter: $ADAPTER)"
+# seed <src> <dst>: copy only if dst is absent.
+seed() {
+  if [ -e "$2" ] || [ -L "$2" ]; then echo "  kept existing ${2#$TARGET/}"
+  else mkdir -p "$(dirname "$2")"; cp -R "$1" "$2"; echo "  seeded ${2#$TARGET/}"; fi
+}
+# link <relative-target> <dst>: symlink only if dst is absent; warn on a copy.
+link() {
+  if [ -L "$2" ]; then return 0; fi
+  if [ -e "$2" ]; then
+    echo "  WARNING: ${2#$TARGET/} is a copy, not a symlink — diff it against its source, then replace it with: ln -s $1 ${2#$TARGET/}"
+    return 0
+  fi
+  mkdir -p "$(dirname "$2")"; ln -s "$1" "$2"; echo "  linked ${2#$TARGET/} -> $1"
+}
 
-# Core: process + reviewers + hooks under .ssdd/
-mkdir -p "$TARGET/.ssdd/plans" "$TARGET/.ssdd/specs" "$TARGET/.ssdd/ledgers"
+echo "Injecting SSDD into $TARGET (adapters: $ADAPTERS)"
+
+# Core: process + reviewers + hooks under .ssdd/ (framework-owned; refreshed).
+mkdir -p "$TARGET/.ssdd/plans" "$TARGET/.ssdd/specs" "$TARGET/.ssdd/ledgers" "$TARGET/.ssdd/hooks"
 cp -R "$SRC/process" "$TARGET/.ssdd/"
 cp -R "$SRC/reviewers" "$TARGET/.ssdd/"
-mkdir -p "$TARGET/.ssdd/hooks"
-cp "$SRC/mechanisms/hooks/review-gate.mjs" \
-   "$SRC/mechanisms/hooks/git-guard.mjs" \
-   "$SRC/mechanisms/hooks/convention-lint.mjs" "$TARGET/.ssdd/hooks/"
+cp "$SRC"/mechanisms/hooks/*.mjs "$TARGET/.ssdd/hooks/"
 cp "$SRC/mechanisms/drift-audit.md" "$TARGET/.ssdd/"
 
-# Config: seed once, never overwrite.
-if [ ! -f "$TARGET/.ssdd/config.json" ]; then
-  cp "$SRC/mechanisms/config.example.json" "$TARGET/.ssdd/config.json"
-  echo "  seeded .ssdd/config.json (EDIT THE ROUTING/RULES — they are examples)"
-else
-  echo "  kept existing .ssdd/config.json"
-fi
+# Config and git hook: seed once, never overwrite.
+seed "$SRC/mechanisms/config.example.json" "$TARGET/.ssdd/config.json"
+seed "$SRC/mechanisms/hooks/pre-commit" "$TARGET/.githooks/pre-commit"
+chmod +x "$TARGET/.githooks/pre-commit"
 
-# Portable git hook: seed once.
-mkdir -p "$TARGET/.githooks"
-if [ ! -f "$TARGET/.githooks/pre-commit" ]; then
-  cp "$SRC/mechanisms/hooks/pre-commit" "$TARGET/.githooks/pre-commit"
-  chmod +x "$TARGET/.githooks/pre-commit"
-  echo "  installed .githooks/pre-commit"
-else
-  echo "  kept existing .githooks/pre-commit (diff against mechanisms/hooks/pre-commit for updates)"
-fi
+# Skills: one harness-neutral tree, seeded once (projects customize them).
+for d in "$SRC"/skills/*/; do
+  name="$(basename "$d")"
+  seed "${d%/}" "$TARGET/.agents/skills/$name"
+done
 
-# Adapter
-if [ "$ADAPTER" = "claude-code" ]; then
-  mkdir -p "$TARGET/.claude/agents" "$TARGET/.claude/skills"
-  for f in "$SRC"/reviewers/*.md; do
+# Shared instructions: every adapter reads AGENTS.md.
+[ -f "$TARGET/AGENTS.ssdd.md" ] || cp "$SRC/adapters/generic/AGENTS.md" "$TARGET/AGENTS.ssdd.md"
+
+STEP=1
+step() { echo "  $STEP. $1"; STEP=$((STEP + 1)); }
+
+if has claude-code; then
+  for f in "$TARGET"/.ssdd/reviewers/*.md; do
     base="$(basename "$f")"
     [ "$base" = "domain-reviewer-template.md" ] && continue
-    [ -f "$TARGET/.claude/agents/$base" ] || cp "$f" "$TARGET/.claude/agents/$base"
+    link "../../.ssdd/reviewers/$base" "$TARGET/.claude/agents/$base"
   done
-  cp -R "$SRC/adapters/claude-code/skills/new-plan" "$TARGET/.claude/skills/" 2>/dev/null || true
-  echo ""
-  echo "Manual steps left (claude-code):"
-  echo "  1. Merge adapters/claude-code/settings-hooks.json into $TARGET/.claude/settings.json"
-  echo "  2. git -C '$TARGET' config core.hooksPath .githooks"
-  echo "  3. Edit .ssdd/config.json routing/lint for THIS project's paths"
-  echo "  4. Add the Documentation Map + review-gate paragraph to CLAUDE.md"
-  echo "     (see adapters/claude-code/README.md; mind the CLAUDE.md size budget)"
-  echo "  5. Reload the session so hooks take effect; commit the whole setup"
-else
-  [ -f "$TARGET/AGENTS.ssdd.md" ] || cp "$SRC/adapters/generic/AGENTS.md" "$TARGET/AGENTS.ssdd.md"
-  echo ""
-  echo "Manual steps left (generic):"
-  echo "  1. git -C '$TARGET' config core.hooksPath .githooks"
-  echo "  2. Edit .ssdd/config.json routing/lint for THIS project's paths"
-  echo "  3. Merge AGENTS.ssdd.md into the project's AGENTS.md (fill the"
-  echo "     Documentation Map placeholders), then delete AGENTS.ssdd.md"
-  echo "  4. Commit the whole setup — the framework travels with the repo"
+  for d in "$TARGET"/.agents/skills/*/; do
+    name="$(basename "$d")"
+    link "../../.agents/skills/$name" "$TARGET/.claude/skills/$name"
+  done
+  if [ -f "$TARGET/.claude/settings.json" ]; then SETTINGS_EXISTED=1; fi
+  seed "$SRC/adapters/claude-code/settings-hooks.json" "$TARGET/.claude/settings.json"
+  seed "$SRC/adapters/claude-code/CLAUDE.md" "$TARGET/CLAUDE.md"
 fi
+
+if has cursor; then
+  seed "$SRC/adapters/cursor/hooks.json" "$TARGET/.cursor/hooks.json"
+  seed "$SRC/adapters/cursor/rules/ssdd.mdc" "$TARGET/.cursor/rules/ssdd.mdc"
+fi
+
+echo ""
+echo "Manual steps left:"
+step "git -C '$TARGET' config core.hooksPath .githooks"
+step "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)"
+step "Merge AGENTS.ssdd.md into AGENTS.md (fill the Documentation Map and Harnesses rows), then delete AGENTS.ssdd.md"
+step "Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md"
+if has claude-code; then
+  [ -n "$SETTINGS_EXISTED" ] && step "Merge adapters/claude-code/settings-hooks.json into .claude/settings.json (it already existed)"
+  step "Make sure CLAUDE.md starts with @AGENTS.md (see adapters/claude-code/CLAUDE.md)"
+fi
+has cursor && step "Check .cursor/hooks.json if it already existed (see adapters/cursor/README.md)"
+step "Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.test.mjs"
+step "Commit the whole setup — the framework travels with the repo"
 echo "Done."

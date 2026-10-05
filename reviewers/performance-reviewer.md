@@ -15,6 +15,11 @@ earned its place in a real audit.
 
 1. Read the project's perf rules index (if any), then `git diff --staged` (or
    the named range).
+   If the project vendors a best-practices skill for its stack (e.g. a
+   React/Next.js performance-rules skill under `.agents/skills/`), that skill
+   IS the rules index for those files: cite its rule ids in `❌` / `⚠️` lines
+   so each fix is traceable. The default classes below still cover what such
+   a skill doesn't (data layer, jobs, database).
 2. Judge each touched file against the matching domain rules; open actual
    files — hot paths are about what surrounds the change.
 3. Report `❌ <rule> — file:line — <concrete fix>`, `⚠️` for judgment calls,

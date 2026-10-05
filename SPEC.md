@@ -67,3 +67,74 @@ project, independent of the agent/harness/IDE driving the work.
 - [x] No file in `process/` or `reviewers/` mentions HateDate-only systems as
       requirements (they may appear in marked examples). *(Grep-verified.)*
 - [x] The framework documents its own known limitation (copy-based drift).
+
+---
+
+# v2 — back-port from the first injected project
+
+**Date:** 2026-10-05 · **Status:** shipped (v2)
+
+## Goal
+
+Bring upstream what ~38 plans of real use changed in the first project that
+injected v1 (`.ssdd/` diverged there on purpose — copy-and-diverge is the v1
+model). Only changes that proved out in that project come back; project
+routing, domain reviewers and domain skills stay there.
+
+## Scope
+
+**In:**
+- **Review gate v2** — stamps per reviewer × per routed file × that file's
+  staged blob pair (`srcMode:srcBlob→dstMode:dstBlob`), `--stamp … --files …`
+  delta rounds, a block message that names what each reviewer still owes, and
+  an oversize warning (`reviewGate.maxRoutedFiles`). Chosen over the v1
+  whole-diff hash because v1 could not converge: any edit voided every stamp.
+- **Multi-harness hook stdin** (`stdin-payload.mjs`) — Claude Code and Cursor
+  payload shapes; hooks always print a JSON permission body (Cursor
+  `failClosed` reads missing JSON as a block).
+- **git-guard hardening** — global flags before the subcommand
+  (`git -C x add -A`), bundled short flags (`-vA`), flags between `add` and
+  the selector. Plus a corrected force-push rule in the example config (v1
+  blocked `--force-with-lease`, the remedy its own message prescribed, and
+  missed `-f` / `+refspec`).
+- **Hook test suites**, ported from vitest to `node:test` to keep zero deps.
+- **Process**: "findings are records; ledger rows are verified against the
+  staged blob before they are written"; a Clarify-pass section in the plan
+  template; Rulings + Execution in the ledger; a handover template; BUILT and
+  SUPERSEDED statuses.
+- **One source of truth per artifact** — `AGENTS.md` canonical and
+  `CLAUDE.md` = `@AGENTS.md` + harness notes; `.agents/skills/` as the only
+  skills tree; `.claude/agents/` and `.claude/skills/` as symlinks
+  ("doorbells"). Chosen over copies because v1's copied agents drifted.
+- **Cursor adapter** (`adapters/cursor/`).
+
+**Out (deliberate):**
+- The six gate-evasion weaknesses (README → Known limitations). The source
+  project wrote ~800 lines of fixes inside an unrelated commit, found them
+  incomplete round after round, and removed them; they get their own plan.
+- Plugin packaging / model-era rewrites of the prose — proposed separately in
+  [docs/model-era-review.md](docs/model-era-review.md), not applied here.
+
+## Key decisions
+
+1. **A stamp names both sides of the diff.** A re-stage that changes nothing
+   keeps its stamps (by design now); an edit, deletion, mode change or new
+   base voids it for that file only. Unrouted files never enter a key.
+2. **Oversize is a warning, not a block** — it signals the per-task rule
+   being skipped; the remedy is splitting the commit.
+3. **Symlinks over copies** for harness discovery paths. Cost: Windows needs
+   `git config core.symlinks true` (and Developer Mode).
+
+## Acceptance criteria
+
+- [x] `node --test mechanisms/hooks/*.test.mjs` passes with zero npm installs.
+- [x] `inject.sh` on a scratch repo, for each adapter, yields resolving
+      symlinks and a gate that blocks → `--stamp` → passes with a v2 stamp.
+- [x] No file outside `SPEC.md` names the source project's plans/PRs as
+      requirements (genericized examples only).
+
+*Verified 2026-10-05: 135/135 tests on Node 24.15.0 (134 pass + 1 skipped
+when run from an injected `.ssdd/hooks/`, where the example config is
+absent); inject for `claude-code,cursor`, `cursor`, `generic`; a scratch
+commit blocked → `--stamp` → `--files` delta → committed; re-inject keeps
+seeded files and warns on a v1 copied agent; source-project grep clean.*

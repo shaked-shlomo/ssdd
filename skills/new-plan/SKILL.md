@@ -12,8 +12,10 @@ synced. The full process contract lives in `.ssdd/process/SDD.md`.
 
 ## Creating (plan approved → repo file)
 
-1. **Number:** next = highest existing `NN-` prefix + 1:
-   `ls .ssdd/plans/ | grep -oE '^[0-9]+' | sort -n | tail -1`
+1. **Number:** next = highest existing `NN-` prefix + 1, across `main` and
+   open branches (parallel worktrees race for numbers):
+   `{ ls .ssdd/plans/; git log --all --name-only --format= -- .ssdd/plans/; } | sed 's|.*/||' | grep -oE '^[0-9]+' | sort -n | tail -1`
+   (`git fetch` first so remote branches count.)
    Never reuse, skip, or backfill numbers.
 2. **Strays check:** any file in `.ssdd/plans/` NOT matching `NN-*.md`
    violates the numbering convention — flag it to the user (number it or fold
@@ -25,9 +27,9 @@ synced. The full process contract lives in `.ssdd/process/SDD.md`.
    differences, permission/monetization gates, edge cases (offline, degraded,
    suspended user, free-vs-paid). For each: resolve it from the source (the
    design file, the schema, the code — never assume, verify first) or ASK the
-   user. An unresolved assumption must NOT silently become an acceptance
-   criterion — park it in `## Open questions`; the plan stays DRAFT while any
-   remain.
+   user. Record each resolved item in `## Clarify pass` with its source. An
+   unresolved assumption must NOT silently become an acceptance criterion —
+   park it in `## Open questions`; the plan stays DRAFT while any remain.
 4. **File:** `.ssdd/plans/NN-<kebab-slug>.md` from
    `.ssdd/process/templates/plan-template.md`, filled from the approved plan.
    **Acceptance criteria are written NOW, before implementation** — they
@@ -39,7 +41,7 @@ synced. The full process contract lives in `.ssdd/process/SDD.md`.
 
 ## Syncing back (work done / plan changed)
 
-- Update **Status** (+ PR number), close each acceptance criterion in
+- Update **Status** (BUILT / SHIPPED + PR number / SUPERSEDED / ABANDONED), close each acceptance criterion in
   **Verification** with real command output, record **Deviations &
   discoveries**, and promote gotchas to rules/memory.
 - Sync direction is two-way: if the plan changed mid-flight in the harness's
