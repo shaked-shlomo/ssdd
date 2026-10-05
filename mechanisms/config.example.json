@@ -11,8 +11,9 @@
   ],
 
   "reviewGate": {
-    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10.",
-    "maxRoutedFiles": 10
+    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. exclude: regexes removed from EVERY route (e.g. [\"\\\\.test\\\\.tsx?$\"]); a route can also carry its own \"exclude\".",
+    "maxRoutedFiles": 10,
+    "exclude": []
   },
 
   "gitGuard": {
@@ -22,8 +23,8 @@
     "blockHooksPath": true,
     "extraRules": [
       {
-        "$comment": "Matches --force (not --force-with-lease / --force-if-includes), bundled short -f, and +refspec.",
-        "pattern": "\\bgit\\s+push\\b[^\\n]*(\\s--force(?![-\\w])|\\s-[a-zA-Z]*f[a-zA-Z]*(?=\\s|$)|\\s\\+[^\\s+])",
+        "$comment": "Matches --force (not --force-with-lease / --force-if-includes), bundled short -f, and +refspec — within the push command only (stops at ; & | newline).",
+        "pattern": "\\bgit\\s+push\\b[^;&|\\n]*(\\s--force(?![-\\w])|\\s-[a-zA-Z]*f[a-zA-Z]*(?=\\s|$)|\\s\\+[^\\s+])",
         "message": "Blocked: force push (--force, -f, or +refspec). Use --force-with-lease, and only after the user's explicit go-ahead."
       }
     ]

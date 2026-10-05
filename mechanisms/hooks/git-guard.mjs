@@ -5,20 +5,25 @@
 // harness hook is the only mechanical enforcement point for it.
 //
 // Default blocks (each toggleable in .ssdd/config.json → gitGuard):
-//   git add -A | git add . | git add --all     (never bulk-stage)
-//   git commit … --no-verify | -n | -anm       (never bypass pre-commit)
-//   git commit … --amend                       (never amend)
-//   git -c core.hooksPath=… | git config core.hooksPath …
-//                                              (never re-point or unset the hooks)
+//   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
+//   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
+//   git commit … --amend                                     (never amend)
+//   git -c core.hooksPath=… | git config … core.hooksPath …
+//   | GIT_CONFIG_PARAMETERS / GIT_CONFIG_KEY_<n> = core.hooksPath
+//                                                    (never re-point or unset the hooks)
 // plus any gitGuard.extraRules [{pattern, message}].
 //
-// Read-only; never mutates. Quoted strings and heredoc bodies are stripped
-// BEFORE matching so a commit message that merely *mentions* a forbidden
-// pattern is not mistaken for the command itself.
+// Global options between `git` and the subcommand (`-C <p>`, `-c k=v`,
+// `--git-dir=…`) are skipped, and each rule's flag scan stops at the end of its
+// own command (`;` `&` `|` newline): `git commit -m x && git log -n 3` is not
+// `commit -n`. Quoted strings and heredoc bodies are blanked first, so a message
+// that merely mentions a pattern isn't the pattern. Grammar: git-cmd.mjs.
+// Read-only; never mutates.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { cluster, collapseGlobalFlags, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
 const cmd = hookCommand(payload);
@@ -27,27 +32,12 @@ function finish(code, permission, extra = {}) {
   process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
   process.exit(code);
 }
-
-function skeleton(s) {
-  return s
-    .replace(/<<-?\s*['"]?(\w+)['"]?[\s\S]*?\n[ \t]*\1\b/g, ' <<heredoc> ')
-    .replace(/'(?:[^'\\]|\\.)*'/g, " '' ")
-    .replace(/"(?:[^"\\]|\\.)*"/g, ' "" ');
+function deny(msg) {
+  process.stderr.write(`[ssdd-git-guard] ${msg}\n→ ${cmd.split('\n')[0]}\n`);
+  finish(2, 'deny', { agentMessage: msg, userMessage: msg });
 }
 
-// Collapse git's global-flag run (`git -C <path> add …`, `git -c k=v commit …`)
-// so every rule below — including user-supplied extraRules — matches the
-// subcommand directly and can't be bypassed by inserting flags before it.
-// Only the flag run immediately following `git` is touched; the value-taking
-// flags consume their argument (both `--git-dir <p>` and `--git-dir=<p>` forms),
-// so a bare word like `log` always ends the run and `git log … | grep add -A 3`
-// is left alone.
-const GIT_VALUE_FLAGS = '-[Cc]|--git-dir|--work-tree|--namespace|--exec-path|--super-prefix|--config-env';
-const dropGlobalFlags = (s) =>
-  s.replace(new RegExp(String.raw`\bgit\s+(?:(?:(?:${GIT_VALUE_FLAGS})\s+\S+|--\S+|-[pP])\s+)+`, 'g'), 'git ');
-
-const raw = skeleton(cmd);
-const probe = dropGlobalFlags(raw);
+const probe = skeleton(cmd);
 
 let guard = {};
 try {
@@ -58,44 +48,45 @@ try {
   // no config → defaults on
 }
 
-const RULES = [];
-// `(-{1,2}[\w-]+\s+)*` tolerates flags between `add` and the bulk selector
-// (`git add --force -A`); `-[a-z]*A[a-z]*` catches bundled short flags (-vA/-Av).
-if (guard.blockBulkAdd !== false) RULES.push([/\bgit\s+add\s+(-{1,2}[\w-]+\s+)*(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.(\s|$))/,
-  'Blocked: `git add -A` / `git add .` / `--all`. Stage specific files by path (project rule: never bulk-stage).']);
-if (guard.blockNoVerify !== false) {
-  RULES.push([/\bgit\s+commit\b[^\n]*--no-verify/,
-    'Blocked: `git commit --no-verify`. Never bypass the pre-commit hook (project rule).']);
-  // `-n` is git's short --no-verify, alone or bundled (-n, -anm, -nm). The scan
-  // stops at a command separator so a later command's flags don't count.
-  // Known false positive: `-uno` — write `--untracked-files=no` instead.
-  RULES.push([/\bgit\s+commit\b[^\n;&|]*\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$)/,
-    'Blocked: `git commit -n` is `--no-verify` — it skips the pre-commit hook (project rule). ' +
-    '(For untracked-files=no, write `--untracked-files=no`.)']);
-}
-if (guard.blockAmend !== false) RULES.push([/\bgit\s+commit\b[^\n]*--amend/,
-  'Blocked: `git commit --amend`. Never amend commits (project rule).']);
-// Re-pointing or unsetting core.hooksPath disables the pre-commit gate. Checked
-// against the skeleton BEFORE the global-flag collapse (which removes `-c k=v`),
-// and against the raw command for a quoted key (`-c 'core.hooksPath=…'`).
+// core.hooksPath is matched on the command with quotes KEPT (skeleton would
+// blank `-c 'core.hooksPath=…'`) but heredocs dropped, anchored at a command
+// start (after optional VAR=value assignments) so a mention inside a message
+// needs a separator in front of `git` to match — a false block at worst,
+// never a bypass. Config keys are case-insensitive → /i. Reads are allowed.
 if (guard.blockHooksPath !== false) {
-  const viaFlag = /\bgit\s+(?:\S+\s+)*?-c\s*['"]?core\.hookspath\s*=/i;
-  const viaConfig = /(?:^|[;&|(]\s*)git\s+(?:-\S+\s+(?:\S+\s+)?)*?config\b([^\n;&|]*)['"]?core\.hookspath\b/i;
-  const m = viaConfig.exec(cmd);
-  if (viaFlag.test(raw) || viaFlag.test(cmd) || (m && !/\s(--get(-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
-    const msg = 'Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).';
-    process.stderr.write(`[ssdd-git-guard] ${msg}\n→ ${cmd.split('\n')[0]}\n`);
-    finish(2, 'deny', { agentMessage: msg, userMessage: msg });
+  const START = String.raw`(?:^|[;&|(\n]\s*)(?:[A-Za-z_]\w*=\S*\s+)*git\s+(?:(?:-[cC]\s*(?:'[^']*'|"[^"]*"|\S+)|--?[\w-]+(?:=\S*)?)\s+)*`;
+  const viaFlag = new RegExp(START + String.raw`-c\s*['"]?core\.hookspath\b`, 'i');
+  const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)['"]?\bcore\.hookspath\b`, 'i');
+  const viaEnv = /\bGIT_CONFIG_(?:PARAMETERS=[^;&|\n]*core\.hookspath|KEY_\d+=['"]?core\.hookspath\b)/i;
+  const quoted = stripHeredocs(cmd);
+  const m = viaConfig.exec(quoted);
+  if (viaFlag.test(quoted) || viaEnv.test(quoted) || (m && !/(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
+    deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');
   }
-}
-for (const { pattern, message } of guard.extraRules ?? []) {
-  try { RULES.push([new RegExp(pattern), message ?? `Blocked by gitGuard.extraRules: ${pattern}`]); } catch { /* bad regex → skip */ }
 }
 
-for (const [re, msg] of RULES) {
-  if (re.test(probe)) {
-    process.stderr.write(`[ssdd-git-guard] ${msg}\n→ ${cmd.split('\n')[0]}\n`);
-    finish(2, 'deny', { agentMessage: msg, userMessage: msg });
-  }
+const RULES = [];
+if (guard.blockBulkAdd !== false) {
+  RULES.push([gitRule('add', cluster('A') + String.raw`|\s--all\b|\s\.(?=\s|$)`),
+    'Blocked: `git add -A` / `git add .` / `--all`. Stage specific files by path (project rule: never bulk-stage).']);
+}
+if (guard.blockNoVerify !== false) {
+  // Known false positive of the -n cluster: `-uno` — write `--untracked-files=no`.
+  RULES.push([gitRule('commit', String.raw`\s--no-verify\b|` + cluster('n')),
+    'Blocked: `git commit --no-verify` (or its short form `-n`) skips the pre-commit hook (project rule). ' +
+    '(For untracked-files=no, write `--untracked-files=no`.)']);
+}
+if (guard.blockAmend !== false) {
+  RULES.push([gitRule('commit', String.raw`\s--amend\b`),
+    'Blocked: `git commit --amend`. Never amend commits (project rule).']);
+}
+for (const [re, msg] of RULES) if (re.test(probe)) deny(msg);
+
+// Project regexes see the subcommand right after `git` (global options collapsed).
+const collapsed = collapseGlobalFlags(probe);
+for (const { pattern, message } of guard.extraRules ?? []) {
+  let re;
+  try { re = new RegExp(pattern); } catch { continue; } // bad regex → skip
+  if (re.test(collapsed)) deny(message ?? `Blocked by gitGuard.extraRules: ${pattern}`);
 }
 finish(0, 'allow');

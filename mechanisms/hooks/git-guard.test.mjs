@@ -31,7 +31,7 @@ const GIT_GUARD = {
   extraRules: [
     {
       // --force (not --force-with-lease / --force-if-includes), bundled short -f, +refspec.
-      pattern: String.raw`\bgit\s+push\b[^\n]*(\s--force(?![-\w])|\s-[a-zA-Z]*f[a-zA-Z]*(?=\s|$)|\s\+[^\s+])`,
+      pattern: String.raw`\bgit\s+push\b[^;&|\n]*(\s--force(?![-\w])|\s-[a-zA-Z]*f[a-zA-Z]*(?=\s|$)|\s\+[^\s+])`,
       message: "Blocked: force push (--force, -f, or +refspec). Use --force-with-lease, and only after the user's explicit go-ahead.",
     },
   ],
@@ -117,6 +117,17 @@ const BLOCKED = [
   ['git config core.hooksPath', 'git config core.hooksPath /tmp'],
   ['git config --local core.hooksPath', 'git config --local core.hooksPath x'],
   ['git config --unset core.hooksPath', 'git config --unset core.hooksPath'],
+  // v2.1 — ported from the source project's hardened guard.
+  ['bulk add with -fA cluster', 'git add -fA'],
+  ['commit --amend --no-edit', 'git commit --amend --no-edit'],
+  ['-C before commit -n', 'git -C /tmp/wt commit -n'],
+  ['double-quoted -c core.hooksPath', 'git -c "core.hooksPath=/dev/null" commit -m "x"'],
+  ['lower-case core.hookspath', 'git -c core.hookspath=/dev/null commit -m "x"'],
+  ['git config core.hooksPath chained before commit', 'git config core.hooksPath /dev/null && git commit -m "x"'],
+  ['-c core.hooksPath on the second commit', 'git commit -m "x" && git -c core.hooksPath=/dev/null commit -m "y"'],
+  ['VAR=value before git -c core.hooksPath', 'X=1 git -c core.hooksPath=/x commit -m x'],
+  ['GIT_CONFIG_PARAMETERS sets core.hooksPath', `GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git commit -m x`],
+  ['GIT_CONFIG_KEY_<n> sets core.hooksPath', 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m x'],
 ];
 
 const ALLOWED = [
@@ -141,6 +152,18 @@ const ALLOWED = [
   ['-n on a later command in the chain', 'git commit -m x && ls -n'],
   ['git log -n', 'git log -n 3'],
   ['commit -am with a global flag', 'git -C . commit -am x'],
+  // v2.1 — a flag on a LATER chained command belongs to that command.
+  ['add -p by path', 'git add -p src/app/foo.ts'],
+  ['add ./dir', 'git add ./src'],
+  ['commit then git log -n', 'git commit -m "x" && git log --oneline -n 3'],
+  ['commit then grep -rn', 'git commit -m "x"; grep -rn foo src'],
+  ['add by path then ls -A', 'git add src/app/foo.ts && ls -A'],
+  ['push then echo +done', 'git push origin main && echo +done'],
+  ['commit, push, grep -n', 'git commit -m "x" && git push origin main && grep -n foo bar'],
+  ['push --follow-tags', 'git push --follow-tags'],
+  ['core.hooksPath quoted in a commit message', 'git commit -m "docs: never git -c core.hooksPath=x"'],
+  ['core.hooksPath in a heredoc body', "cat > x.md <<'EOF'\ngit -c core.hooksPath=/dev/null commit\nEOF"],
+  ['--amend in a heredoc message', "git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"],
 ];
 
 describe('git-guard', () => {
