@@ -35,7 +35,9 @@
 // staging chained before the commit in one call, `commit -a/-i/-o`, and
 // `commit <pathspec>` — and judges the repo the commit really targets:
 // starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
-// `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED.
+// `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED. Scripts
+// handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
+// judged in place, as if typed directly.
 //
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
 //   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at" } } } }
@@ -47,7 +49,7 @@ import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
+import { expandWrappers, flatten, gitInvocation, isCommit, skeleton } from './git-cmd.mjs';
 
 let repo = resolveHookRepo(null);
 const git = (...args) =>
@@ -281,7 +283,7 @@ function deny(msg, user = 'SSDD review gate: blocked — see the message.') {
 // Quoted strings and heredoc bodies are blanked first, so a commit MESSAGE
 // that mentions "git commit" (or the bypass token) never triggers or
 // authorizes anything.
-const probe = skeleton(cmd);
+const probe = skeleton(expandWrappers(cmd));
 if (!isCommit(probe)) finish(0, 'allow');
 if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
   process.stderr.write('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead in chat.\n');
@@ -289,10 +291,10 @@ if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
 }
 
 // ── commits whose content this hook can't see are refused outright ──────────
-const commands = splitCommands(cmd);
+const commands = flatten(cmd); // in execution order, shell-wrapped scripts in place
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
 let staging = null;
-let commitArgs = null;
+const commitArgs = []; // every commit in the call, not just the first
 for (const words of commands) {
   const inv = gitInvocation(words);
   if (!inv) continue;
@@ -305,16 +307,15 @@ for (const words of commands) {
         'then stamp and commit in SEPARATE calls.\n',
       );
     }
-    commitArgs ??= inv.args;
+    commitArgs.push(inv.args);
   }
 }
-{
+for (const toks of commitArgs) {
   // Words after `commit` (quotes already removed). Value-taking options skip
   // their value; redirections are not pathspecs.
   const valueOpts = new Set(['-m', '--message', '-F', '--file', '-C', '--reuse-message', '-c',
     '--reedit-message', '-t', '--template', '--author', '--date', '--cleanup',
     '--pathspec-from-file', '--fixup', '--squash', '-S', '--gpg-sign', '--trailer']);
-  const toks = commitArgs ?? [];
   let reason = '';
   for (let i = 0; i < toks.length && !reason; i++) {
     const t = toks[i];
@@ -359,7 +360,7 @@ const toplevel = (dir) => {
   const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
   const unresolvable = (p) => /[$`]/.test(p) || p === '-';
   let cwd = start;
-  let target = null;
+  const targets = [];
   let bad = null;
   for (const words of commands) {
     if (words[0] === 'cd') {
@@ -372,10 +373,14 @@ const toplevel = (dir) => {
     if (!inv || inv.sub !== 'commit') continue;
     const badC = inv.dashC.find(unresolvable);
     if (badC !== undefined) bad ??= `git -C ${badC}`;
-    target = inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd);
-    break;
+    targets.push(inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd));
   }
-  const root = bad ? null : toplevel(target ?? cwd);
+  const roots = [...new Set((targets.length ? targets : [cwd]).map(toplevel))];
+  if (!bad && roots.length > 1 && !roots.includes(null)) {
+    deny(`[ssdd-review-gate] one call commits to ${roots.length} repos (${roots.join(', ')}) — commit to one repo per call.\n`);
+  }
+  const target = targets[0];
+  const root = bad || roots.includes(null) ? null : roots[0];
   if (!root) {
     deny(
       `[ssdd-review-gate] cannot resolve the repo this commit targets (${bad ?? target ?? cwd}) — use a literal\n` +

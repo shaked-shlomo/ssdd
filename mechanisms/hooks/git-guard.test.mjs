@@ -128,6 +128,17 @@ const BLOCKED = [
   ['VAR=value before git -c core.hooksPath', 'X=1 git -c core.hooksPath=/x commit -m x'],
   ['GIT_CONFIG_PARAMETERS sets core.hooksPath', `GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git commit -m x`],
   ['GIT_CONFIG_KEY_<n> sets core.hooksPath', 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m x'],
+  // v2.1.1 — scripts handed to a shell are checked as if typed directly.
+  ['bash -c wrapping commit -n', "bash -c 'git commit -anm x'"],
+  ['sh -c wrapping a bulk add', 'sh -c "git add -A && git commit -m x"'],
+  ['eval wrapping commit -n', 'eval "git commit -anm x"'],
+  ['zsh -lc wrapping core.hooksPath', "zsh -lc 'git -c core.hooksPath=/dev/null commit -am x'"],
+  ['a heredoc script fed to bash', "bash <<'EOF'\ngit commit -anm x\nEOF"],
+  ['a script piped to bash', "echo 'git commit -anm x' | bash"],
+  ['nested wrappers', `bash -c "sh -c 'git commit -n'"`],
+  ['git by absolute path', '/usr/bin/git commit -nm x'],
+  ['env -i before git -c core.hooksPath', 'env -i git -c core.hooksPath=/x commit -m x'],
+  ['sudo before git config core.hooksPath', 'sudo git config core.hooksPath /x'],
 ];
 
 const ALLOWED = [
@@ -164,6 +175,10 @@ const ALLOWED = [
   ['core.hooksPath quoted in a commit message', 'git commit -m "docs: never git -c core.hooksPath=x"'],
   ['core.hooksPath in a heredoc body', "cat > x.md <<'EOF'\ngit -c core.hooksPath=/dev/null commit\nEOF"],
   ['--amend in a heredoc message', "git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"],
+  ['a shell without git', "bash -lc 'echo hi'"],
+  ['a wrapper quoted inside a commit message', `git commit -m 'use bash -c "git commit -n"'`],
+  ['a shell running a script file', 'bash scripts/release.sh'],
+  ['"| sh" inside a quoted string', 'echo "hi | sh"'],
 ];
 
 describe('git-guard', () => {

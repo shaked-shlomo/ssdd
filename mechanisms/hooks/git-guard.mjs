@@ -17,13 +17,15 @@
 // `--git-dir=…`) are skipped, and each rule's flag scan stops at the end of its
 // own command (`;` `&` `|` newline): `git commit -m x && git log -n 3` is not
 // `commit -n`. Quoted strings and heredoc bodies are blanked first, so a message
-// that merely mentions a pattern isn't the pattern. Grammar: git-cmd.mjs.
+// that merely mentions a pattern isn't the pattern. Scripts handed to a shell
+// (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) are checked as if
+// typed directly. Grammar: git-cmd.mjs.
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { cluster, collapseGlobalFlags, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
+import { cluster, collapseGlobalFlags, expandWrappers, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
 const cmd = hookCommand(payload);
@@ -37,7 +39,8 @@ function deny(msg) {
   finish(2, 'deny', { agentMessage: msg, userMessage: msg });
 }
 
-const probe = skeleton(cmd);
+const full = expandWrappers(cmd); // the command plus any script it hands to a shell
+const probe = skeleton(full);
 
 let guard = {};
 try {
@@ -54,11 +57,12 @@ try {
 // needs a separator in front of `git` to match — a false block at worst,
 // never a bypass. Config keys are case-insensitive → /i. Reads are allowed.
 if (guard.blockHooksPath !== false) {
-  const START = String.raw`(?:^|[;&|(\n]\s*)(?:[A-Za-z_]\w*=\S*\s+)*git\s+(?:(?:-[cC]\s*(?:'[^']*'|"[^"]*"|\S+)|--?[\w-]+(?:=\S*)?)\s+)*`;
+  const RUNNER = String.raw`(?:\S*\/)?(?:sudo|command|env|nohup|time|exec|nice|builtin)(?:\s+-\S+)*`;
+  const START = String.raw`(?:^|[;&|(\n]\s*)(?:(?:[A-Za-z_]\w*=\S*|${RUNNER})\s+)*(?:\S*\/)?git\s+(?:(?:-[cC]\s*(?:'[^']*'|"[^"]*"|\S+)|--?[\w-]+(?:=\S*)?)\s+)*`;
   const viaFlag = new RegExp(START + String.raw`-c\s*['"]?core\.hookspath\b`, 'i');
   const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)['"]?\bcore\.hookspath\b`, 'i');
   const viaEnv = /\bGIT_CONFIG_(?:PARAMETERS=[^;&|\n]*core\.hookspath|KEY_\d+=['"]?core\.hookspath\b)/i;
-  const quoted = stripHeredocs(cmd);
+  const quoted = stripHeredocs(full);
   const m = viaConfig.exec(quoted);
   if (viaFlag.test(quoted) || viaEnv.test(quoted) || (m && !/(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
     deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');

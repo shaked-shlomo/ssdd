@@ -81,15 +81,30 @@ export function splitCommands(cmd) {
   return cmds;
 }
 
+// Words that run the next word as the command: `sudo git …`, `env X=1 git …`.
+const PREFIXES = new Set(['sudo', 'command', 'env', 'nohup', 'time', 'exec', 'nice', 'builtin']);
+const isAssign = (w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
+const base = (w) => (w ?? '').split('/').pop();
+
+/** Index of the word that is actually run, past `VAR=x`, `sudo`, `env -i …`. */
+export function commandStart(words) {
+  let i = 0;
+  for (;;) {
+    while (i < words.length && isAssign(words[i])) i++;
+    if (!PREFIXES.has(base(words[i]))) return i;
+    i++;
+    while (i < words.length && words[i].startsWith('-')) i++; // the prefix's own flags
+  }
+}
+
 /**
  * For a tokenized command, `{ dashC, sub, args }`: the `-C <path>` values in
  * order (git composes them relatively), the subcommand, and the words after
- * it. `null` if it isn't git. Leading `VAR=value` assignments are skipped.
+ * it. `null` if it isn't git. `VAR=value` and runner prefixes are skipped.
  */
 export function gitInvocation(words) {
-  let i = 0;
-  while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
-  if (words[i] !== 'git') return null;
+  let i = commandStart(words);
+  if (base(words[i]) !== 'git') return null;
   const dashC = [];
   for (i++; i < words.length; i++) {
     const w = words[i];
@@ -99,4 +114,68 @@ export function gitInvocation(words) {
     break;
   }
   return { dashC, sub: words[i] ?? '', args: words.slice(i + 1) };
+}
+
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+const PIPE_TO_SHELL = /\|\s*(?:\S+=\S*\s+)*(?:\S*\/)?(?:ba|z|da|k)?sh\b/;
+
+/** Heredoc bodies in order of appearance (the ones stripHeredocs blanks). */
+function heredocBodies(cmd) {
+  return [...cmd.matchAll(/<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n[ \t]*\1\b/g)].map((m) => m[2]);
+}
+
+// The script a single command hands to a shell, if any: `eval <words>`,
+// `sh -c <script>` (any flag cluster with c: -lc, -ec), a shell fed a heredoc,
+// or a shell fed by a pipe (`echo '<script>' | sh` — the producer's arguments).
+function innerScript(words, docs, piped) {
+  const i = commandStart(words);
+  const w = base(words[i]);
+  if (w === 'eval') return words.slice(i + 1).join(' ');
+  if (!SHELLS.has(w)) return null;
+  for (let j = i + 1; j < words.length; j++) {
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(words[j])) return words[j + 1] ?? null;
+    if (words[j] === '<<heredoc>') break;
+    if (!words[j].startsWith('-')) return null; // a script file — not visible
+  }
+  if (docs.length) return docs[0];
+  if (piped) return piped.slice(commandStart(piped) + 1).join(' ').replace(/\\n/g, '\n');
+  return null;
+}
+
+/**
+ * Every simple command that runs, in order, with scripts handed to a shell
+ * (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) flattened in
+ * place — so the hooks judge what actually runs. Depth-limited. Scripts in
+ * files, in variables, or produced by other programs stay invisible.
+ */
+export function flatten(cmd, depth = 0) {
+  const bodies = heredocBodies(cmd);
+  let b = 0;
+  const piped = PIPE_TO_SHELL.test(skeleton(cmd));
+  const cmds = splitCommands(cmd);
+  const out = [];
+  cmds.forEach((words, k) => {
+    out.push(words);
+    const docs = words.filter((t) => t === '<<heredoc>').map(() => bodies[b++] ?? '');
+    if (depth >= 3) return;
+    const script = innerScript(words, docs, piped && k > 0 ? cmds[k - 1] : null);
+    if (script) out.push(...flatten(script, depth + 1));
+  });
+  return out;
+}
+
+/** The command text plus every inner script, one per line — for regex rules. */
+export function expandWrappers(cmd, depth = 0) {
+  const bodies = heredocBodies(cmd);
+  let b = 0;
+  const piped = PIPE_TO_SHELL.test(skeleton(cmd));
+  const cmds = splitCommands(cmd);
+  const inner = [];
+  cmds.forEach((words, k) => {
+    const docs = words.filter((t) => t === '<<heredoc>').map(() => bodies[b++] ?? '');
+    if (depth >= 3) return;
+    const script = innerScript(words, docs, piped && k > 0 ? cmds[k - 1] : null);
+    if (script) inner.push(expandWrappers(script, depth + 1));
+  });
+  return [cmd, ...inner].join('\n');
 }
