@@ -144,12 +144,23 @@ routing, domain reviewers and domain skills stay there.
       symlinks and a gate that blocks → `--stamp` → passes with a v2 stamp.
 - [x] No file outside `SPEC.md` names the source project's plans/PRs as
       requirements (genericized examples only).
-- [ ] `node --test bin/*.test.mjs` covers install / update (clean, merged,
+- [x] `node --test bin/*.test.mjs` covers install / update (clean, merged,
       conflict, sidecar, removal, dirty refusal, `--to`, new adapter) /
       adopt (v1 layout) / status, against a fake ssdd repo with a layout move.
-- [ ] A copy of the first injected project's framework files adopts
+- [x] A copy of the first injected project's framework files adopts
       `--base v1.0.1` and updates to v2 with project edits preserved and
       only genuine overlaps reported as conflicts.
+
+*Verified 2026-10-05 at `ce02fe9` (the v2.0.0 content): `node --test
+bin/*.test.mjs mechanisms/hooks/*.test.mjs` → 184 pass, 0 fail. Replay on a
+scratch copy of the first injected project (its real repo untouched): adopt
+traced 16 files to v1.0.1; update → 11 unchanged, 3 updated, 1 added, 4
+conflicts (git-guard 1 hunk, review-gate 4, SDD.md 2, performance-reviewer 1
+— each a line both sides rewrote: the project's plan-numbered text vs v2's
+genericized text), 6 `.ssdd-new` sidecars for files the project added that v2
+now ships (its own cleanup / docs-drift-audit skills, Cursor rule, vitest
+suites); the git-guard `-n`/hooksPath fix merged in; project reviewers,
+config and symlinks untouched.*
 
 *Verified 2026-10-05: 135/135 tests on Node 24.15.0 (134 pass + 1 skipped
 when run from an injected `.ssdd/hooks/`, where the example config is
