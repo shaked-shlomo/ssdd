@@ -27,6 +27,7 @@ const GIT_GUARD = {
   blockBulkAdd: true,
   blockNoVerify: true,
   blockAmend: true,
+  blockHooksPath: true,
   extraRules: [
     {
       // --force (not --force-with-lease / --force-if-includes), bundled short -f, +refspec.
@@ -102,6 +103,20 @@ const BLOCKED = [
   ['force push, +refspec', 'git push origin +main'],
   ['force push, +src:dst refspec', 'git push origin +HEAD:main'],
   ['global flag before short -f push', 'git -C /tmp/x push -f origin main'],
+  // `-n` is git's short --no-verify; with -a it skipped every gate.
+  ['commit -n bundled with -a and -m', 'git commit -anm x'],
+  ['commit -n before -am', 'git commit -n -am x'],
+  ['commit -n after -a', 'git commit -a -n'],
+  ['commit -nm', 'git commit -nm x'],
+  ['global flag before commit -n', 'git -C /tmp/x commit -nm x'],
+  ['commit -uno (known false positive: use --untracked-files=no)', 'git commit -uno -m x'],
+  ['--no-verify still blocked when chained', 'git commit -m x --no-verify && git push'],
+  // Re-pointing or unsetting core.hooksPath disables the pre-commit gate.
+  ['-c core.hooksPath before commit', 'git -c core.hooksPath=/dev/null commit -am x'],
+  ['quoted -c core.hooksPath', "git -c 'core.hooksPath=/x' commit -am x"],
+  ['git config core.hooksPath', 'git config core.hooksPath /tmp'],
+  ['git config --local core.hooksPath', 'git config --local core.hooksPath x'],
+  ['git config --unset core.hooksPath', 'git config --unset core.hooksPath'],
 ];
 
 const ALLOWED = [
@@ -121,12 +136,17 @@ const ALLOWED = [
   ['push --force-with-lease before the remote', 'git push --force-with-lease origin main'],
   ['push --force-with-lease=<ref>', 'git push --force-with-lease=main origin main'],
   ['push --force-if-includes --force-with-lease', 'git push --force-if-includes --force-with-lease origin main'],
+  ['reading core.hooksPath', 'git config --get core.hooksPath'],
+  ['-n and core.hooksPath quoted in a commit message', "git commit -m 'mention git config core.hooksPath and -n'"],
+  ['-n on a later command in the chain', 'git commit -m x && ls -n'],
+  ['git log -n', 'git log -n 3'],
+  ['commit -am with a global flag', 'git -C . commit -am x'],
 ];
 
 describe('git-guard', () => {
   it('the embedded gitGuard block matches config.example.json', { skip: !existsSync(EXAMPLE_CONFIG) }, () => {
     const { gitGuard } = JSON.parse(readFileSync(EXAMPLE_CONFIG, 'utf8'));
-    for (const toggle of ['blockBulkAdd', 'blockNoVerify', 'blockAmend']) {
+    for (const toggle of ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath']) {
       assert.strictEqual(gitGuard[toggle], GIT_GUARD[toggle], toggle);
     }
     assert.deepStrictEqual(

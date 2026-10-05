@@ -19,6 +19,7 @@
     "blockBulkAdd": true,
     "blockNoVerify": true,
     "blockAmend": true,
+    "blockHooksPath": true,
     "extraRules": [
       {
         "$comment": "Matches --force (not --force-with-lease / --force-if-includes), bundled short -f, and +refspec.",
