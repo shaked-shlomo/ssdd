@@ -120,6 +120,20 @@ entries since your version. Review with `git diff` in the repo and commit
 another machine: `gh repo clone shaked-shlomo/ssdd ~/Developer/ssdd`, later
 `git -C ~/Developer/ssdd pull --tags`.
 
+## When a new model generation ships
+
+Instructions tuned for one generation drift with the next (see
+[docs/model-era-review.md](docs/model-era-review.md)). In each injected repo:
+
+1. Run `/doctor prompt-audit` in Claude Code. It flags instructions written
+   for older models, contradictions and dead references across CLAUDE.md /
+   AGENTS.md, rules, skills and agents.
+2. Re-run one recent plan's task on the new model. Compare review rounds,
+   findings and tokens with the ledger's record.
+3. Re-check the effort levels: reviewers' `effort:` frontmatter and the
+   session default.
+4. Upstream what generalizes here as a MINOR release.
+
 ## Known limitations
 
 **Copies, not a live link.** Each repo carries its own copy (the framework

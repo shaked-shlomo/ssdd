@@ -10,6 +10,48 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.2.0] — 2026-10-05
+
+Text cut for Claude 5-generation models (framework half of
+`docs/model-era-review.md`). There are no mechanism changes; hooks, block
+messages and config are as in 2.1.1.
+
+### Changed
+- **AGENTS template** (always loaded): 96 → 58 lines. It now carries the
+  gate as a pointer instead of a procedure, one evidence rule instead of
+  three verification principles, a two-line git section, and an empty
+  **Gotchas** section, which is where its tokens are best spent.
+- **SDD.md §4** is the one place the gate procedure is written out (with
+  the hook's block message). The cleanup skill and the Cursor rule point
+  there.
+- **Principles 1–3 merged** into one evidence rule ("check each claim
+  against a tool result from this session; say what isn't verified").
+  Added: effort follows the stakes.
+- **§5:** the gate and the final review are the review rounds. Don't start
+  others unless asked.
+- **§7:** run `/doctor prompt-audit` when instructions, skills or reviewers
+  change, or when a new model generation is adopted.
+- **new-plan** points to SDD.md §2 instead of restating it, 51 → 37 lines.
+  The clarify-pass checklist is now "kinds that have bitten before".
+- **Descriptions** for every reviewer and skill are 300 chars or fewer, in
+  third person, with no route lists. Resilience went from 490 to 289.
+- **Reviewers:**
+  - `effort: medium` on docs-sync and convention-compliance; the others
+    inherit the session's level
+  - incident stories cut to a clause
+  - capitals used for emphasis made normal case
+- README: a "When a new model generation ships" checklist.
+
+### Upgrade notes (from 2.1)
+- `update` merges the framework files. `AGENTS.md` is yours, so it prints
+  the template diff instead. Worth porting by hand:
+  - replace the gate procedure with the four-line pointer
+  - merge the three verification principles into the one evidence rule
+  - add the "reviews happen at the gate and the final review" line
+  - add a Gotchas section
+- If you customized a reviewer's description to list its routes, expect a
+  conflict there. The routes already live in `.ssdd/config.json`.
+
 ## [2.1.1] — 2026-10-05
 
 ### Fixed
