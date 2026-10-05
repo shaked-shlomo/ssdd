@@ -10,6 +10,72 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.3.0] — 2026-10-05
+
+### Added
+- **Completion stamps (Claude Code).**
+  - The review gate also runs on `SubagentStart` / `SubagentStop`. A routed
+    reviewer's start snapshots the staged keys of its files. Its stop stamps
+    the ones still unchanged, if the final message ends with a verdict
+    (CLEAN / SECURE / `N ISSUE(S)` / `N RISK(S)`) and every turn ran on an
+    allowed model.
+  - `NO DIFF`, a missing verdict, a disallowed model, or a file edited
+    during the review all leave the file owed.
+  - Stamps record `by: "hook"`, the verdict, the issue count and the model.
+    Start and stop are paired by `agent_id`; parallel stops write under a
+    lock.
+- **`reviewGate.stamping`:** `"manual"` (default) or `"hooks"`. In hooks
+  mode git-guard denies `review-gate.mjs --stamp`, including when wrapped in
+  a shell, and any Bash reference to `.git/ssdd-review-*`. The block message
+  says to dispatch the reviewers.
+- **`reviewGate.reviewerModels`:** a completion stamp lands only if every
+  turn of the review ran on an allowed model. An entry is a family
+  (`"opus"`), a family with a version floor (`"sonnet>=5.5"`), or a
+  substring of the model id. The example config is
+  `["opus>=5.5", "sonnet>=5.5"]`: Sonnet and Opus 5.5 and later. Older
+  versions, Haiku and Fable are refused. The check reads the subagent
+  transcript, because a spawn can override the frontmatter model.
+- **Reviewer models pinned by full id:** `claude-opus-5-5` on security and
+  resilience; `claude-sonnet-5-5` on performance, convention-compliance and
+  docs-sync. The domain template defaults to `claude-sonnet-5-5`. Full ids,
+  because aliases resolve per CLI version: on Claude Code 2.1.263 `sonnet`
+  meant `claude-sonnet-5`, which the 5.5 floor refused. CLIs that don't
+  list the id print an `unrecognized_model` warning and still run it.
+- **Refusals are visible:** a completion stamp refused for a missing verdict
+  or a disallowed model is recorded in the stamp file's `refused` map. The
+  gate's block message prints it (`! <reviewer>: …`), since the
+  orchestrating agent never sees the hook's stderr. A later good review
+  clears it.
+- **Edit/Write guard:** git-guard as PreToolUse(Edit|Write) denies the Edit
+  and Write tools on `.git/ssdd-review-*` in every mode.
+- **Triage note:** a commit whose files a reviewer flagged, unchanged since,
+  passes with a "triaged?" note (the PreToolUse `additionalContext`, and
+  stderr in pre-commit).
+- **`/new-reviewer` skill:** proposes lenses from the stack, the code no
+  reviewer covers, and bug classes that recur in the ledgers. It scaffolds
+  an approved one from the domain template (route with a `$comment`, model,
+  effort, symlink). `coverage.mjs` lists unrouted files and tests a
+  candidate route's regexes.
+- 20 tests in `review-stamp.test.mjs` with payloads shaped by a live probe
+  of Claude Code 2.1.263.
+
+### Upgrade notes (from 2.2)
+- `.claude/settings.json` is yours; `update` prints the template diff. Add
+  three entries:
+  - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `git-guard.mjs`
+  - `SubagentStart` → `review-gate.mjs`
+  - `SubagentStop` → `review-gate.mjs`
+  
+  Reload the session.
+- `.ssdd/config.json` is yours. To enforce models, add
+  `reviewGate.reviewerModels` (e.g. `["opus>=5.5","sonnet>=5.5"]`). To make completion
+  stamps the only way for the agent, add `"stamping": "hooks"`. Cursor-only
+  repos stay `manual`.
+- Reviewers gain `model:` lines. If you edited a reviewer's frontmatter,
+  expect a small merge there.
+- Your own domain reviewers keep their models; add `model: sonnet|opus` to
+  each.
+
 ## [2.2.0] — 2026-10-05
 
 Text cut for Claude 5-generation models (framework half of

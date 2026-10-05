@@ -46,7 +46,10 @@ replacement.
   `reviewGate.reviewerModels` (read from the subagent transcript, because a
   spawn can override the frontmatter `model`). `reviewGate.stamping: "hooks"`
   makes them the only way the agent can stamp. They cover the repo at the
-  session's cwd (a worktree session has its own).
+  session's cwd (a worktree session has its own). Reviewer frontmatter pins
+  full model ids (`claude-sonnet-5-5`), not aliases: an alias resolves per
+  CLI version, and an older CLI's `sonnet` falls below a 5.5 floor. A
+  refused stamp shows up in the gate's block message (`! <reviewer>: …`).
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)

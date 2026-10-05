@@ -367,3 +367,111 @@ plan).
 - No diff under `mechanisms/hooks/` or in `config.example.json`.
 - An installed v2.1.1 repo updates with 12 prose files changed, 15
   unchanged, 0 hook/config paths, 0 conflicts.
+
+---
+
+# v2.3 — reviewer completion stamps; `/new-reviewer`
+
+**Date:** 2026-10-05 · **Status:** shipped (v2.3) · **Branch:** `v2.3-stamping`
+
+## Goal
+
+Make the review gate's attestation mechanical in Claude Code: a reviewer
+subagent finishing with a verdict stamps the files it was dispatched on, and
+(opt-in) the agent can no longer stamp for itself. Add `/new-reviewer`, which
+proposes and scaffolds project-specific review lenses.
+
+## Clarify pass
+
+1. **Hook payloads** (verified by a live probe on Claude Code 2.1.263 in a
+   scratch project, not just the docs):
+   - `SubagentStart` carries `agent_id`, `agent_type` and `cwd`.
+   - `SubagentStop` carries the same three, plus `last_assistant_message`
+     (the reviewer's final text), `agent_transcript_path` and
+     `stop_hook_active`.
+   - The Agent tool's `PostToolUse` response has `agentId` and `status` but
+     no final text. Resolved: correlate start and stop by `agent_id`; no
+     Agent-tool hook is needed.
+2. **What a stamp attests.** Only files whose staged key at stop still
+   equals the key at start: a file edited during the review stays owed.
+   Stamps record `by: "hook"`, the verdict and the issue count. The stamp
+   file stays version 2 (the fields are additive).
+3. **Verdict.** The last line matching CLEAN / SECURE / `N ISSUE(S)` /
+   `N RISK(S)` stamps. Stamping with issues matches the existing "fix or
+   triage" rule: a fix changes the key and re-opens the file. When a commit
+   includes files a reviewer flagged and that are unchanged since, the gate
+   adds a non-blocking "triaged?" note. `NO DIFF`, or no verdict line,
+   stamps nothing.
+4. **Opt-in enforcement.** `reviewGate.stamping: "manual"` (the default)
+   keeps `--stamp`; completion stamps still land if the hooks are wired. In
+   `"hooks"` mode the git-guard denies Bash calls that run
+   `review-gate.mjs --stamp` or touch `.git/ssdd-review-*`. A PreToolUse
+   `Edit|Write` entry denies the Edit/Write tools on those files, and the
+   block message tells the agent to dispatch reviewers instead of printing
+   `--stamp`. A human in a terminal can still stamp; that's the intended
+   boundary.
+5. **Scope of auto-stamping.** It covers the repo at the hook's `cwd`. A
+   Claude Code worktree session has its cwd in the worktree. A
+   `git -C <other>` commit from elsewhere needs manual mode. Cursor has no
+   subagent hooks, so Cursor repos stay manual.
+6. **Concurrency.** Parallel reviewers write one dispatch file each, keyed
+   by `agent_id`, and update the stamp file under a short lock.
+
+## Scope
+
+**In:**
+- Subagent hook modes in `review-gate.mjs`.
+- `reviewGate.stamping` config key.
+- git-guard rules for `hooks` mode, including the Edit/Write path.
+- Three new entries in the settings template.
+- The gate's triage note.
+- `/new-reviewer`: proposes lenses from the stack, unrouted code, and bug
+  classes that recur in the ledgers. It scaffolds from the domain template
+  only after approval: route, `effort`, symlink.
+
+**Out:**
+- The best-practice skills catalog and the `claude-automation-recommender`
+  integration (v2.4, built from the two skills audits).
+- Correlating a reviewer with a non-cwd repo.
+
+## Acceptance criteria
+
+- [x] node:test with synthetic `SubagentStart` / `SubagentStop` payloads in
+      a scratch repo:
+  - the stamp lands with verdict and `by: "hook"`
+  - a mid-review edit stays owed
+  - `NO DIFF` and a missing verdict stamp nothing
+  - a non-reviewer agent and a stop without a start are no-ops
+  - two concurrent stops both land
+- [x] `hooks` mode:
+  - `--stamp`, wrapped `--stamp`, a Bash write to the stamp file, and an
+    Edit/Write payload on it are denied
+  - manual mode still allows `--stamp`
+  - the block message drops `--stamp` for "dispatch the reviewers"
+- [x] The gate's allow path carries the triage note for flagged-but-unchanged
+      files.
+- [x] `/new-reviewer` frontmatter parses; its description is ≤ 300 chars.
+- [x] All existing tests still pass. An installed v2.2.0 repo updates
+      cleanly, and the settings-template diff is printed.
+
+*Mid-flight rulings (owner, 2026-10-05):*
+- Reviewers run on Sonnet or Opus, 5.5 or later. Never Haiku (it's for
+  quick text edits) and never Fable.
+
+That added `reviewGate.reviewerModels` with version floors
+(`["opus>=5.5","sonnet>=5.5"]`), checked against the subagent transcript,
+and full model ids in reviewer frontmatter.
+
+*Verified 2026-10-05:*
+- `node --test bin/*.test.mjs mechanisms/hooks/*.test.mjs` → 394 pass, 0
+  fail (Node 24.15.0).
+- Two live end-to-end runs in scratch repos with v2.3 installed: `claude -p`
+  dispatched the docs-sync reviewer, then tried to commit.
+  1. With `model: sonnet`, the CLI resolved the alias to `claude-sonnet-5`.
+     The floor refused the stamp, and the agent saw only "never stamped".
+     That's why reviewer models are now full ids and refusals are surfaced.
+  2. With `model: claude-sonnet-5-5`, the reviewer's completion stamped
+     `src/math.ts` (`by: hook`, verdict ISSUES 1, model
+     `claude-sonnet-5-5`). The commit passed, with the triage note.
+- `/new-reviewer` frontmatter parses (description 269 chars);
+  `coverage.mjs` ran read-only on the first injected project.
