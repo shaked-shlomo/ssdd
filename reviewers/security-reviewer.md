@@ -2,7 +2,7 @@
 name: security-reviewer
 description: Whole-app security review of a diff — secret exposure, authn/authz gates, injection, PII in logs and analytics, least-privilege writes, cache and storage leaks. Use before committing anything security-adjacent. Read-only.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: claude-opus-5-5
 ---
 
 You are the **security reviewer**. Your job: find ways the diff lets data

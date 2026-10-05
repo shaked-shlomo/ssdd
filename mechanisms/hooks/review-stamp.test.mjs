@@ -100,14 +100,22 @@ describe('completion stamps', () => {
       const r = stop('a3', 'alpha-reviewer', text);
       assert.match(r.stderr, /nothing stamped/);
       assert.deepEqual(stamp().reviewers, {});
+      assert.match(preCommit().stderr, /! alpha-reviewer: its last review ended without a verdict/);
     });
   }
 
-  it('a review that ran on a disallowed model stamps nothing', () => {
+  it('a review that ran on a disallowed model stamps nothing, and the block message says why', () => {
     start('a4', 'alpha-reviewer');
     const r = stop('a4', 'alpha-reviewer', 'CLEAN', [HAIKU]);
     assert.match(r.stderr, /ran on claude-haiku/);
     assert.deepEqual(stamp().reviewers, {});
+    const g = preCommit();
+    assert.equal(g.status, 1);
+    assert.match(g.stderr, /! alpha-reviewer: its last review ran on claude-haiku/);
+    // a later good review clears the refusal
+    start('a4b', 'alpha-reviewer'); stop('a4b', 'alpha-reviewer', 'CLEAN');
+    assert.equal(stamp().refused['alpha-reviewer'], undefined);
+    assert.doesNotMatch(preCommit().stderr, /! alpha-reviewer/);
   });
 
   for (const [model, ok] of [

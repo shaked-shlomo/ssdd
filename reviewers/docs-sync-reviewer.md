@@ -2,7 +2,7 @@
 name: docs-sync-reviewer
 description: Checks that every "change X → update doc Y" coupling in the project's Documentation Map is honored in the same diff. Use before committing or opening a PR. Read-only.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: claude-sonnet-5-5
 effort: medium
 ---
 

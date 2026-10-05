@@ -180,7 +180,7 @@ function judge(cfg) {
     const missing = files
       .filter((f) => mine[f]?.key !== staged.get(f))
       .map((f) => ({ path: f, prev: mine[f]?.key ?? null }));
-    if (missing.length) owed.push({ name, files, missing });
+    if (missing.length) owed.push({ name, files, missing, refused: stamp.refused?.[name]?.reason });
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
   return { owed, unrouted, warning: oversizeWarning(cfg, routed.size) };
@@ -215,8 +215,9 @@ const short = (key) => {
 };
 function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual') {
   const lines = [];
-  for (const { name, files, missing } of owed) {
+  for (const { name, files, missing, refused } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
+    if (refused) lines.push(`  ! ${name}: ${refused}`);
     lines.push(
       never
         ? `  • ${name} — never stamped on this diff (${files.length} routed file(s)):`
@@ -562,15 +563,21 @@ function subagentHook(p) {
   let d;
   try { d = JSON.parse(readFileSync(file, 'utf8')); } catch { return; } // no matching start
   rmSync(file, { force: true });
+  // A refusal is recorded so the gate's block message can say why — the
+  // orchestrating agent never sees this hook's stderr.
+  const refuse = (m) => {
+    process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
+    updateStamp((stamp) => { (stamp.refused ??= {})[type] = { at: new Date().toISOString(), reason: m }; });
+  };
   const say = (m) => process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
   const v = parseVerdict(p.last_assistant_message);
-  if (!v) return say('no verdict line (or NO DIFF) — nothing stamped');
+  if (!v) return refuse('its last review ended without a verdict line (or with NO DIFF) — nothing stamped');
   const allowed = cfg.reviewGate?.reviewerModels;
   let models = [];
   if (Array.isArray(allowed) && allowed.length) {
     try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
     const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
-    if (!ok) return say(`ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped`);
+    if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (set the reviewer's frontmatter model, or don't override it when dispatching)`);
   }
   const staged = stagedChanges();
   const keep = Object.keys(d.files).filter((f) => staged.get(f) === d.files[f]);
@@ -578,6 +585,7 @@ function subagentHook(p) {
   if (keep.length) {
     const at = new Date().toISOString();
     updateStamp((stamp) => {
+      if (stamp.refused) delete stamp.refused[type];
       stamp.reviewers[type] ??= {};
       for (const f of keep) {
         stamp.reviewers[type][f] = { key: staged.get(f), at, by: 'hook', verdict: v.verdict, issues: v.issues, ...(models.length ? { model: models.join(',') } : {}) };

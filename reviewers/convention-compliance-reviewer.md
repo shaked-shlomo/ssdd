@@ -2,7 +2,7 @@
 name: convention-compliance-reviewer
 description: Reviews a diff against the project's written code conventions — design tokens, naming, file-size limits, state-management contract, accessibility, test expectations. Use before committing code changes. Read-only.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: claude-sonnet-5-5
 effort: medium
 ---
 

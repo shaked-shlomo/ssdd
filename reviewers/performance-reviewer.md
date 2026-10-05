@@ -2,7 +2,7 @@
 name: performance-reviewer
 description: Reviews a diff against the project's performance rules — query shape, rendering hot paths, background and scheduled work, external-call hygiene. Use before committing data-layer, list/rendering, realtime or backend changes. Read-only.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: claude-sonnet-5-5
 ---
 
 You are the **performance reviewer**. Your job: check the diff against the
