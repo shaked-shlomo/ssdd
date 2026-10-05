@@ -1,11 +1,9 @@
 ---
 name: cleanup
 description: >-
-  Use when the user wants existing code inspected rather than extended — a pre-merge review,
-  a cleanup pass, an audit of a component, folder, branch, or open PR ("review this", "clean
-  this up", "look for dead code", "review PR #N"). Runs the harness's generic code-review
-  pass, then the project's SSDD domain reviewers, verifies their findings, and presents a
-  plan before changing anything. Not for adding features, fixing a known bug, or docs.
+  Reviews existing code and proposes a cleanup plan: a pre-merge review, an audit of a file,
+  folder, branch or open PR ("review this", "clean this up", "review PR #N"). Runs the harness's
+  code review, then the SSDD reviewers, verifies their findings, and changes nothing until approved.
 ---
 
 Review code for real problems and present a cleanup plan. A clean file gets "looks clean",
@@ -63,11 +61,9 @@ Documentation Map. If nothing is worth fixing, say so and stop. Otherwise end wi
 
 ## 5. Execute (after approval)
 
-Apply only approved items, then rerun the checks. Committing routed paths trips the review
-gate, and Phase 2 earns no stamps: the staged change is now the fix, which no reviewer has
-seen. Dispatch the reviewers the gate names against the files they owe, fix, re-stage,
-repeat until clean, then `--stamp` (`--files` for a delta round). Re-check
-`git status --short` before committing after agent activity.
+Apply only approved items, then rerun the checks. Phase 2 earns no stamps: the staged
+change is now the fix, which no reviewer has seen. Commit through the review gate as
+SDD.md §4 describes.
 
 <!-- Project-specific "what to look for" (design-system primitives, stack conventions,
 sanctioned exceptions) goes in a section here. -->

@@ -1,11 +1,9 @@
 ---
 name: docs-drift-audit
 description: >-
-  Full-repo docs-drift audit — fan out parallel read-only subagents, one per doc↔code domain,
-  to find where the canonical maps/docs have drifted from the code, re-verify every finding,
-  then fix the DOC side. Use when the user asks to audit the docs, check the maps for
-  staleness, or run a drift audit. Not for diff-scoped doc coupling (that's
-  docs-sync-reviewer's job on a commit/PR) and not for reviewing code quality (cleanup).
+  Audits the whole repo for docs that drifted from the code: parallel read-only passes, one per
+  doc↔code domain, every finding re-verified, then the docs fixed. Use for "audit the docs" or a
+  map staleness check; per-diff coupling is docs-sync-reviewer's job.
 ---
 
 Run the full-repo docs-drift audit. The procedure is `.ssdd/drift-audit.md` — read it and

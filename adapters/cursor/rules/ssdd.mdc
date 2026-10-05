@@ -1,21 +1,14 @@
 ---
-description: SSDD and git-guard glue for Cursor. Canonical instructions are AGENTS.md.
+description: SSDD glue for Cursor. Canonical instructions are AGENTS.md.
 alwaysApply: true
 ---
 
 # SSDD (Cursor)
 
-Read `AGENTS.md` first. For non-trivial work, also read `.ssdd/process/SDD.md`.
+Read `AGENTS.md` first; for non-trivial work, `.ssdd/process/SDD.md`.
 
-Never `git add -A`, `git add .`, `git commit --no-verify`, `git commit --amend`,
-or force-push. Stage files by path.
+When the review gate blocks a commit, its message lists the reviewers and the
+files each one owes. Dispatch them in parallel with the Task tool (checklists
+in `.ssdd/reviewers/`), then run what the message says.
 
-When the review gate blocks, dispatch the reviewers it names in parallel with
-the Task tool (the reviewers routed in `.ssdd/config.json`; checklists in
-`.ssdd/reviewers/*.md`) against the files each one owes. Then
-`node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>` (`--files` for a
-delta round, `--repo` for another work tree). Do not stamp without running
-them. Stage and commit in separate shell calls.
-
-Mechanical hooks: `.cursor/hooks.json` runs the same `.ssdd/hooks` scripts
-Claude Code registers in `.claude/settings.json`.
+`.cursor/hooks.json` runs the same `.ssdd/hooks/` scripts Claude Code uses.

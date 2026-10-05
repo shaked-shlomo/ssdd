@@ -37,21 +37,17 @@ existing `NN-` prefix + 1 (check with a command, not memory) — across `main`
 Never reuse, skip, or backfill numbers; never add unnumbered files to the
 plans directory.
 
-**The clarify pass — interrogate the plan BEFORE criteria are written.** List
-every assumption the approved design makes: UX behavior (empty/error/loading
-states), design coverage (a mock for every state? motion/interaction specified,
-not guessed?), data (schema/authorization/query shape), platform differences,
-permission and monetization gates, edge cases (offline, degraded, suspended
-user, free-vs-paid). For each: **resolve it from a source** (the design file,
-the schema, the code — never assume, verify first) **or ask the user**. An
-unresolved assumption must NOT silently become an acceptance criterion — park
-it in `## Open questions`. **The plan stays DRAFT while any remain.** Resolved
-items are kept in `## Clarify pass`, each with the source that resolved it —
-the record of what was checked, not just what was decided.
+**The clarify pass comes before the criteria.** List the assumptions the
+design makes; the kinds that have bitten before are empty/error/loading
+states, design coverage of every state, data shape and authorization,
+platform differences, paid/permission gates, and degraded or offline modes.
+Resolve each from a source (design file, schema, code) or ask the user, and
+record it in `## Clarify pass` with that source. An unresolved assumption
+goes to `## Open questions`, not into a criterion; the plan stays DRAFT while
+any remain.
 
 **Acceptance criteria are written now, before implementation.** They define
-"done"; Verification later closes against them, not against vibes. Each
-criterion must be checkable by a command, a test, or a concrete observation.
+"done", and each is checkable by a command, a test, or a concrete observation.
 
 Template: [templates/plan-template.md](templates/plan-template.md).
 
@@ -61,7 +57,7 @@ For multi-task plans, the ledger is the cross-session execution record — one
 checkbox line per task carrying: the commit hash(es), spec-compliance ✅,
 quality-review ✅, test counts, and **triaged findings** (Critical/Important
 fixed inline with the fix commit; Minor recorded with an explicit
-fix-now / defer / final-review decision — never silently dropped). Deferred
+fix-now / defer / final-review decision). Deferred
 items get a home (a follow-up section, a spawned task, or the requirements
 checklist) before the plan closes. A row that claims a fix is verified
 against the staged file before it is written — §4, "Findings are records".
@@ -73,42 +69,33 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
 
 - Tests first where practical; every new failure/race behavior gets a
   regression test that fails against the pre-fix code.
-- Stage specific files by path — never bulk-stage (`git add -A` / `.` is
-  guard-blocked). Re-check `git status --short` before any commit that follows
-  reviewer/agent activity: a later `git add` sweeps previously staged files
-  along, and a reviewer's `git stash/pop` can silently unstage a staged wave.
-- **The review gate**: committing a diff that touches a routed path is blocked
-  until every reviewer routed to each such file has run **against that file's
-  exact staged change**. A stamp is per reviewer × per routed file × that
-  file's `HEAD→index` blob pair: a file whose staged change differs from what
-  a reviewer stamped must be re-reviewed by every reviewer routed to it —
-  edit, deletion, mode change, or the same content on a different base; a
-  file that did not change keeps its stamps, and a file no reviewer is routed
-  to (a ledger, a doc) never enters a key, so editing one voids nothing. The
-  block message names, per reviewer, the files it still owes and why
-  (`changed since its last stamp` / `never stamped`). Dispatch the owing
-  reviewers in parallel against the files they owe, fix or triage findings,
-  re-stage, stamp — `--stamp <reviewer,…>` for every routed file the reviewer
-  covers, `--files <path,…>` when it re-read only those — and retry.
-  **Stamping without actually running the named reviewers is forbidden**; the
-  bypass env var is for emergencies and requires the user's explicit
-  go-ahead. The gate warns when a diff exceeds `reviewGate.maxRoutedFiles`
-  routed files (default 10): that is the per-task rule being skipped, and the
-  remedy is to split the commit, not to run another round. *(Why per file: in
-  the source project a whole-diff stamp made one plan run six full rounds over
-  29 files — each round's findings were on the previous round's fixes — and it
-  shipped on the bypass.)*
-- **Tell every reviewer what it is reviewing.** Reviewers default to
-  `git diff --staged`; on a PR or branch nothing is staged, so a reviewer not
-  handed its input (a range like `main...HEAD`, or an explicit file list)
-  would review an empty diff — it answers `NO DIFF — scope not provided`, and
-  that is never stamped.
-- **Stage and commit in separate tool calls.** The harness gate reads the
-  index before the command runs, so it refuses `git add … && git commit`,
-  `commit -a/-i/-o` and `commit <pathspec>`; for a commit in another work
-  tree, stamp with `--repo <path>` (the block message prints it). Dispatched reviewers are
-  read-only: no edits, no commits, no stamping, no `git stash` (a stash/pop
-  silently unstages the wave under review).
+- Stage specific files by path (bulk staging is guard-blocked). Re-check
+  `git status --short` before a commit that follows agent activity: a later
+  `git add` sweeps earlier staged files along, and a `git stash`/`pop`
+  silently unstages them.
+- **The review gate.** A commit touching a path routed in
+  `.ssdd/config.json` is blocked until every reviewer routed to each such
+  file has reviewed that file's exact staged change. Stamps are per
+  reviewer × per file, so after a fix only the changed files are owed again;
+  unrouted files (ledgers, docs) never void a stamp. The procedure:
+  1. Read the block message: per reviewer, the files it owes and why.
+  2. Dispatch those reviewers in parallel. Name each one's input (the staged
+     diff, a range, or a file list); a reviewer given nothing answers
+     `NO DIFF — scope not provided`, and that is never stamped. Dispatched
+     reviewers are read-only: no edits, commits, stamps, or `git stash`.
+  3. Fix or triage the findings, re-stage, then
+     `node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>`, adding
+     `--files <path,…>` when a reviewer re-read only those files and
+     `--repo <path>` for another work tree (the message prints it).
+  4. Commit in a separate call from staging: the harness gate reads the
+     index before the command runs, so it refuses `git add … && git commit`,
+     `commit -a/-i/-o` and `commit <path>`.
+
+  Stamping without running the reviewers is forbidden; `SSDD_REVIEW_SKIP=1`
+  is for emergencies, with the user's explicit go-ahead. Over
+  `reviewGate.maxRoutedFiles` routed files the gate warns: split the commit
+  rather than run another round. (A whole-diff stamp once forced six full
+  rounds over 29 files.)
 - **Findings are records; ledger rows are verified before they are written.**
   Each review round's findings are collected as structured records (finding,
   reviewer(s), severity, file), fixes are applied from that list, and then
@@ -116,27 +103,24 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   checked against the staged blob (`git show :path`) by an agent other than
   the one that wrote the fix, refute-by-default: a row stands only when the
   staged file demonstrably contains what it claims. Only then is the ledger
-  section written. *(Source-project precedent: two review rounds recorded
-  fixes that had not landed — an aborted batch edit, then rows written from
-  intention; the verified method then refuted 2 of 22 rows before they were
-  written, one a real bug in a fix.)*
+  section written. (Rows written from intention once recorded fixes that
+  never landed.)
 - **Doc coupling is same-commit, not best-effort.** The project's
   Documentation Map names each canonical doc and its update trigger; a change
-  that trips a trigger updates the doc in the same commit. A stale map
-  actively misleads.
+  that trips a trigger updates the doc in the same commit.
 
 ## 5. Final whole-plan review
 
-After the last task, one review pass over the plan's ENTIRE diff (not just the
-last task's) — cross-task integration bugs hide in the seams. In the source
-project this pass regularly found Criticals that per-task reviews missed.
-Findings are fixed and independently re-verified before the plan closes.
+After the last task, one review pass over the plan's whole diff: cross-task
+integration bugs hide in the seams between per-task reviews. Findings are
+fixed and independently re-verified before the plan closes. The gate and this
+pass are the review rounds; don't start others unless the user asks.
 
 ## 6. Verification
 
 Fill the plan's Verification section: **one entry per acceptance criterion**,
 each closed with the command/check actually run and its **real output pasted
-from this session** — never from memory. If a criterion can't be verified
+from this session**. If a criterion can't be verified
 (operator-gated deploy, missing credentials), it stays open and says so
 explicitly ("BUILD-then-DEFER"), with the operator checklist recorded.
 
@@ -149,6 +133,10 @@ explicitly ("BUILD-then-DEFER"), with the operator checklist recorded.
   be enforced), a memory entry (if it's cross-session context), or a line in
   the project instructions file — so it bites once.
 - Update the requirements/production checklist if the work affects readiness.
+- When the instructions, skills or reviewers changed — or a new model
+  generation is adopted — run Claude Code's `/doctor prompt-audit` and act on
+  what it finds (instructions written for older models, contradictions,
+  dead references).
 
 ## Handover (work that crosses sessions)
 
@@ -162,19 +150,19 @@ citing anything in it.
 
 ## Standing principles (apply at every step)
 
-1. **Never assume — verify first.** Before stating a fact, recommending a
-   value, or acting on a claim, confirm it against the actual source. "I
-   think" / "probably" are signals to go verify, not to proceed.
-2. **Reported numbers come from command output, not memory.** Every count in a
-   plan, ledger, commit message, or PR body was copied from a command run in
-   that session.
-3. **Evidence before completion claims.** "Done" / "fixed" / "passing" is
-   said only after the verifying command ran and its output was read.
-4. **Class-of-bug fixes cover the class.** Fixing one instance of a
-   describable defect class obligates an inventory of every instance — or a
+1. **Evidence, not memory.** Before stating a fact or reporting progress,
+   check it against the source or a tool result from this session; every
+   number in a plan, ledger, commit or PR comes from a command. Say what
+   isn't verified yet. Report outcomes as they are — failing tests with
+   their output, skipped steps as skipped.
+2. **Class-of-bug fixes cover the class.** Fixing one instance of a
+   describable defect class means an inventory of every instance, or a
    root-level fix that covers them all.
-5. **Failure paths have owners.** Every error/empty/loading state either
+3. **Failure paths have owners.** Every error/empty/loading state either
    retries via a mechanism that provably fires in that state, or renders an
    explicit state. No dead ends.
-6. **Session-context budgets are real.** Keep instruction files small; move
-   detail into scoped rules/docs that load on demand.
+4. **Session-context budgets are real.** Keep instruction files small; move
+   detail into skills and docs that load on demand.
+5. **Effort follows the stakes.** High or above for brainstorming, the
+   clarify pass and the final review; the session default for routine tasks;
+   reviewers use the `effort` in their frontmatter.
