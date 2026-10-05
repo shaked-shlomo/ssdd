@@ -275,3 +275,11 @@ fail 64 of 89 gate cases and 8 of 163 guard cases. Bypass repro on the v2.1
 hooks: `commit -anm`, `-n -am`, `-c core.hooksPath=… commit -am` → guard 2 /
 gate 2; `git config core.hooksPath` → guard 2; `git add x && git commit` and
 `commit -am` → gate 2 (both were 0 in v2.0's harness layer).*
+
+**v2.1.1 (same day).** A final check found that a one-level indirection hid
+a command from both hooks. `bash -c 'git commit -anm x'` and `eval "…"`
+passed everything, because the hooks read the skeleton, where quoted text is
+blanked. The gate also scanned only a call's first commit. Fixed by
+flattening scripts handed to a shell (`-c`, `eval`, heredoc, pipe) in
+execution order and checking every commit. *Verified: 362 pass, 0 fail.
+Against the v2.1.0 hooks the new cases fail 15 gate and 18 guard tests.*

@@ -149,10 +149,15 @@ reverted after several rounds found it incomplete):
 Since v2.1 the harness gate refuses commits whose content it can't see
 (`git add … && git commit`, `commit -a/-i/-o`, `commit <pathspec>`) and
 judges the repo a commit targets (`cd`, `git -C`, worktrees), failing closed
-on `$VAR` / `$(…)`. It still can't follow git run indirectly — `pushd`,
-`env -C`, aliases, scripts, `xargs` — nor a `GIT_CONFIG_GLOBAL` /
-`GIT_CONFIG_SYSTEM` file that sets `core.hooksPath`; the git pre-commit
-layer remains the backstop for those, as long as it isn't disabled.
+on `$VAR` / `$(…)`. Since v2.1.1 both hooks also judge scripts handed to a
+shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) as if typed
+directly, and see past `sudo` / `env` / an absolute `git` path. They still
+can't see git run from a script *file*, a variable, an alias, `xargs` /
+`find -exec`, or another language's subprocess call, nor a
+`GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets `core.hooksPath`.
+For those the git pre-commit layer is the backstop, and only while `-n`
+isn't used. The hooks keep a cooperating agent on the process; they aren't
+a sandbox.
 
 ## This repo dogfoods itself
 

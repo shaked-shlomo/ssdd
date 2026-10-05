@@ -10,6 +10,24 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.1.1] — 2026-10-05
+
+### Fixed
+- A command wrapped in a shell passed both hooks:
+  `bash -c 'git commit -anm x'`, `sh -lc …`, `eval "…"`, `bash <<EOF`
+  scripts, and `echo '…' | sh`. With `-n` that skipped the pre-commit
+  layer too. git-cmd.mjs now flattens wrapped scripts in execution order
+  (`flatten`, `expandWrappers`, depth 3), and both hooks judge them as if
+  typed directly.
+- The gate scanned only the first commit in a call:
+  `git commit -m x; git commit -am y` passed. Every commit is now
+  checked. One call that commits to two different repos is refused.
+- Runner prefixes (`sudo`, `env -i`, `command`, `nohup`, `time`, `exec`,
+  `nice`) and an absolute git path no longer hide a git command from the
+  gate's checks or from the `core.hooksPath` rule.
+- 14 more git-guard cases and 19 more gate cases. Against the v2.1.0 hooks
+  they fail 18 and 15 tests respectively.
+
 ## [2.1.0] — 2026-10-05
 
 **Agents must now stage and commit in separate tool calls.** The harness
