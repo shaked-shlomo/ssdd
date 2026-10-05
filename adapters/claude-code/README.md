@@ -10,8 +10,11 @@ replacement.
 
 1. **Hooks** — install seeds `.claude/settings.json` from
    [settings-hooks.json](settings-hooks.json) when none exists; otherwise
-   merge its top-level `hooks` key by hand. Hook changes take effect after a
-   session reload.
+   merge its top-level `hooks` key by hand. It registers git-guard and the
+   review gate on Bash, git-guard on Edit/Write (the gate's state files are
+   off limits), convention-lint after edits, and the review gate on
+   `SubagentStart` / `SubagentStop` (completion stamps). Hook changes take
+   effect after a session reload.
 2. **Reviewer agents** — `.claude/agents/<name>.md` are **symlinks** to
    `.ssdd/reviewers/<name>.md` (one source of truth; the frontmatter already
    matches Claude Code's agent format). A project domain reviewer goes in
@@ -19,7 +22,7 @@ replacement.
    (the next `install`/`update` creates it).
 3. **Skills** — the skills tree is `.agents/skills/` (harness-neutral; Cursor
    reads it natively). `.claude/skills/<name>` are symlinks to it. Invoke
-   `/new-plan`, `/cleanup`, `/docs-drift-audit`.
+   `/new-plan`, `/new-reviewer`, `/cleanup`, `/docs-drift-audit`.
 4. **Instructions** — `AGENTS.md` is canonical; `CLAUDE.md` is
    [`@AGENTS.md` plus Claude-only harness notes](CLAUDE.md). Put the
    Documentation Map and review-gate paragraph in `AGENTS.md` once. Keep the
@@ -37,6 +40,13 @@ replacement.
 - A *copied* agent or skill where a symlink belongs (v1 layout) is replaced
   automatically when it's identical to its source; an edited copy gets a
   warning — move its edits into the source file, then link it.
+- **Completion stamps.** A routed reviewer's `SubagentStart` snapshots the
+  staged keys of its files; its `SubagentStop` stamps the unchanged ones if
+  its final message ends with a verdict and every turn ran on a model in
+  `reviewGate.reviewerModels` (read from the subagent transcript, because a
+  spawn can override the frontmatter `model`). `reviewGate.stamping: "hooks"`
+  makes them the only way the agent can stamp. They cover the repo at the
+  session's cwd (a worktree session has its own).
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)

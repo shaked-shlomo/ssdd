@@ -83,10 +83,16 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
      diff, a range, or a file list); a reviewer given nothing answers
      `NO DIFF — scope not provided`, and that is never stamped. Dispatched
      reviewers are read-only: no edits, commits, stamps, or `git stash`.
-  3. Fix or triage the findings, re-stage, then
+  3. Fix or triage the findings, re-stage, then stamp. In Claude Code with
+     the subagent hooks wired, a reviewer that ends with its verdict line
+     stamps the files it was dispatched on (a file edited during its review
+     stays owed; a review on a model outside `reviewGate.reviewerModels`
+     stamps nothing). Otherwise:
      `node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>`, adding
      `--files <path,…>` when a reviewer re-read only those files and
-     `--repo <path>` for another work tree (the message prints it).
+     `--repo <path>` for another work tree (the message prints it). With
+     `reviewGate.stamping: "hooks"` the agent can't run `--stamp`; completion
+     stamps are the only way.
   4. Commit in a separate call from staging: the harness gate reads the
      index before the command runs, so it refuses `git add … && git commit`,
      `commit -a/-i/-o` and `commit <path>`.
@@ -165,4 +171,5 @@ citing anything in it.
    detail into skills and docs that load on demand.
 5. **Effort follows the stakes.** High or above for brainstorming, the
    clarify pass and the final review; the session default for routine tasks;
-   reviewers use the `effort` in their frontmatter.
+   reviewers use the `model` (Sonnet or Opus, never Haiku) and `effort` in
+   their frontmatter.

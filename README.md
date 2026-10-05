@@ -16,7 +16,7 @@ in a terminal, …).
 |---|---|---|
 | **Process** | `process/` | None — pure markdown. The lifecycle (brainstorm → spec → plan → task ledger → implement → verify → sync back), the principles, and the plan / spec / ledger / handover templates. |
 | **Reviewers** | `reviewers/` | None — each file is a self-contained review checklist an agent *or a human* can execute against a git diff. Frontmatter is included so agent harnesses can load them directly. |
-| **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
+| **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `new-reviewer`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
 | **Mechanisms** | `mechanisms/` | Node ≥ 18, no npm deps. Config-driven enforcement scripts with **two entry modes each**: a portable git-hook/CLI mode that works everywhere, and a harness stdin mode (Claude Code and Cursor payloads) for earlier interception. Tests: `node --test mechanisms/hooks/*.test.mjs`. Plus the docs-drift-audit runbook. |
 | **Adapters** | `adapters/` | Per-harness wiring: `claude-code/` (hooks JSON, `CLAUDE.md` loader), `cursor/` (hooks.json, always-on rule), and `generic/AGENTS.md` — the shared instructions template every adapter uses. |
 | **Installer / updater** | `bin/ssdd.mjs` (`inject.sh` = install) | Installs a tagged release into a repo, writes `.ssdd/ssdd.lock.json`, and later three-way merges updates. Harness discovery paths become symlinks. |
@@ -64,9 +64,11 @@ hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
    `docs-sync-reviewer` enforces it per-diff; the
    [drift-audit runbook](mechanisms/drift-audit.md) audits it periodically.
    One instructions file for every harness; `CLAUDE.md` only imports it.
-3. Domain reviewers — copy [reviewers/domain-reviewer-template.md](reviewers/domain-reviewer-template.md)
-   into `.ssdd/reviewers/` for each project-specific lens (e.g. an
-   RLS/backend reviewer, a bias/semantics reviewer) and add routes for them.
+3. Domain reviewers — run `/new-reviewer`: it proposes project-specific
+   lenses from the code no reviewer covers and the bug classes that recur in
+   your ledgers, then scaffolds an approved one from
+   [reviewers/domain-reviewer-template.md](reviewers/domain-reviewer-template.md)
+   (route, model, symlink).
 4. Git hook wiring (portable path): `git config core.hooksPath .githooks`.
 
 ## What deliberately stays per-project
@@ -159,6 +161,13 @@ reverted after several rounds found it incomplete):
    closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
    harness layer starts from the tool call's cwd.
 6. A re-stage that changes nothing keeps its stamps — by design since v2.
+
+Since v2.3, Claude Code can make attestation mechanical: a reviewer
+subagent's completion stamps its files, and `reviewGate.stamping: "hooks"`
+stops the agent from running `--stamp` or writing the stamp files. In
+`manual` mode (the default, and the only mode in Cursor) `--stamp` is still
+an attestation the gate can't verify — including which model ran the
+review.
 
 Since v2.1 the harness gate refuses commits whose content it can't see
 (`git add … && git commit`, `commit -a/-i/-o`, `commit <pathspec>`) and
