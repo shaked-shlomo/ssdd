@@ -171,5 +171,5 @@ citing anything in it.
    detail into skills and docs that load on demand.
 5. **Effort follows the stakes.** High or above for brainstorming, the
    clarify pass and the final review; the session default for routine tasks;
-   reviewers use the `model` (Sonnet or Opus, never Haiku) and `effort` in
+   reviewers use the `model` (Sonnet or Opus, 5.5 or later) and `effort` in
    their frontmatter.

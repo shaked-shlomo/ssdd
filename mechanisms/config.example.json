@@ -11,11 +11,11 @@
   ],
 
   "reviewGate": {
-    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. exclude: regexes removed from EVERY route (e.g. [\"\\\\.test\\\\.tsx?$\"]); a route can also carry its own \"exclude\". stamping: \"manual\" (default; --stamp attests) or \"hooks\" (Claude Code: a reviewer subagent's completion stamps its files and the agent cannot run --stamp). reviewerModels: a completion stamp only lands if every turn of the review ran on a model whose id contains one of these (no Haiku).",
+    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. exclude: regexes removed from EVERY route (e.g. [\"\\\\.test\\\\.tsx?$\"]); a route can also carry its own \"exclude\". stamping: \"manual\" (default; --stamp attests) or \"hooks\" (Claude Code: a reviewer subagent's completion stamps its files and the agent cannot run --stamp). reviewerModels: a completion stamp only lands if every turn of the review ran on an allowed model. Entries: \"<family>\" (any version), \"<family>>=<major>.<minor>\" (that family at or above), or a substring of the model id. The default allows Sonnet and Opus 5.5 and later; Haiku and Fable are refused.",
     "maxRoutedFiles": 10,
     "exclude": [],
     "stamping": "manual",
-    "reviewerModels": ["opus", "sonnet"]
+    "reviewerModels": ["opus>=5.5", "sonnet>=5.5"]
   },
 
   "gitGuard": {

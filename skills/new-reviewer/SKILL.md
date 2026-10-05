@@ -29,7 +29,7 @@ One row per candidate: the lens, the bug class with its evidence (ledger rows,
 file:line), the paths it would route (`coverage.mjs '<regex>'` shows what a
 regex matches), the neighboring lanes, and a model. Use `sonnet` for a
 mechanical lens and `opus` for a judgment-heavy one; reviewers run on Sonnet
-or Opus, never Haiku or Fable.
+or Opus, 5.5 or later — never Haiku or Fable.
 
 When a class is narrow enough for a regex, say a lint rule in
 `.ssdd/config.json` → `lint` would catch it deterministically. When it's one

@@ -45,7 +45,8 @@
 //                                   stop stamps the ones still unchanged, if its
 //                                   last lines carry a verdict (CLEAN / SECURE /
 //                                   N ISSUE(S) / N RISK(S)) and it ran on an
-//                                   allowed model (reviewGate.reviewerModels)
+//                                   allowed model (reviewGate.reviewerModels,
+//                                   e.g. ["opus>=5.5", "sonnet>=5.5"])
 //
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
 //   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at",
@@ -505,6 +506,30 @@ function parseVerdict(text) {
   return null;
 }
 
+// `claude-opus-5-5`, `claude-sonnet-5-5-20260101`, `claude-opus-6` → { family,
+// version }; the older `claude-3-5-sonnet-…` order too. null if unrecognized.
+function parseModel(id) {
+  const s = String(id).toLowerCase();
+  let m = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(s);
+  if (m) return { family: m[1], version: [Number(m[2]), Number(m[3] ?? 0)] };
+  m = /claude-(\d+)(?:-(\d{1,2}))?-(opus|sonnet|haiku)/.exec(s);
+  if (m) return { family: m[3], version: [Number(m[1]), Number(m[2] ?? 0)] };
+  return null;
+}
+// An allow-list entry is `<family>` (any version), `<family>>=<major>.<minor>`
+// (that family at or above that version), or else a substring of the model id.
+function modelAllowed(id, entry) {
+  const e = String(entry).trim().toLowerCase();
+  const floor = /^(opus|sonnet|haiku|fable|mythos)\s*>=\s*(\d+)(?:\.(\d+))?$/.exec(e);
+  const fam = /^(opus|sonnet|haiku|fable|mythos)$/.exec(e);
+  if (!floor && !fam) return String(id).toLowerCase().includes(e);
+  const m = parseModel(id);
+  if (!m || m.family !== (floor ?? fam)[1]) return false;
+  if (!floor) return true;
+  const [maj, min] = [Number(floor[2]), Number(floor[3] ?? 0)];
+  return m.version[0] > maj || (m.version[0] === maj && m.version[1] >= min);
+}
+
 // Models the reviewer's turns actually ran on, from its transcript.
 function transcriptModels(path) {
   const models = new Set();
@@ -544,7 +569,7 @@ function subagentHook(p) {
   let models = [];
   if (Array.isArray(allowed) && allowed.length) {
     try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
-    const ok = models.length && models.every((m) => allowed.some((a) => m.includes(a)));
+    const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
     if (!ok) return say(`ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped`);
   }
   const staged = stagedChanges();

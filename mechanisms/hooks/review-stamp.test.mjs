@@ -33,7 +33,7 @@ function makeRepo(reviewGate = {}) {
       { reviewer: 'alpha-reviewer', paths: ['^src/'] },
       { reviewer: 'beta-reviewer', paths: ['^src/lib/'] },
     ],
-    reviewGate: { reviewerModels: ['opus', 'sonnet'], ...reviewGate },
+    reviewGate: { reviewerModels: ['opus>=5.5', 'sonnet>=5.5'], ...reviewGate },
   }));
   writeFileSync(join(repo, 'README'), 'base\n');
   git('add', 'README', '.ssdd/config.json');
@@ -109,6 +109,19 @@ describe('completion stamps', () => {
     assert.match(r.stderr, /ran on claude-haiku/);
     assert.deepEqual(stamp().reviewers, {});
   });
+
+  for (const [model, ok] of [
+    ['claude-opus-5-5', true], ['claude-sonnet-5-5', true], ['claude-sonnet-5-5-20261001', true],
+    ['claude-opus-6', true], ['claude-sonnet-6-1', true],
+    ['claude-sonnet-5', false], ['claude-opus-4-8', false], ['claude-sonnet-4-6', false],
+    ['claude-3-5-sonnet-20241022', false], [HAIKU, false], ['claude-fable-5-1', false], ['claude-mythos-5', false],
+  ]) {
+    it(`${model} ${ok ? 'may' : 'may not'} stamp under ["opus>=5.5","sonnet>=5.5"]`, () => {
+      start('v1', 'alpha-reviewer');
+      stop('v1', 'alpha-reviewer', 'CLEAN', [model]);
+      assert.equal(Boolean(stamp().reviewers['alpha-reviewer']), ok);
+    });
+  }
 
   it('a review that mixed models (one turn on a disallowed one) stamps nothing', () => {
     start('a5', 'alpha-reviewer');
