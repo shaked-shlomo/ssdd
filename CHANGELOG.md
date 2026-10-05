@@ -10,6 +10,26 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.3.1] — 2026-10-05
+
+### Changed
+- **Reviewer files no longer pin a model.** `.ssdd/reviewers/*.md` are
+  harness-neutral: the same files serve Cursor, where a session may run
+  Grok, Composer, GPT or Claude. A Claude model id there means nothing, or
+  the wrong thing. The harness and session choose the model, and
+  `/new-reviewer` no longer adds one. `effort: medium` stays on the
+  mechanical lenses; it's a level, not a vendor id.
+- **`reviewGate.reviewerModels` is opt-in** and unset in the example
+  config. Only Claude Code's completion-stamp hook can check it, so it never
+  affects Cursor. A Claude-based project that wants the floor sets
+  `["opus>=5.5", "sonnet>=5.5"]`. Reviewers then use the session's model, so
+  run the session on one of those.
+
+### Upgrade notes (from 2.3.0)
+- `update` removes the `model:` lines from the framework reviewers. Add
+  `reviewGate.reviewerModels` to `.ssdd/config.json` yourself if you want
+  the floor.
+
 ## [2.3.0] — 2026-10-05
 
 ### Added

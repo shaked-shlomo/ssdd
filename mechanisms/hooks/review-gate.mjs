@@ -572,12 +572,14 @@ function subagentHook(p) {
   const say = (m) => process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
   const v = parseVerdict(p.last_assistant_message);
   if (!v) return refuse('its last review ended without a verdict line (or with NO DIFF) — nothing stamped');
-  const allowed = cfg.reviewGate?.reviewerModels;
+  // Which model(s) ran the review is always recorded (best effort); it is
+  // enforced only when the project sets a floor.
   let models = [];
+  try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
+  const allowed = cfg.reviewGate?.reviewerModels;
   if (Array.isArray(allowed) && allowed.length) {
-    try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
     const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
-    if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (set the reviewer's frontmatter model, or don't override it when dispatching)`);
+    if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (run the session on an allowed model, and don't override the model when dispatching)`);
   }
   const staged = stagedChanges();
   const keep = Object.keys(d.files).filter((f) => staged.get(f) === d.files[f]);

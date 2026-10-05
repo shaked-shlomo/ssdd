@@ -475,3 +475,10 @@ and full model ids in reviewer frontmatter.
      `claude-sonnet-5-5`). The commit passed, with the triage note.
 - `/new-reviewer` frontmatter parses (description 269 chars);
   `coverage.mjs` ran read-only on the first injected project.
+
+**v2.3.1 (owner ruling, same day).** Model pinning doesn't fit a multi-model
+harness: the reviewer files also serve Cursor (Grok, Composer, GPT, Claude).
+Reviewer files name no model, and `reviewGate.reviewerModels` becomes an
+opt-in, Claude-Code-only floor, unset by default. The Claude ecosystem
+preference (Sonnet or Opus 5.5+) lives in a project's config, not in the
+framework.

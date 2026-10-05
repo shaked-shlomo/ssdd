@@ -46,10 +46,16 @@ replacement.
   `reviewGate.reviewerModels` (read from the subagent transcript, because a
   spawn can override the frontmatter `model`). `reviewGate.stamping: "hooks"`
   makes them the only way the agent can stamp. They cover the repo at the
-  session's cwd (a worktree session has its own). Reviewer frontmatter pins
-  full model ids (`claude-sonnet-5-5`), not aliases: an alias resolves per
-  CLI version, and an older CLI's `sonnet` falls below a 5.5 floor. A
-  refused stamp shows up in the gate's block message (`! <reviewer>: …`).
+  session's cwd (a worktree session has its own). A refused stamp shows up
+  in the gate's block message (`! <reviewer>: …`).
+- **Reviewer models.** Reviewer files name no model; reviewers run on the
+  session's model unless Claude dispatches one with a different model. To
+  enforce a floor, set `reviewGate.reviewerModels` in the project's config,
+  e.g. `["opus>=5.5", "sonnet>=5.5"]`. Only this hook can check it, so it
+  never affects Cursor. Pick the session model by full id, or on a current
+  CLI: an older CLI resolved the alias `sonnet` to `claude-sonnet-5`, below a
+  5.5 floor. `CLAUDE_CODE_SUBAGENT_MODEL` in `.claude/settings.json` forces
+  one model for every subagent, not only reviewers.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)

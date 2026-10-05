@@ -2,8 +2,8 @@
 name: <domain>-reviewer
 description: <One sentence, third person, under 300 chars — the lens, when to use it, "Read-only." Routes live in .ssdd/config.json — don't list them here.>
 tools: Read, Grep, Glob, Bash
-model: claude-sonnet-5-5   # full id, not an alias (aliases resolve per CLI version); claude-opus-5-5 for a judgment-heavy lens. Sonnet/Opus 5.5+ only
 # effort: medium   ← set for a mechanical lens; omit to inherit the session's level
+# (no model: field — the harness and session choose the model)
 ---
 
 <!--

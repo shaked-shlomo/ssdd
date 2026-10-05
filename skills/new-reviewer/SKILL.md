@@ -1,6 +1,6 @@
 ---
 name: new-reviewer
-description: Proposes project-specific SSDD review lenses from the stack, uncovered code and bug classes that recur in the ledgers, then scaffolds an approved one with its route, model and symlink. Use for "add a reviewer", "what reviewers do we need", or after a bug class repeats.
+description: Proposes project-specific SSDD review lenses from the stack, uncovered code and bug classes that recur in the ledgers, then scaffolds an approved one with its route and symlink. Use for "add a reviewer", "what reviewers do we need", or after a bug class repeats.
 ---
 
 # New reviewer
@@ -27,9 +27,8 @@ creates nothing until the user picks one.
 
 One row per candidate: the lens, the bug class with its evidence (ledger rows,
 file:line), the paths it would route (`coverage.mjs '<regex>'` shows what a
-regex matches), the neighboring lanes, and a model. Use `sonnet` for a
-mechanical lens and `opus` for a judgment-heavy one; reviewers run on Sonnet
-or Opus, 5.5 or later — never Haiku or Fable.
+regex matches), the neighboring lanes, and whether it's mechanical (worth
+`effort: medium`) or judgment-heavy.
 
 When a class is narrow enough for a regex, say a lint rule in
 `.ssdd/config.json` → `lint` would catch it deterministically. When it's one
@@ -43,8 +42,9 @@ lens. Ask which to create.
    - `name`
    - a third-person description under 300 chars, with no `": "` inside it
      (plain YAML) and no route list
-   - `model: sonnet|opus` (it must match `reviewGate.reviewerModels` if set)
-   - `effort: medium` if the lens is mechanical
+   - `effort: medium` if the lens is mechanical; no `model:` (the harness and
+     session choose it; a project that wants a floor sets
+     `reviewGate.reviewerModels`)
    - the lens, its boundary with neighbors, and checks that each trace to
      a real bug in a one-line example
 2. Add the route to `.ssdd/config.json` with a `$comment` saying why: the

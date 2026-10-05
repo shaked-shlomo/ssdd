@@ -131,6 +131,15 @@ describe('completion stamps', () => {
     });
   }
 
+  it('with reviewerModels unset, the harness decides: any model stamps', () => {
+    writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
+      routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
+    }));
+    start('u1', 'alpha-reviewer');
+    stop('u1', 'alpha-reviewer', 'CLEAN', ['grok-4-7']);
+    assert.equal(stamp().reviewers['alpha-reviewer']['src/b.ts'].model, 'grok-4-7');
+  });
+
   it('a review that mixed models (one turn on a disallowed one) stamps nothing', () => {
     start('a5', 'alpha-reviewer');
     stop('a5', 'alpha-reviewer', 'CLEAN', [OPUS, HAIKU]);
