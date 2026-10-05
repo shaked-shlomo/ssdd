@@ -482,3 +482,11 @@ Reviewer files name no model, and `reviewGate.reviewerModels` becomes an
 opt-in, Claude-Code-only floor, unset by default. The Claude ecosystem
 preference (Sonnet or Opus 5.5+) lives in a project's config, not in the
 framework.
+*Verified 2026-10-05:*
+- 395 tests pass.
+- An installed v2.3.0 repo updates cleanly (10 updated, no conflicts, no
+  `model:` left in the framework reviewers).
+- Live run with `claude -p --model claude-sonnet-5-5`, an unpinned
+  docs-sync reviewer, and `reviewerModels: ["opus>=5.5","sonnet>=5.5"]`:
+  the reviewer ran on the session's `claude-sonnet-5-5`; its completion
+  stamped (`by: hook`, ISSUES 1); the commit passed with the triage note.
