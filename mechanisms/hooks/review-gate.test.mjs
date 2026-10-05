@@ -399,7 +399,9 @@ describe('the block message names the delta', () => {
       rmSync(host, { recursive: true, force: true });
     }
   });
-  it('CLAUDE_PROJECT_DIR still wins over payload cwd', () => {
+  it('the payload cwd wins over CLAUDE_PROJECT_DIR (the Bash call runs there)', () => {
+    // v2.0 judged CLAUDE_PROJECT_DIR's index, so a commit run from another
+    // work tree was checked against the wrong (often empty) index.
     const dirty = makeRepo();
     try {
       write(dirty, 'src/a.ts', 'a\n');
@@ -409,7 +411,8 @@ describe('the block message names the delta', () => {
           cwd: dirty,
         }),
       });
-      assert.strictEqual(h.status, 0);
+      assert.strictEqual(h.status, 2);
+      assert.match(h.stderr, /--repo /);
     } finally {
       rmSync(dirty, { recursive: true, force: true });
     }

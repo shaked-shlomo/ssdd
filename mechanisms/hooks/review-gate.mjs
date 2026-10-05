@@ -18,15 +18,24 @@
 // is forbidden by the process (process/SDD.md §4).
 //
 // Modes (same script, no deps, Node >= 18):
-//   --stamp <reviewer,…> [--files <path,…>]
+//   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
 //                                   attest reviewers ran on the CURRENT staged
 //                                   change of every routed file they cover, or
-//                                   of the named files only (a delta round)
+//                                   of the named files only (a delta round);
+//                                   --repo for a commit in another work tree
 //   --pre-commit                    portable git pre-commit mode (any harness):
-//                                   exit 1 + message if reviews are owed
+//                                   judges the index git is committing (git's
+//                                   cwd, never the env); exit 1 if reviews owed
 //   (default: JSON on stdin)        harness hook mode (Claude PreToolUse or
 //                                   Cursor beforeShellExecution): intercepts
 //                                   `git commit`, exit 2 to block
+//
+// Harness mode runs BEFORE the command, so it reads the index as it is now.
+// It therefore refuses the shapes whose committed content it can't see —
+// staging chained before the commit in one call, `commit -a/-i/-o`, and
+// `commit <pathspec>` — and judges the repo the commit really targets:
+// starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
+// `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED.
 //
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
 //   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at" } } } }
@@ -35,7 +44,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
 
 let repo = resolveHookRepo(null);
 const git = (...args) =>
@@ -49,8 +61,18 @@ function loadConfig() {
     return null; // no repo or no config → gate disarmed
   }
 }
-const routes = (cfg) =>
-  (cfg?.routing ?? []).map(({ reviewer, paths }) => [reviewer, (paths ?? []).map((p) => new RegExp(p))]);
+// [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
+// of the route's `paths` and neither the route's `exclude` nor the global
+// `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
+const rx = (list) => (list ?? []).map((p) => new RegExp(p));
+const routes = (cfg) => {
+  const global = rx(cfg?.reviewGate?.exclude);
+  return (cfg?.routing ?? []).map(({ reviewer, paths, exclude }) => {
+    const inc = rx(paths);
+    const exc = [...global, ...rx(exclude)];
+    return [reviewer, (f) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f))];
+  });
+};
 
 const stampPath = () => {
   const dir = git('rev-parse', '--git-dir').trim();
@@ -80,7 +102,7 @@ const readStamp = () => {
 // [[reviewer, routedStagedPaths]] for every reviewer with at least one staged file.
 const reviewerFiles = (cfg, staged) =>
   routes(cfg)
-    .map(([name, res]) => [name, [...staged.keys()].filter((f) => res.some((re) => re.test(f)))])
+    .map(([name, matches]) => [name, [...staged.keys()].filter(matches)])
     .filter(([, files]) => files.length);
 
 // The staged diff, judged: per reviewer with an unmet stamp, the routed staged
@@ -130,7 +152,7 @@ const short = (key) => {
   const [, sm, sb, dm, db] = m;
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
-function blockMessage({ owed, unrouted, warning }) {
+function blockMessage({ owed, unrouted, warning }, repoHint = '') {
   const lines = [];
   for (const { name, files, missing } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
@@ -155,7 +177,7 @@ function blockMessage({ owed, unrouted, warning }) {
     `\nRun each reviewer checklist (.ssdd/reviewers/<name>.md) against the files it owes —\n` +
     `dispatch them in parallel if your harness supports subagents — fix/triage findings,\n` +
     `re-stage, then attest:\n` +
-    `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}\n` +
+    `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}${repoHint}\n` +
     `(add --files <path,…> when a reviewer re-read only those files) and retry the\n` +
     `commit. Stamp only AFTER the reviewers actually ran on those files — stamping\n` +
     `blind defeats the gate.\n`
@@ -168,8 +190,10 @@ if (process.argv[2] === '--stamp') {
   const names = process.argv[3]?.startsWith('--') ? [] : csv(process.argv[3]);
   const filesAt = process.argv.indexOf('--files');
   const only = filesAt > -1 ? csv(process.argv[filesAt + 1]) : null;
-  if (!names.length || (only && !only.length)) {
-    console.error('usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>]');
+  const repoAt = process.argv.indexOf('--repo');
+  if (repoAt > -1) repo = resolve(process.argv[repoAt + 1] ?? '.');
+  if (!names.length || (only && !only.length) || (repoAt > -1 && !process.argv[repoAt + 1])) {
+    console.error('usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]');
     process.exit(1);
   }
   const cfg = loadConfig();
@@ -222,6 +246,10 @@ if (process.argv[2] === '--stamp') {
 
 // ── --pre-commit mode (portable: any harness, any human) ─────────────────────
 if (process.argv[2] === '--pre-commit') {
+  // git runs hooks at the top of the work tree being committed (with
+  // GIT_INDEX_FILE set for -a / pathspec commits), so cwd is always right
+  // and an env var can't point the gate at a decoy.
+  repo = process.cwd();
   if (process.env.SSDD_REVIEW_SKIP === '1') {
     console.error('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead.');
     process.exit(0);
@@ -239,44 +267,138 @@ if (process.argv[2] === '--pre-commit') {
 
 // ── default: harness stdin hook (Claude PreToolUse / Cursor beforeShell) ─────
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
-repo = resolveHookRepo(payload);
 const cmd = hookCommand(payload);
 
 function finish(code, permission, extra = {}) {
   process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
   process.exit(code);
 }
-
-// Strip quoted strings / heredoc bodies BEFORE matching, so a commit MESSAGE
-// that merely mentions "git commit" (or the bypass token) never triggers or
-// authorizes anything. Only real command structure is inspected.
-function skeleton(s) {
-  return s
-    .replace(/<<-?\s*['"]?(\w+)['"]?[\s\S]*?\n[ \t]*\1\b/g, ' <<heredoc> ')
-    .replace(/'(?:[^'\\]|\\.)*'/g, " '' ")
-    .replace(/"(?:[^"\\]|\\.)*"/g, ' "" ');
+function deny(msg, user = 'SSDD review gate: blocked — see the message.') {
+  process.stderr.write(msg);
+  finish(2, 'deny', { agentMessage: msg, userMessage: user });
 }
+
+// Quoted strings and heredoc bodies are blanked first, so a commit MESSAGE
+// that mentions "git commit" (or the bypass token) never triggers or
+// authorizes anything.
 const probe = skeleton(cmd);
-if (!/\bgit\s+([^\s]+\s+)*commit\b/.test(probe)) finish(0, 'allow');
+if (!isCommit(probe)) finish(0, 'allow');
 if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
   process.stderr.write('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead in chat.\n');
   finish(0, 'allow');
 }
 
+// ── commits whose content this hook can't see are refused outright ──────────
+const commands = splitCommands(cmd);
+const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
+let staging = null;
+let commitArgs = null;
+for (const words of commands) {
+  const inv = gitInvocation(words);
+  if (!inv) continue;
+  if (STAGING.has(inv.sub)) staging ??= inv.sub;
+  if (inv.sub === 'commit') {
+    if (staging) {
+      deny(
+        `[ssdd-review-gate] \`git ${staging}\` chained before \`git commit\` in ONE call — the gate reads\n` +
+        'the index BEFORE the command runs, so it cannot see what that stages. Stage first,\n' +
+        'then stamp and commit in SEPARATE calls.\n',
+      );
+    }
+    commitArgs ??= inv.args;
+  }
+}
+{
+  // Words after `commit` (quotes already removed). Value-taking options skip
+  // their value; redirections are not pathspecs.
+  const valueOpts = new Set(['-m', '--message', '-F', '--file', '-C', '--reuse-message', '-c',
+    '--reedit-message', '-t', '--template', '--author', '--date', '--cleanup',
+    '--pathspec-from-file', '--fixup', '--squash', '-S', '--gpg-sign', '--trailer']);
+  const toks = commitArgs ?? [];
+  let reason = '';
+  for (let i = 0; i < toks.length && !reason; i++) {
+    const t = toks[i];
+    if (/^\d*[<>]+&?$/.test(t)) { i++; continue; } // bare redirection: skip its target
+    if (/^\d*[<>]/.test(t)) continue;               // attached redirection / <<heredoc>
+    if (t === '--') { if (toks.length > i + 1) reason = 'a pathspec after --'; break; }
+    if (valueOpts.has(t)) { i++; continue; }
+    if (/^--(all|include|only)(=|$)/.test(t)) { reason = `\`${t}\``; continue; }
+    if (/^-[a-zA-Z]+$/.test(t)) {
+      // A short cluster: -a/-i/-o commit outside the index. A value-taking flag
+      // ends the cluster — the rest (or the next word) is its value: `-sm wip`.
+      for (let j = 1; j < t.length; j++) {
+        const ch = t[j];
+        if ('aio'.includes(ch)) { reason = `\`${t}\``; break; }
+        if ('mFCct'.includes(ch)) { if (j === t.length - 1) i++; break; }
+        if ('Su'.includes(ch)) break; // optional value, attached only
+      }
+      continue;
+    }
+    if (t.startsWith('-')) continue;
+    reason = `pathspec \`${t}\``;
+  }
+  if (reason) {
+    deny(
+      `[ssdd-review-gate] \`git commit\` with ${reason} commits content OUTSIDE the staged snapshot\n` +
+      'this gate judges — stage with `git add <path>` (separate call), then a bare `git commit`.\n',
+    );
+  }
+}
+
+// ── which repo does the commit target? ───────────────────────────────────────
+const start = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR ||
+  payload?.workspace_roots?.[0] || process.cwd();
+const toplevel = (dir) => {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return null; }
+};
+{
+  const home = homedir();
+  const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
+  const unresolvable = (p) => /[$`]/.test(p) || p === '-';
+  let cwd = start;
+  let target = null;
+  let bad = null;
+  for (const words of commands) {
+    if (words[0] === 'cd') {
+      const to = words[1] ?? '~';
+      if (unresolvable(to)) bad ??= `cd ${to}`;
+      cwd = resolve(cwd, expand(to));
+      continue;
+    }
+    const inv = gitInvocation(words);
+    if (!inv || inv.sub !== 'commit') continue;
+    const badC = inv.dashC.find(unresolvable);
+    if (badC !== undefined) bad ??= `git -C ${badC}`;
+    target = inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd);
+    break;
+  }
+  const root = bad ? null : toplevel(target ?? cwd);
+  if (!root) {
+    deny(
+      `[ssdd-review-gate] cannot resolve the repo this commit targets (${bad ?? target ?? cwd}) — use a literal\n` +
+      'path in `cd …` / `git -C …` (no `$VAR`, no `$(…)`, no `cd -`), then retry.\n',
+    );
+  }
+  repo = root;
+}
+// `--stamp` defaults to the env's project dir or its own cwd; name the repo
+// whenever the commit targets anything else (a worktree, a `cd` elsewhere).
+const defaults = [start, process.env.CLAUDE_PROJECT_DIR, process.env.SSDD_PROJECT_DIR].filter(Boolean).map(toplevel);
+const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
+
 const cfg = loadConfig();
-if (!cfg) finish(0, 'allow');
+if (!cfg) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
 let verdict;
 try {
   verdict = judge(cfg);
-} catch {
-  finish(0, 'allow'); // git unavailable → not this hook's problem
+} catch (e) {
+  deny(`[ssdd-review-gate] could not evaluate the staged diff (${String(e?.message ?? e).split('\n')[0]}) — fix .ssdd/config.json or the repo, then retry.\n`);
 }
 if (!verdict.owed.length) {
   if (verdict.warning) process.stderr.write(verdict.warning);
   finish(0, 'allow');
 }
-process.stderr.write(blockMessage(verdict));
-finish(2, 'deny', {
-  agentMessage: blockMessage(verdict),
-  userMessage: 'SSDD review gate: stamps owed before commit.',
-});
+deny(blockMessage(verdict, repoHint), 'SSDD review gate: stamps owed before commit.');
