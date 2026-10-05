@@ -41,6 +41,7 @@ first. Reference implementations: `<file>`, `<file>`.
 3. Report `❌ <rule> — file:line — <concrete fix>`, `⚠️` for judgment calls,
    `✅ <dimension>` for clean dimensions.
    End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit.
+   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
 
 ## The checks
 **1. <Invariant stated as a rule>.** <How to verify it. One-line example of

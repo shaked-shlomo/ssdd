@@ -19,6 +19,7 @@ general lenses and you flag when a domain lens SHOULD exist but doesn't.
 3. Report `❌ <severity> <finding> — file:line — <fix>`, `⚠️` for hardening
    suggestions, `✅ <lens>` for clean lenses.
    End with **`SECURE`** or **`N RISK(S)`**. Do NOT edit.
+   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
 
 ## Lenses
 

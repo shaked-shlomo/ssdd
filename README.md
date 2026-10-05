@@ -141,16 +141,18 @@ reverted after several rounds found it incomplete):
    judged by the table it just edited.
 4. A stale `.git/hooks/pre-commit` wins over `core.hooksPath`, and a fresh
    clone has the hook dormant until `git config core.hooksPath .githooks`.
-5. `SSDD_PROJECT_DIR` pointing elsewhere makes the hook judge that path.
+5. `SSDD_PROJECT_DIR` pointing elsewhere made the hook judge that path —
+   closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
+   harness layer starts from the tool call's cwd.
 6. A re-stage that changes nothing keeps its stamps — by design since v2.
 
-The harness-layer hooks are also narrower than the original source project's
-later hardening: the PreToolUse gate judges the index *before* the command
-runs, so `git add … && git commit`, `commit -a` and `commit <pathspec>` are
-only caught by the git pre-commit layer; repo resolution doesn't follow
-`cd <dir> &&` or `git -C <dir>`; and `GIT_CONFIG_*` environment overrides
-aren't checked. Porting that hardening (a shared command parser,
-fail-closed repo resolution) is planned for v2.1.
+Since v2.1 the harness gate refuses commits whose content it can't see
+(`git add … && git commit`, `commit -a/-i/-o`, `commit <pathspec>`) and
+judges the repo a commit targets (`cd`, `git -C`, worktrees), failing closed
+on `$VAR` / `$(…)`. It still can't follow git run indirectly — `pushd`,
+`env -C`, aliases, scripts, `xargs` — nor a `GIT_CONFIG_GLOBAL` /
+`GIT_CONFIG_SYSTEM` file that sets `core.hooksPath`; the git pre-commit
+layer remains the backstop for those, as long as it isn't disabled.
 
 ## This repo dogfoods itself
 

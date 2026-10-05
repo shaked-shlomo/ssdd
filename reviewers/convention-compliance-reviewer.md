@@ -43,6 +43,7 @@ against them. Dimensions that recur across projects:
 3. Report `❌ <rule> — file:line — <concrete fix>`, `⚠️` for judgment calls,
    `✅ <dimension>` for clean dimensions.
    End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit.
+   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
 
 ## Boundary
 

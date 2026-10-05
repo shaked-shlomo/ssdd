@@ -39,8 +39,10 @@ stamps; an unrouted file (ledger, doc) voids nothing.
    staged diff, a range, or a file list).
 2. Fix or explicitly triage every finding; re-stage.
 3. Attest: `node .ssdd/hooks/review-gate.mjs --stamp <name,…>` (add
-   `--files <path,…>` when a reviewer re-read only those files).
-4. Retry the commit.
+   `--files <path,…>` when a reviewer re-read only those files, and
+   `--repo <path>` for a commit in another work tree — the message prints it).
+4. Retry the commit. Stage and commit in separate calls: the harness gate
+   refuses `git add … && git commit`, `commit -a` and `commit <path>`.
 
 **Stamping without actually running the named reviewers is forbidden.**
 `SSDD_REVIEW_SKIP=1` is for emergencies and requires the user's explicit

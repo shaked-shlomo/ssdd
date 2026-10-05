@@ -10,6 +10,57 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.1.0] — 2026-10-05
+
+**Agents must now stage and commit in separate tool calls.** The harness
+review gate runs before the command, so it reads the index as it is now. It
+therefore refuses commits whose content it can't see: `git add … && git
+commit` in one call, `commit -a/-i/-o`, and `commit <pathspec>`. Skills or
+habits that chain `git add x && git commit` will be blocked with a message
+saying what to do instead.
+
+### Added
+- `mechanisms/hooks/git-cmd.mjs`: one shared command grammar (skeleton,
+  separator-bounded flag rules, `splitCommands`, `gitInvocation`) for
+  git-guard and review-gate. Ported from the original source project's
+  hardened hooks.
+- review-gate judges the repo a commit targets. It starts from the tool
+  call's `cwd`, `cd` moves it and `git -C` composes on it. It fails closed
+  on `$VAR`, `$(…)`, `cd -`, or a directory that isn't a repo.
+  `--stamp … --repo <path>`, and the block message prints `--repo` when
+  needed.
+- Route `exclude` (per route) and `reviewGate.exclude` (all routes).
+- Reviewers answer `NO DIFF — scope not provided` instead of `CLEAN` when
+  given nothing to review.
+- Test suites: `review-gate.shapes.test.mjs` (89 cases, including a real
+  worktree) plus 21 more git-guard cases. Against the v2.0.0 hooks they fail
+  64 and 8 cases respectively.
+
+### Changed
+- review-gate harness mode prefers the payload's `cwd` over
+  `CLAUDE_PROJECT_DIR`. In v2.0 a `git -C <worktree> commit` was judged
+  against the main checkout's index.
+- `--pre-commit` uses git's cwd and ignores `SSDD_PROJECT_DIR` /
+  `CLAUDE_PROJECT_DIR`.
+- What counts as a commit is now `git [global options] commit`, so
+  `git log | grep commit` no longer is one.
+- In harness mode, a staged diff the gate can't evaluate (e.g. a bad regex
+  in config) now blocks with the error instead of allowing.
+
+### Fixed
+- git-guard: every rule's flag scan stops at its own command, so
+  `git commit -m x && git log -n 3` is no longer `commit -n`.
+  `core.hooksPath` is matched case-insensitively, quoted or bare, after
+  `VAR=value` prefixes, and via `GIT_CONFIG_PARAMETERS` /
+  `GIT_CONFIG_KEY_<n>`.
+- The example force-push rule stops at its own command
+  (`git push origin main && echo +done` was blocked).
+
+### Upgrade notes (from 2.0)
+- `update` merges everything. Port the force-push `pattern` from the
+  printed config-template diff (`[^\n]*` → `[^;&|\n]*`). Optionally add
+  `reviewGate.exclude`.
+
 ## [2.0.0] — 2026-10-05
 
 Back-port from the first injected project (~38 plans of real use), plus

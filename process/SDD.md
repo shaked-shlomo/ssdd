@@ -101,7 +101,12 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
 - **Tell every reviewer what it is reviewing.** Reviewers default to
   `git diff --staged`; on a PR or branch nothing is staged, so a reviewer not
   handed its input (a range like `main...HEAD`, or an explicit file list)
-  reviews an empty diff and reports "clean". Dispatched reviewers are
+  would review an empty diff — it answers `NO DIFF — scope not provided`, and
+  that is never stamped.
+- **Stage and commit in separate tool calls.** The harness gate reads the
+  index before the command runs, so it refuses `git add … && git commit`,
+  `commit -a/-i/-o` and `commit <pathspec>`; for a commit in another work
+  tree, stamp with `--repo <path>` (the block message prints it). Dispatched reviewers are
   read-only: no edits, no commits, no stamping, no `git stash` (a stash/pop
   silently unstages the wave under review).
 - **Findings are records; ledger rows are verified before they are written.**

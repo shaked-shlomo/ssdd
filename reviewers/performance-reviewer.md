@@ -25,6 +25,7 @@ earned its place in a real audit.
 3. Report `❌ <rule> — file:line — <concrete fix>`, `⚠️` for judgment calls,
    `✅ <domain>` for clean domains.
    End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit.
+   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
 
 ## Default classes (when the project has no written rule yet)
 

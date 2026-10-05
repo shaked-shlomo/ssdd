@@ -41,6 +41,7 @@ the same change** — a stale canonical doc actively misleads the next session.
 4. Report `❌ <coupling> — <what's missing> — <which doc + section>`,
    `⚠️` for judgment calls, `✅ <coupling>` for each satisfied one.
    End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit files.
+   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
 
 ## Notes
 

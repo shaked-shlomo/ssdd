@@ -25,7 +25,7 @@ as inline PR comments).
 
 Every scope resolves to **a range** or **a file list**, and every agent is told which.
 Reviewers default to `git diff --staged`; on a PR nothing is staged, so a reviewer not handed
-its input reviews an empty diff and reports "clean".
+its input has nothing to review (it answers `NO DIFF — scope not provided`; don't stamp that).
 
 Start the project's check/lint commands in the background now; fold results into the plan.
 
