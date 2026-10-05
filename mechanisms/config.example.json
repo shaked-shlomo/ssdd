@@ -1,5 +1,5 @@
 {
-  "$comment": "SSDD per-project config — the injection contract. Copied to <repo>/.ssdd/config.json by inject.sh; fill in the project's routing/rules. All 'paths' / 'include' / 'exclude' values are JS regex sources tested against repo-relative POSIX paths.",
+  "$comment": "SSDD per-project config — the injection contract. Seeded as <repo>/.ssdd/config.json by `bin/ssdd.mjs install` (project-owned: updates never overwrite it); fill in the project's routing/rules. All 'paths' / 'include' / 'exclude' values are JS regex sources tested against repo-relative POSIX paths.",
 
   "routing": [
     { "reviewer": "convention-compliance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$"] },

@@ -19,7 +19,7 @@ in a terminal, …).
 | **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
 | **Mechanisms** | `mechanisms/` | Node ≥ 18, no npm deps. Config-driven enforcement scripts with **two entry modes each**: a portable git-hook/CLI mode that works everywhere, and a harness stdin mode (Claude Code and Cursor payloads) for earlier interception. Tests: `node --test mechanisms/hooks/*.test.mjs`. Plus the docs-drift-audit runbook. |
 | **Adapters** | `adapters/` | Per-harness wiring: `claude-code/` (hooks JSON, `CLAUDE.md` loader), `cursor/` (hooks.json, always-on rule), and `generic/AGENTS.md` — the shared instructions template every adapter uses. |
-| **Injector** | `inject.sh` | Copies the framework into a target repo; harness discovery paths become symlinks. |
+| **Installer / updater** | `bin/ssdd.mjs` (`inject.sh` = install) | Installs a tagged release into a repo, writes `.ssdd/ssdd.lock.json`, and later three-way merges updates. Harness discovery paths become symlinks. |
 
 ## The core loop (one paragraph)
 
@@ -43,14 +43,16 @@ Details: [process/SDD.md](process/SDD.md).
 ## Injecting into a project
 
 ```bash
-/Users/shaked/Developer/ssdd/inject.sh /path/to/project [claude-code,cursor|generic]
+node ~/Developer/ssdd/bin/ssdd.mjs install /path/to/project claude-code,cursor   # or: generic
 ```
 
-This copies `process/`, `reviewers/`, and the hook scripts into
-`<project>/.ssdd/`, seeds `.ssdd/config.json`, the git pre-commit hook, the
-skills (`.agents/skills/`) and `AGENTS.ssdd.md`, wires each named adapter
-(symlinked `.claude/agents` + `.claude/skills`, `CLAUDE.md`, Cursor hooks and
-rule), and prints the steps left. Then you **fill in the per-project half**:
+(`inject.sh /path/to/project claude-code,cursor` does the same.) It installs
+the newest release tag: `process/`, `reviewers/` and the hook scripts into
+`<project>/.ssdd/`, the git pre-commit hook, the skills into `.agents/skills/`,
+each named adapter (symlinked `.claude/agents` + `.claude/skills`, Cursor
+hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
+`AGENTS.md` — or `AGENTS.ssdd.md` to merge if one exists — `CLAUDE.md`,
+`.claude/settings.json`), writes the lock, and prints the steps left. Then you **fill in the per-project half**:
 
 1. `.ssdd/config.json` — reviewer routing (which staged paths require which
    reviewers; a route may carry a `$comment` saying why), lint rules,
@@ -78,14 +80,53 @@ Keep whatever the adapter injects into *session context* small — instruction
 files have real load budgets (hard lesson: a 37KB CLAUDE.md silently truncates
 at ~25KB/200 lines in some harnesses).
 
+## Versioning and updates
+
+Releases are annotated `vX.Y.Z` tags; [VERSION](VERSION) holds the current
+one and [CHANGELOG.md](CHANGELOG.md) has upgrade notes per release (semver:
+MAJOR needs manual steps in injected repos, MINOR updates cleanly, PATCH is
+fixes). Every injected repo commits `.ssdd/ssdd.lock.json`: the version and
+commit it came from, its adapters, and each framework file's source path and
+hash. **A repo runs fully without this checkout** — only these commands need
+it:
+
+```bash
+node ~/Developer/ssdd/bin/ssdd.mjs status <repo>                 # version, local customizations, update available?
+node ~/Developer/ssdd/bin/ssdd.mjs update <repo>                 # to the newest tag (--to <ref> to choose)
+node ~/Developer/ssdd/bin/ssdd.mjs adopt  <repo> --base v1.0.1   # give a pre-lock (copy-era) install a lock
+```
+
+`update` refuses to run over uncommitted changes in framework paths, then
+handles each framework file three ways — base (your locked version), yours,
+and the new release:
+
+| Your file vs. … | Result |
+|---|---|
+| unchanged since install | replaced by the new version |
+| edited, upstream unchanged | kept |
+| both edited, different lines | merged (both edits kept) |
+| both edited, same lines | conflict markers — resolve, then commit |
+| you added a file the release now ships | `<file>.ssdd-new` beside yours — reconcile, delete it |
+| removed upstream | deleted if you never edited it, else kept with a warning |
+
+Project-owned files (`config.json`, `AGENTS.md`, `CLAUDE.md`,
+`.claude/settings.json`) are never touched; `update` prints how their
+templates changed so you can port what you need. It ends with the CHANGELOG
+entries since your version. Review with `git diff` in the repo and commit
+(the lock included).
+
+**Releasing** (here): update `CHANGELOG.md` and `VERSION`, commit, then
+`git tag -a vX.Y.Z -m "…"` and `git push origin main --follow-tags`. On
+another machine: `gh repo clone shaked-shlomo/ssdd ~/Developer/ssdd`, later
+`git -C ~/Developer/ssdd pull --tags`.
+
 ## Known limitations
 
-**Copy-based injection.** Fixes made here do not propagate to projects that
-already injected, and project-side edits don't flow back. That's deliberate —
-projects diverge, and the framework must travel with the repo. To pick up
-upstream fixes, re-run `inject.sh` and review the diff (it never overwrites
-`config.json`, skills, or adapter files). Within a repo there is no drift:
-harness paths are symlinks onto `.ssdd/reviewers/` and `.agents/skills/`.
+**Copies, not a live link.** Each repo carries its own copy (the framework
+must travel with the repo and be editable per project); updates arrive only
+when you run `update`. A future release that moves a *target* path (not just
+a source path) needs a move entry in `bin/ssdd.mjs`, or `update` sees it as a
+removal plus an addition.
 
 **The gate can be evaded** — it keeps honest agents honest; it is not a
 security boundary. Six weaknesses reproduced in the source project, filed
@@ -102,6 +143,14 @@ reverted after several rounds found it incomplete):
    clone has the hook dormant until `git config core.hooksPath .githooks`.
 5. `SSDD_PROJECT_DIR` pointing elsewhere makes the hook judge that path.
 6. A re-stage that changes nothing keeps its stamps — by design since v2.
+
+The harness-layer hooks are also narrower than the original source project's
+later hardening: the PreToolUse gate judges the index *before* the command
+runs, so `git add … && git commit`, `commit -a` and `commit <pathspec>` are
+only caught by the git pre-commit layer; repo resolution doesn't follow
+`cd <dir> &&` or `git -C <dir>`; and `GIT_CONFIG_*` environment overrides
+aren't checked. Porting that hardening (a shared command parser,
+fail-closed repo resolution) is planned for v2.1.
 
 ## This repo dogfoods itself
 

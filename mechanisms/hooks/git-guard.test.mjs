@@ -4,7 +4,7 @@
 // The guard runs against a scratch git repo with its own .ssdd/config.json, so
 // the extraRules cases (force push) pin the framework's shipped pattern rather
 // than whatever a host project happens to configure. The block is embedded
-// (inject.sh copies this file into a project's .ssdd/hooks/, where
+// (install copies this file into a project's .ssdd/hooks/, where
 // config.example.json is not a sibling); when it IS a sibling — in the
 // framework repo — one case checks the embedded copy has not drifted from it.
 //

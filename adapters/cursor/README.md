@@ -3,14 +3,14 @@
 Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
 `AGENTS.md` and `.agents/skills/` natively, so the adapter is only glue.
 
-## Wiring (after `inject.sh <repo> cursor`)
+## Wiring (after `bin/ssdd.mjs install <repo> cursor`)
 
 1. `.cursor/hooks.json` — seeded from [hooks.json](hooks.json): git-guard and
    review-gate on `beforeShellExecution` (`failClosed`), convention-lint on
    `afterFileEdit`.
 2. `.cursor/rules/ssdd.mdc` — always-on glue pointing at `AGENTS.md`. Not a
    second Documentation Map.
-3. Merge `AGENTS.ssdd.md` into `AGENTS.md`; `git config core.hooksPath .githooks`.
+3. Fill `AGENTS.md` (or merge `AGENTS.ssdd.md` into it); `git config core.hooksPath .githooks`.
 
 ## Gotchas (each cost a session in the source project)
 

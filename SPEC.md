@@ -107,6 +107,18 @@ routing, domain reviewers and domain skills stay there.
   skills tree; `.claude/agents/` and `.claude/skills/` as symlinks
   ("doorbells"). Chosen over copies because v1's copied agents drifted.
 - **Cursor adapter** (`adapters/cursor/`).
+- **Versioned releases and updates** — `VERSION`, `CHANGELOG.md` with upgrade
+  notes, annotated `vX.Y.Z` tags, and `bin/ssdd.mjs` (install / update /
+  adopt / status) writing `.ssdd/ssdd.lock.json`. `update` three-way merges
+  each framework file against the locked version, using this repo's git
+  history as the base store. Chosen over git subtree (needs one prefix; SSDD
+  spans `.ssdd/`, `.agents/`, `.githooks/`, `.cursor/`), submodules (break
+  "travels with the repo"), Copier (does this, but adds Python) and a plugin
+  marketplace (no per-project edits, no Cursor). v1's re-inject was `cp -R`,
+  which silently overwrote project edits to framework files.
+- **git-guard: `commit -n` and `core.hooksPath` overrides** — found while
+  comparing with the original source project; `git commit -anm` passed every
+  gate.
 
 **Out (deliberate):**
 - The six gate-evasion weaknesses (README → Known limitations). The source
@@ -132,6 +144,12 @@ routing, domain reviewers and domain skills stay there.
       symlinks and a gate that blocks → `--stamp` → passes with a v2 stamp.
 - [x] No file outside `SPEC.md` names the source project's plans/PRs as
       requirements (genericized examples only).
+- [ ] `node --test bin/*.test.mjs` covers install / update (clean, merged,
+      conflict, sidecar, removal, dirty refusal, `--to`, new adapter) /
+      adopt (v1 layout) / status, against a fake ssdd repo with a layout move.
+- [ ] A copy of the first injected project's framework files adopts
+      `--base v1.0.1` and updates to v2 with project edits preserved and
+      only genuine overlaps reported as conflicts.
 
 *Verified 2026-10-05: 135/135 tests on Node 24.15.0 (134 pass + 1 skipped
 when run from an injected `.ssdd/hooks/`, where the example config is

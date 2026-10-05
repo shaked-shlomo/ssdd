@@ -1,6 +1,6 @@
 <!-- SSDD shared instructions template — the ONE instructions file every
-harness reads. inject.sh seeds it as AGENTS.ssdd.md for every adapter: merge
-it into the project's AGENTS.md and fill the <placeholders>. Claude Code reads
+harness reads. `ssdd.mjs install` seeds it as AGENTS.md (or as AGENTS.ssdd.md
+to merge, when the project already has one); fill the <placeholders>. Claude Code reads
 it through a two-line CLAUDE.md (`@AGENTS.md`); Cursor, Codex and others read
 AGENTS.md natively. Don't fork a second full copy per harness. The mechanical
 backstop is the git pre-commit hook (works everywhere); this file is the

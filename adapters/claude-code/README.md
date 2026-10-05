@@ -6,9 +6,9 @@ errors routed straight back to the agent). The portable git pre-commit hook
 stays installed regardless — this adapter is sugar on the same scripts, not a
 replacement.
 
-## Wiring (after `inject.sh <repo> claude-code`)
+## Wiring (after `bin/ssdd.mjs install <repo> claude-code`)
 
-1. **Hooks** — inject.sh seeds `.claude/settings.json` from
+1. **Hooks** — install seeds `.claude/settings.json` from
    [settings-hooks.json](settings-hooks.json) when none exists; otherwise
    merge its top-level `hooks` key by hand. Hook changes take effect after a
    session reload.
@@ -16,7 +16,7 @@ replacement.
    `.ssdd/reviewers/<name>.md` (one source of truth; the frontmatter already
    matches Claude Code's agent format). A project domain reviewer goes in
    `.ssdd/reviewers/`, gets a route in `.ssdd/config.json`, and a symlink
-   (re-running inject.sh creates it).
+   (the next `install`/`update` creates it).
 3. **Skills** — the skills tree is `.agents/skills/` (harness-neutral; Cursor
    reads it natively). `.claude/skills/<name>` are symlinks to it. Invoke
    `/new-plan`, `/cleanup`, `/docs-drift-audit`.
@@ -32,11 +32,11 @@ replacement.
   Mode); without it git checks them out as text files holding the path.
 - Claude Code documents symlinked **skill** folders as supported. Symlinked
   **agent** files aren't documented either way, but they have worked in the
-  source project since 2026-09. If a release stops loading them, inject.sh's
-  `link` step is the one place to switch back to copies.
-- inject.sh warns when it finds a *copied* agent or skill where a symlink
-  belongs (v1 layout): diff it against its source, keep the project's edits
-  in the source file, then replace the copy with the symlink.
+  source project since 2026-09. If a release stops loading them,
+  `linkAll` in `bin/ssdd.mjs` is the one place to switch back to copies.
+- A *copied* agent or skill where a symlink belongs (v1 layout) is replaced
+  automatically when it's identical to its source; an edited copy gets a
+  warning — move its edits into the source file, then link it.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)
