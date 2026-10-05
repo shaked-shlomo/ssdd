@@ -11,7 +11,10 @@
 //   git -c core.hooksPath=… | git config … core.hooksPath …
 //   | GIT_CONFIG_PARAMETERS / GIT_CONFIG_KEY_<n> = core.hooksPath
 //                                                    (never re-point or unset the hooks)
-// plus any gitGuard.extraRules [{pattern, message}].
+// plus any gitGuard.extraRules [{pattern, message}]. Also, as PreToolUse(Edit|Write):
+// the Edit/Write tools never touch .git/ssdd-review-* (stamp and dispatch files);
+// with reviewGate.stamping "hooks", Bash can't run `review-gate.mjs --stamp` or
+// touch those files either — only a reviewer's completion stamps.
 //
 // Global options between `git` and the subcommand (`-C <p>`, `-c k=v`,
 // `--git-dir=…`) are skipped, and each rule's flag scan stops at the end of its
@@ -24,7 +27,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { cluster, collapseGlobalFlags, expandWrappers, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -42,13 +45,21 @@ function deny(msg) {
 const full = expandWrappers(cmd); // the command plus any script it hands to a shell
 const probe = skeleton(full);
 
-let guard = {};
+let config = {};
 try {
   const repo = resolveHookRepo(payload);
   const root = execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  guard = JSON.parse(readFileSync(join(root, '.ssdd', 'config.json'), 'utf8'))?.gitGuard ?? {};
+  config = JSON.parse(readFileSync(join(root, '.ssdd', 'config.json'), 'utf8')) ?? {};
 } catch {
   // no config → defaults on
+}
+const guard = config.gitGuard ?? {};
+const STAMP_FILES = /ssdd-review-(?:stamp|dispatch)/;
+
+// Edit / Write / MultiEdit / NotebookEdit: the gate's own state is off limits.
+const filePath = hookFilePath(payload);
+if (filePath && STAMP_FILES.test(filePath)) {
+  deny('Blocked: .git/ssdd-review-* is the review gate\'s state — stamps come from reviewers (project rule).');
 }
 
 // core.hooksPath is matched on the command with quotes KEPT (skeleton would
@@ -66,6 +77,14 @@ if (guard.blockHooksPath !== false) {
   const m = viaConfig.exec(quoted);
   if (viaFlag.test(quoted) || viaEnv.test(quoted) || (m && !/(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
     deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');
+  }
+}
+
+if (config.reviewGate?.stamping === 'hooks') {
+  const quoted = stripHeredocs(full);
+  if (/review-gate\.mjs\b[^\n;&|]*--stamp\b/.test(quoted) || STAMP_FILES.test(quoted)) {
+    deny('Blocked: reviewGate.stamping is "hooks" — a reviewer\'s completion stamps its files. ' +
+      'Dispatch the reviewers the gate names instead of stamping or editing the stamp file.');
   }
 }
 

@@ -4,8 +4,23 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/git-guard.mjs\"" },
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\"" }
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/git-guard.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/git-guard.mjs\""
+          }
         ]
       }
     ],
@@ -13,7 +28,30 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/convention-lint.mjs\"" }
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/convention-lint.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
+          }
         ]
       }
     ]

@@ -39,11 +39,23 @@
 // handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
 // judged in place, as if typed directly.
 //
+//   (stdin, SubagentStart / SubagentStop — Claude Code)
+//                                   completion stamps: a routed reviewer's start
+//                                   snapshots the staged keys of its files; its
+//                                   stop stamps the ones still unchanged, if its
+//                                   last lines carry a verdict (CLEAN / SECURE /
+//                                   N ISSUE(S) / N RISK(S)) and it ran on an
+//                                   allowed model (reviewGate.reviewerModels)
+//
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
-//   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at" } } } }
+//   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at",
+//     ["by": "hook", "verdict", "issues", "model"] } } } }
+// reviewGate.stamping: "manual" (default) | "hooks" — in hooks mode only
+// completion stamps count for the agent: git-guard denies `--stamp` and writes
+// to .git/ssdd-review-*, and the block message says to dispatch reviewers.
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
@@ -101,6 +113,52 @@ const readStamp = () => {
   return { version: 2, reviewers: {} }; // a version-1 (whole-diff hash) file reads as no stamps
 };
 
+const gitDir = () => {
+  const dir = git('rev-parse', '--git-dir').trim();
+  return isAbsolute(dir) ? dir : join(repo, dir);
+};
+// Read-modify-write of the stamp file under a short lock: parallel reviewers
+// finishing together must not drop each other's stamps.
+function updateStamp(mutate) {
+  const lock = `${stampPath()}.lock`;
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { mkdirSync(lock); break; } catch {
+      if (Date.now() > deadline) { try { rmdirSync(lock); } catch { /* stale */ } continue; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try {
+    const stamp = readStamp();
+    mutate(stamp);
+    writeFileSync(stampPath(), JSON.stringify(stamp, null, 2));
+  } finally {
+    try { rmdirSync(lock); } catch { /* already gone */ }
+  }
+}
+const stampingMode = (cfg) => (cfg?.reviewGate?.stamping === 'hooks' ? 'hooks' : 'manual');
+
+// Reviewers flagged issues on files that are about to be committed unchanged:
+// allowed (fix-or-triage), but worth a line so triage isn't silent.
+function triageNote(cfg) {
+  const staged = stagedChanges();
+  const stamp = readStamp();
+  const lines = [];
+  for (const [name, files] of reviewerFiles(cfg, staged)) {
+    const flagged = files.filter((f) => {
+      const e = stamp.reviewers[name]?.[f];
+      return e?.key === staged.get(f) && e.issues > 0;
+    });
+    if (flagged.length) {
+      const n = stamp.reviewers[name][flagged[0]].issues;
+      lines.push(`  • ${name} reported ${n} finding(s) on ${flagged.join(', ')} — unchanged since`);
+    }
+  }
+  return lines.length
+    ? `[ssdd-review-gate] committing files reviewers flagged; make sure each finding was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
+    : '';
+}
+
 // [[reviewer, routedStagedPaths]] for every reviewer with at least one staged file.
 const reviewerFiles = (cfg, staged) =>
   routes(cfg)
@@ -154,7 +212,7 @@ const short = (key) => {
   const [, sm, sb, dm, db] = m;
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
-function blockMessage({ owed, unrouted, warning }, repoHint = '') {
+function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual') {
   const lines = [];
   for (const { name, files, missing } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
@@ -172,6 +230,18 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '') {
     }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
+  if (mode === 'hooks') {
+    return (
+      warning +
+      `[ssdd-review-gate] the staged diff owes reviews:\n` +
+      lines.join('\n') +
+      `\nDispatch each owing reviewer with the Agent tool (subagent_type = its name), telling\n` +
+      `it the files it owes. When it finishes with its verdict line, its completion stamps\n` +
+      `those files — a file edited during its review stays owed. Fix or triage findings,\n` +
+      `re-stage, and retry the commit. (reviewGate.stamping is "hooks": the agent can't run\n` +
+      `--stamp; a person in a terminal can.)\n`
+    );
+  }
   return (
     warning +
     `[ssdd-review-gate] the staged diff owes reviews:\n` +
@@ -233,13 +303,13 @@ if (process.argv[2] === '--stamp') {
   }
   const warning = oversizeWarning(cfg, new Set([...table.values()].flat()).size);
   if (warning) process.stderr.write(warning);
-  const stamp = readStamp();
   const at = new Date().toISOString();
-  for (const [n, files] of plan) {
-    stamp.reviewers[n] ??= {};
-    for (const f of files) stamp.reviewers[n][f] = { key: staged.get(f), at };
-  }
-  writeFileSync(stampPath(), JSON.stringify(stamp, null, 2));
+  updateStamp((stamp) => {
+    for (const [n, files] of plan) {
+      stamp.reviewers[n] ??= {};
+      for (const f of files) stamp.reviewers[n][f] = { key: staged.get(f), at };
+    }
+  });
   for (const [n, files] of plan) {
     console.log(`[ssdd-review-gate] stamped ${n} on ${files.length} file(s): ${files.join(', ')}`);
   }
@@ -261,14 +331,21 @@ if (process.argv[2] === '--pre-commit') {
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     if (verdict.warning) process.stderr.write(verdict.warning);
+    process.stderr.write(triageNote(cfg));
     process.exit(0);
   }
-  process.stderr.write(blockMessage(verdict));
+  process.stderr.write(blockMessage(verdict, '', stampingMode(cfg)));
   process.exit(1);
 }
 
 // ── default: harness stdin hook (Claude PreToolUse / Cursor beforeShell) ─────
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
+if (payload?.hook_event_name === 'SubagentStart' || payload?.hook_event_name === 'SubagentStop') {
+  try { subagentHook(payload); } catch (e) {
+    process.stderr.write(`[ssdd-review-gate] completion stamp skipped: ${String(e?.message ?? e).split('\n')[0]}\n`);
+  }
+  process.exit(0); // observational: never blocks a subagent
+}
 const cmd = hookCommand(payload);
 
 function finish(code, permission, extra = {}) {
@@ -404,6 +481,84 @@ try {
 }
 if (!verdict.owed.length) {
   if (verdict.warning) process.stderr.write(verdict.warning);
+  const note = triageNote(cfg);
+  if (note) {
+    process.stderr.write(note);
+    finish(0, 'allow', { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: note } });
+  }
   finish(0, 'allow');
 }
-deny(blockMessage(verdict, repoHint), 'SSDD review gate: stamps owed before commit.');
+deny(blockMessage(verdict, stampingMode(cfg) === 'hooks' ? '' : repoHint, stampingMode(cfg)), 'SSDD review gate: stamps owed before commit.');
+
+// ── completion stamps (SubagentStart / SubagentStop) ─────────────────────────
+// The verdict is the reviewer contract's last line: CLEAN / SECURE /
+// N ISSUE(S) / N RISK(S). NO DIFF, or no verdict, stamps nothing.
+function parseVerdict(text) {
+  const tail = String(text ?? '').split('\n').map((l) => l.replace(/[*`_>#]/g, '').trim()).filter(Boolean).slice(-3).reverse();
+  for (const l of tail) {
+    if (/\bNO DIFF\b/.test(l)) return null;
+    const clean = /^(?:verdict\W*)?(CLEAN|SECURE)\b/.exec(l);
+    if (clean) return { verdict: clean[1], issues: 0 };
+    const n = /^(?:verdict\W*)?(\d+)\s+(ISSUE|RISK)(?:\(S\)|S)?\b/i.exec(l);
+    if (n) return { verdict: `${n[2].toUpperCase()}S`, issues: Number(n[1]) };
+  }
+  return null;
+}
+
+// Models the reviewer's turns actually ran on, from its transcript.
+function transcriptModels(path) {
+  const models = new Set();
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    try { const m = JSON.parse(line)?.message?.model; if (m && m !== '<synthetic>') models.add(m); } catch { /* skip */ }
+  }
+  return [...models];
+}
+
+function subagentHook(p) {
+  const agentId = String(p.agent_id ?? '').replace(/[^\w-]/g, '_');
+  const type = String(p.agent_type ?? '').replace(/^.*:/, ''); // plugin-scoped name → bare
+  if (!agentId || !type) return;
+  repo = p.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const cfg = loadConfig();
+  if (!cfg || !routes(cfg).some(([n]) => n === type)) return; // not a routed reviewer
+  repo = cfg.root;
+  const dir = join(gitDir(), 'ssdd-review-dispatch');
+  const file = join(dir, `${agentId}.json`);
+
+  if (p.hook_event_name === 'SubagentStart') {
+    const staged = stagedChanges();
+    const mine = new Map(reviewerFiles(cfg, staged)).get(type) ?? [];
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, JSON.stringify({ reviewer: type, files: Object.fromEntries(mine.map((f) => [f, staged.get(f)])), at: new Date().toISOString() }));
+    return;
+  }
+
+  let d;
+  try { d = JSON.parse(readFileSync(file, 'utf8')); } catch { return; } // no matching start
+  rmSync(file, { force: true });
+  const say = (m) => process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
+  const v = parseVerdict(p.last_assistant_message);
+  if (!v) return say('no verdict line (or NO DIFF) — nothing stamped');
+  const allowed = cfg.reviewGate?.reviewerModels;
+  let models = [];
+  if (Array.isArray(allowed) && allowed.length) {
+    try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
+    const ok = models.length && models.every((m) => allowed.some((a) => m.includes(a)));
+    if (!ok) return say(`ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped`);
+  }
+  const staged = stagedChanges();
+  const keep = Object.keys(d.files).filter((f) => staged.get(f) === d.files[f]);
+  const moved = Object.keys(d.files).filter((f) => !keep.includes(f));
+  if (keep.length) {
+    const at = new Date().toISOString();
+    updateStamp((stamp) => {
+      stamp.reviewers[type] ??= {};
+      for (const f of keep) {
+        stamp.reviewers[type][f] = { key: staged.get(f), at, by: 'hook', verdict: v.verdict, issues: v.issues, ...(models.length ? { model: models.join(',') } : {}) };
+      }
+    });
+  }
+  say(`stamped ${keep.length} file(s) (${v.verdict}${v.issues ? ` ${v.issues}` : ''})` +
+    (moved.length ? `; still owed, changed during review: ${moved.join(', ')}` : ''));
+}
