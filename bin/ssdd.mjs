@@ -422,6 +422,37 @@ function adopt(target) {
   console.log(`\nNext: commit, then  node ${join(SRC, 'bin/ssdd.mjs')} update ${target}${opt.to ? ` --to ${opt.to}` : ''}`);
 }
 
+// ── status --skills ──────────────────────────────────────────────────────────
+// Upstream skill sources recorded by /skills-audit (.ssdd/skills.json) that
+// moved past their sha. Network only on request; never changes the exit code.
+// skills-audit.mjs applies the same rule; keep them identical.
+const remoteUrl = (repo) => (/^[\w.-]+\/[\w.-]+$/.test(repo) ? `https://github.com/${repo}` : repo);
+function remoteHead(repo) {
+  try {
+    const out = execFileSync('git', ['ls-remote', remoteUrl(repo), 'HEAD'], {
+      encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    return out.split(/\s/)[0] || null;
+  } catch { return null; }
+}
+function drift(recorded, head) {
+  if (!recorded) return 'never pinned';
+  if (head === undefined) return 'not checked';
+  if (!head) return 'unreachable';
+  return head.startsWith(recorded) ? 'current' : `moved ${recorded.slice(0, 7)}→${head.slice(0, 7)}`;
+}
+function skillsDrift(target) {
+  const p = join(target, '.ssdd/skills.json');
+  const sources = Object.entries((existsSync(p) && JSON.parse(readFileSync(p, 'utf8')).sources) || {});
+  if (!sources.length) { console.log('skills: no skill sources recorded in .ssdd/skills.json (run /skills-audit)'); return; }
+  console.log(`skills (${sources.length}):`);
+  for (const [repo, s] of sources) {
+    const state = drift(s.sha, s.sha ? remoteHead(repo) : undefined);
+    console.log(`  ${state.padEnd(20)}  ${repo}`);
+  }
+}
+
 // ── status ───────────────────────────────────────────────────────────────────
 function status(target) {
   const lock = readLock(target);
@@ -447,6 +478,7 @@ function status(target) {
   } else if (latest) {
     console.log(`up to date with the newest release in ${SRC} (${latest})`);
   }
+  if (opt.skills) skillsDrift(target);
   if (conflicted.length || sidecars.length) process.exit(1);
 }
 

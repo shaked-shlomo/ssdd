@@ -294,6 +294,53 @@ describe('skills ledger', () => {
     assert.match(r.out, /SSDD v2\.0\.0/);
     assert.ok(r.out.includes(`newest release in ${src}`), r.out);   // --source was not swallowed
   });
+
+  function bareUpstream() {
+    const up = join(root, 'up.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', up]);
+    const w = join(root, 'w');
+    initRepo(w);
+    put(w, 'skills/x/SKILL.md', '---\nname: x\n---\n');
+    commitAll(w, 'one');
+    git(w, 'push', '-q', up, 'HEAD:main');
+    return { up, w };
+  }
+  const ledger = (sources) => put(tgt, '.ssdd/skills.json', JSON.stringify({ version: 1, sources }));
+
+  it('status --skills reports current, then moved after an upstream commit', () => {
+    ssdd('install', tgt);
+    const { up, w } = bareUpstream();
+    const pinned = git(w, 'rev-parse', 'HEAD');
+    ledger({ [up]: { distribution: 'vendored', sha: pinned, date: '2026-10-06', skills: {} } });
+    let r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /current\s+\S*up\.git/);
+    put(w, 'skills/x/SKILL.md', '---\nname: x\n---\nmore\n');
+    commitAll(w, 'two');
+    git(w, 'push', '-q', up, 'HEAD:main');
+    r = ssdd('status', tgt, '--skills');
+    assert.match(r.out, new RegExp(`moved ${pinned.slice(0, 7)}→${git(w, 'rev-parse', 'HEAD').slice(0, 7)}`));
+  });
+
+  it('status --skills: unreachable exits 0, a null sha is never pinned, plain status is silent', () => {
+    ssdd('install', tgt);
+    ledger({
+      [join(root, 'nope.git')]: { sha: 'a'.repeat(40), skills: {} },
+      'example/unpinned': { sha: null, skills: {} },
+    });
+    let r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /unreachable\s+\S*nope\.git/);
+    assert.match(r.out, /never pinned\s+example\/unpinned/);
+    r = ssdd('status', tgt);
+    assert.doesNotMatch(r.out, /skills \(|no skill sources|never pinned|unreachable/);
+  });
+
+  it('status --skills says so when the ledger is empty or missing', () => {
+    ssdd('install', tgt);
+    const r = ssdd('status', tgt, '--skills');
+    assert.match(r.out, /no skill sources recorded/);
+  });
 });
 
 describe('adopt (pre-lock install)', () => {
