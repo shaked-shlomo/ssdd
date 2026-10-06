@@ -429,7 +429,7 @@ function adopt(target) {
 const remoteUrl = (repo) => (/^[\w.-]+\/[\w.-]+$/.test(repo) ? `https://github.com/${repo}` : repo);
 function remoteHead(repo) {
   try {
-    const out = execFileSync('git', ['ls-remote', remoteUrl(repo), 'HEAD'], {
+    const out = execFileSync('git', ['ls-remote', '--', remoteUrl(repo), 'HEAD'], {
       encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'ignore'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
@@ -444,12 +444,24 @@ function drift(recorded, head) {
 }
 function skillsDrift(target) {
   const p = join(target, '.ssdd/skills.json');
-  const sources = Object.entries((existsSync(p) && JSON.parse(readFileSync(p, 'utf8')).sources) || {});
-  if (!sources.length) { console.log('skills: no skill sources recorded in .ssdd/skills.json (run /skills-audit)'); return; }
-  console.log(`skills (${sources.length}):`);
-  for (const [repo, s] of sources) {
-    const state = drift(s.sha, s.sha ? remoteHead(repo) : undefined);
-    console.log(`  ${state.padEnd(20)}  ${repo}`);
+  let sources = {};
+  try {
+    if (existsSync(p)) {
+      const parsed = JSON.parse(readFileSync(p, 'utf8'));
+      const s = parsed && parsed.sources;
+      if (s && typeof s === 'object' && !Array.isArray(s)) sources = s;
+    }
+  } catch (e) {
+    console.log(`skills: unreadable .ssdd/skills.json (${e.message})`);
+    return;
+  }
+  const entries = Object.entries(sources);
+  if (!entries.length) { console.log('skills: no skill sources recorded in .ssdd/skills.json (run /skills-audit)'); return; }
+  console.log(`skills (${entries.length}):`);
+  for (const [repo, s] of entries) {
+    const sha = s && typeof s === 'object' && typeof s.sha === 'string' ? s.sha : null;
+    const state = drift(sha, sha ? remoteHead(repo) : undefined);
+    console.log(`  ${state.padEnd(22)}  ${repo}`);
   }
 }
 

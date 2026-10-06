@@ -336,6 +336,32 @@ describe('skills ledger', () => {
     assert.doesNotMatch(r.out, /skills \(|no skill sources|never pinned|unreachable/);
   });
 
+  it('status --skills survives an unreadable ledger or odd entries with exit 0', () => {
+    ssdd('install', tgt);
+    put(tgt, '.ssdd/skills.json', '{ not json');
+    let r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /skills: unreadable \.ssdd\/skills\.json \(/);
+    put(tgt, '.ssdd/skills.json', JSON.stringify({ version: 1, sources: ['a/b'] }));
+    r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no skill sources recorded/);
+    put(tgt, '.ssdd/skills.json', JSON.stringify({ version: 1, sources: { 'a/null': null } }));
+    r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /never pinned\s+a\/null/);
+  });
+
+  it('status --skills never lets a ledger key act as a git option', () => {
+    ssdd('install', tgt);
+    const pwned = join(root, 'pwned');
+    ledger({ [`--upload-pack=touch ${pwned}`]: { sha: 'a'.repeat(40), skills: {} } });
+    const r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /unreachable/);
+    assert.ok(!existsSync(pwned));
+  });
+
   it('status --skills says so when the ledger is empty or missing', () => {
     ssdd('install', tgt);
     const r = ssdd('status', tgt, '--skills');
