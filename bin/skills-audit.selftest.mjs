@@ -155,4 +155,78 @@ describe('hardening', () => {
     assert.equal(existsSync(join(root, 'pwned')), false);
     assert.equal(r.json().candidates[0].state, 'unreachable');
   });
+
+  it('treats malformed package.json and .claude/settings.json as absent', () => {
+    put(root, 'cat.json', FIXTURE);
+    put(repo, 'package.json', '{ nope');
+    put(repo, '.claude/settings.json', '{ nope');
+    put(repo, '.claude/settings.local.json', '{ nope');
+    put(home, '.claude/settings.json', '{ nope');
+    put(home, '.claude/plugins/installed_plugins.json', '{ nope');
+    const r = audit('--catalog', join(root, 'cat.json'), '--offline', '--json');
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(r.json().candidates, []);
+  });
+
+  it('an empty ledger sha falls back to the catalog audit sha', () => {
+    put(repo, 'package.json', { dependencies: { 'react-native': '0.83.0' } });
+    put(root, 'cat.json', FIXTURE);
+    put(repo, '.ssdd/skills.json', { version: 1, sources: { 'a/rn': { sha: '', date: '2026-10-06', skills: {} } } });
+    const r = audit('--catalog', join(root, 'cat.json'), '--offline', '--json');
+    assert.equal(r.json().candidates[0].state, 'not checked');
+  });
+
+  it('keeps the drift helpers identical to bin/ssdd.mjs', () => {
+    const grab = (file) => {
+      const t = readFileSync(file, 'utf8');
+      const url = t.match(/^const remoteUrl = .*$/m)[0];
+      const fn = (name) => t.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}$`, 'm'))[0];
+      return [url, fn('remoteHead'), fn('drift')].join('\n');
+    };
+    assert.equal(grab(SCRIPT), grab(join(SKILL_DIR, '..', '..', 'bin', 'ssdd.mjs')));
+  });
+});
+
+describe('collisions', () => {
+  it('flags code samples a lint rule would block, and lists the house-rule files', () => {
+    put(repo, '.ssdd/config.json', { lint: [
+      { name: 'no-runOnJS', pattern: '\\brunOnJS\\b', include: '^src/' },
+      { name: 'no-hex', pattern: '#[0-9a-fA-F]{3,8}\\b' },
+    ] });
+    put(repo, 'AGENTS.md', '# rules\n');
+    put(repo, '.claude/rules/animation.md', 'rule\n');
+    put(repo, '.ssdd/reviewers/performance-reviewer.md', 'r\n');
+    const up = join(root, 'upstream');
+    put(up, 'skills/rn/SKILL.md', [
+      '# RN', '', 'runOnJS in prose is not a sample.', '',
+      '```tsx', 'const a = 1;', 'runOnJS(setX)(1);', '```', '',
+      '~~~css', 'color: #666;', '~~~', '',
+    ].join('\n'));
+    put(up, 'node_modules/x/README.md', '```js\nrunOnJS()\n```\n');
+    put(up, 'skills/rn/notes.txt', '```js\nrunOnJS()\n```\n');
+    const r = audit('collisions', up, '--json');
+    assert.equal(r.code, 0, r.out);
+    const out = r.json();
+    assert.deepEqual(out.hits, [
+      { file: 'skills/rn/SKILL.md', line: 7, rule: 'no-runOnJS', text: 'runOnJS(setX)(1);' },
+      { file: 'skills/rn/SKILL.md', line: 11, rule: 'no-hex', text: 'color: #666;' },
+    ]);
+    assert.deepEqual(out.houseRules, ['AGENTS.md', '.claude/rules/animation.md', '.ssdd/reviewers/performance-reviewer.md']);
+  });
+
+  it('needs a directory', () => {
+    const r = audit('collisions');
+    assert.equal(r.code, 2);
+    assert.match(r.out, /usage/);
+  });
+
+  it('a malformed .ssdd/config.json means no lint rules plus a stderr note', () => {
+    put(repo, '.ssdd/config.json', '{ nope');
+    const up = join(root, 'upstream');
+    put(up, 'a.md', '```js\nrunOnJS()\n```\n');
+    const r = audit('collisions', up, '--json');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.err, /skills-audit: unreadable \.ssdd\/config\.json/);
+    assert.deepEqual(r.json().hits, []);
+  });
 });

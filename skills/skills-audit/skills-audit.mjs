@@ -24,6 +24,10 @@ const catalogPath = take('--catalog', true) ?? join(dirname(fileURLToPath(import
 const home = process.env.SSDD_HOME || homedir();
 const root = process.cwd();
 const readJson = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null);
+// Environment files (package.json, settings, plugin registry): unreadable means absent.
+function readJsonLoose(p) {
+  try { return readJson(p); } catch { return null; }
+}
 
 // Same rule as `ssdd.mjs status --skills`; keep them identical.
 const remoteUrl = (repo) => (/^[\w.-]+\/[\w.-]+$/.test(repo) ? `https://github.com/${repo}` : repo);
@@ -73,9 +77,9 @@ function presentSkills() {
   for (const n of skillsIn(join(root, '.claude/skills'))) if (!where.has(n)) add(n, '.claude/skills');
   const enabled = {};
   for (const s of [join(home, '.claude/settings.json'), join(root, '.claude/settings.json'), join(root, '.claude/settings.local.json')]) {
-    Object.assign(enabled, readJson(s)?.enabledPlugins ?? {});
+    Object.assign(enabled, readJsonLoose(s)?.enabledPlugins ?? {});
   }
-  const installed = readJson(join(home, '.claude/plugins/installed_plugins.json'))?.plugins ?? {};
+  const installed = readJsonLoose(join(home, '.claude/plugins/installed_plugins.json'))?.plugins ?? {};
   for (const [id, on] of Object.entries(enabled)) {
     const path = on && installed[id]?.[0]?.installPath;
     if (path) for (const n of skillsIn(join(path, 'skills'))) add(n, `plugin ${id}`);
@@ -84,7 +88,7 @@ function presentSkills() {
 }
 
 function stackOf() {
-  const pkg = readJson(join(root, 'package.json')) ?? {};
+  const pkg = readJsonLoose(join(root, 'package.json')) ?? {};
   const deps = new Set(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies }));
   return { deps, files: readdirSync(root) };
 }
@@ -113,7 +117,7 @@ function candidates() {
     const names = new Set(skills.map((s) => s.name));
     const rec = ledger[src.repo];
     const recSha = typeof rec?.sha === 'string' ? rec.sha : null;
-    const recorded = recSha ?? src.audited?.sha ?? null;
+    const recorded = recSha || src.audited?.sha || null;
     const head = offline ? undefined : remoteHead(src.repo);
     out.push({
       repo: src.repo,
@@ -153,9 +157,61 @@ function printCandidates(r) {
   }
 }
 
+// Every .md/.mdx file under dir, skipping .git and node_modules.
+function docsIn(dir) {
+  return readdirSync(dir).flatMap((e) => {
+    if (e === '.git' || e === 'node_modules') return [];
+    const p = join(dir, e);
+    if (statSync(p).isDirectory()) return docsIn(p);
+    return /\.mdx?$/.test(e) ? [p] : [];
+  });
+}
+const mdIn = (rel) => (existsSync(join(root, rel)) ? readdirSync(join(root, rel)).filter((f) => f.endsWith('.md')).map((f) => `${rel}/${f}`) : []);
+
+// Lint rules from .ssdd/config.json; unreadable means none, with a note.
+function lintRules() {
+  try {
+    return (readJson(join(root, '.ssdd/config.json'))?.lint ?? []).map((r) => ({ name: r.name ?? r.pattern, re: new RegExp(r.pattern) }));
+  } catch (e) {
+    console.error(`skills-audit: unreadable .ssdd/config.json (${e.message})`);
+    return [];
+  }
+}
+
+function collisions(dir) {
+  const rules = lintRules();
+  const hits = [];
+  for (const file of docsIn(dir)) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^\1/gm)) {
+      const first = text.slice(0, m.index).split('\n').length + 1;
+      m[2].split('\n').forEach((line, i) => {
+        for (const r of rules) {
+          if (r.re.test(line)) hits.push({ file: relative(dir, file), line: first + i, rule: r.name, text: line.trim().slice(0, 160) });
+        }
+      });
+    }
+  }
+  const houseRules = [
+    ...['AGENTS.md', 'CLAUDE.md'].filter((f) => existsSync(join(root, f))),
+    ...mdIn('.claude/rules'),
+    ...mdIn('.ssdd/reviewers'),
+  ];
+  return { hits, houseRules };
+}
+
+function printCollisions(r) {
+  console.log(r.hits.length ? `Lint hits in code samples (${r.hits.length}):` : 'No code sample matches a lint rule.');
+  for (const h of r.hits) console.log(`  ${h.file}:${h.line}  ${h.rule}  ${h.text}`);
+  console.log(`\nHouse rules to read against it (${r.houseRules.length}):`);
+  for (const f of r.houseRules) console.log(`  ${f}`);
+}
+
 const mode = args[0];
 if (mode === 'collisions') {
-  console.error('skills-audit: collisions is added in the next task'); process.exit(2);
+  if (!args[1]) { console.error('usage: skills-audit.mjs collisions <dir> [--json]'); process.exit(2); }
+  const r = collisions(args[1]);
+  if (asJson) console.log(JSON.stringify(r, null, 2)); else printCollisions(r);
 } else {
   const r = candidates();
   if (asJson) console.log(JSON.stringify(r, null, 2)); else printCandidates(r);
