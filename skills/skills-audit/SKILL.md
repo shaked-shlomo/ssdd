@@ -30,11 +30,13 @@ approves. The lifecycle it serves is in `.ssdd/process/SDD.md`.
 
 ## 2. Read each source at a pinned sha
 
-Clone outside the repo and check out the upstream sha step 1 printed:
+Clone outside the repo, into a fresh `mktemp -d` directory (or under
+`${TMPDIR:-/tmp}`), and check out the upstream sha step 1 printed:
 
 ```bash
-git clone -q --filter=blob:none https://github.com/<repo> "$TMPDIR/skills-audit/<repo>"
-git -C "$TMPDIR/skills-audit/<repo>" checkout -q <sha>
+D=$(mktemp -d)
+git clone -q --filter=blob:none https://github.com/<repo> "$D/<repo>"
+git -C "$D/<repo>" checkout -q <sha>
 ```
 
 Read each candidate skill's SKILL.md and its references. Compare the APIs
@@ -52,6 +54,9 @@ reports two things:
 
 - **Lint hits:** code samples that `.ssdd/config.json` → `lint` would flag.
   A sample the skill marks as wrong doesn't count; one it recommends does.
+  The scan ignores the rules' `include`/`exclude` paths and reads only
+  fenced samples in .md/.mdx, so a hit is a lead, not a violation, and zero
+  hits doesn't mean no collisions.
 - **House-rule files to read:** `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`
   and `.ssdd/reviewers/`. Look for what the skill would have an agent do
   that they forbid: a component or library the repo replaced, a token
@@ -106,7 +111,9 @@ one-line reason. Then list any project-side findings the reading surfaced
   Version strings often don't change, so the ledger sha is what tracks the
   plugin.
 - **Vendored:** copy the folder into `.agents/skills/<name>`, and only
-  when no enabled plugin ships the same skill.
+  when no enabled plugin ships the same skill. Claude Code also needs the
+  symlink `.claude/skills/<name>` → `../../.agents/skills/<name>`. The next
+  SSDD `install` or `update` creates it, or create it by hand.
 - **Routing:** if `AGENTS.md` routes situations to skills, add the adopted
   ones there.
 
@@ -117,7 +124,8 @@ These edits then go through the review gate like any other change.
 Skip this step outside Claude Code.
 
 - **If `claude-code-setup@claude-plugins-official` is enabled** in
-  `.claude/settings.json` or `~/.claude/settings.json`: run
+  `enabledPlugins` of `~/.claude/settings.json`, `.claude/settings.json` or
+  `.claude/settings.local.json` (the later file wins): run
   `claude-code-setup:claude-automation-recommender`. Put its suggestions
   (hooks, subagents, MCP servers) through the same collision check in step
   3, then add them to the proposal.

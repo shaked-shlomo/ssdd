@@ -584,9 +584,8 @@ Design decisions:
     "distribution": { "plugins": ["skills@swmansion"] },
     "signals": { "deps": ["react-native-reanimated", "react-native-gesture-handler"] },
     "skills": [{ "name": "react-native-best-practices", "covers": "animations, gestures, svg" }],
-    "hazards": ["Version string stuck at 0.1.0 across commits; track by sha"],
-    "collides": [{ "skill": "react-native-best-practices", "with": "callstackincubator/agent-skills", "kind": "name" }],
-    "audited": { "sha": "fed69f5", "date": "2026-09-08", "by": "Hatedate RN audit" } }] }
+    "hazards": [{ "text": "Version string stuck at 0.1.0 across commits; track by sha" }],
+    "audited": { "sha": "fed69f566b78d3289b6f00e4bccc1d4a696ffde3", "date": "2026-09-08", "by": "Hatedate RN audit" } }] }
 ```
 
 - **Signals:** a source becomes a candidate when any signal matches. A
