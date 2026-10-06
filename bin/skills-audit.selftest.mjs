@@ -4,7 +4,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -118,6 +118,18 @@ describe('candidates', () => {
     c = audit('--catalog', join(root, 'cat.json'), '--json').json().candidates[0];
     assert.equal(c.state, 'current');
     assert.deepEqual(c.ledger, { sha: head, date: '2026-10-06' });
+    const human = audit('--catalog', join(root, 'cat.json')).out;
+    assert.ok(human.includes(`upstream ${head}`), 'human output prints the full upstream sha');
+    assert.match(human, /recorded [0-9a-f]{7} \(ledger\)/);
+  });
+
+  it('labels the recorded sha (ledger) only when the ledger sha is used', () => {
+    put(repo, 'package.json', { dependencies: { 'react-native': '0.83.0' } });
+    put(root, 'cat.json', FIXTURE);
+    put(repo, '.ssdd/skills.json', { version: 1, sources: { 'a/rn': { sha: '', date: '2026-10-06', skills: {} } } });
+    const r = audit('--catalog', join(root, 'cat.json'), '--offline');
+    assert.match(r.out, /recorded f{7} \(catalog audit\)/);
+    assert.doesNotMatch(r.out, /\(ledger\)/);
   });
 
   it('prints a readable report without --json', () => {
@@ -125,7 +137,9 @@ describe('candidates', () => {
     put(root, 'cat.json', FIXTURE);
     const r = audit('--catalog', join(root, 'cat.json'), '--offline');
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /a\/rn\s+\[plugins rn@a\]\s+not checked/);
+    assert.match(r.out, /a\/rn\s+\[ships as: plugins rn@a\]\s+not checked/);
+    assert.match(r.out, /b\/rn\s+\[ships as: vendored\]/);
+    assert.match(r.out, /recorded f{7} \(catalog audit\)/);
     assert.match(r.out, /rn-best — perf/);
     assert.match(r.out, /hazard: source-wide/);
     assert.match(r.out, /Name clashes:\s+rn-best: a\/rn, b\/rn/);
@@ -176,6 +190,14 @@ describe('hardening', () => {
     assert.equal(r.json().candidates[0].state, 'not checked');
   });
 
+  it('a recorded value that is not a hex sha is never pinned', () => {
+    put(repo, 'package.json', { dependencies: { 'react-native': '0.83.0' } });
+    put(root, 'cat.json', FIXTURE);
+    put(repo, '.ssdd/skills.json', { version: 1, sources: { 'a/rn': { sha: 'a', date: '2026-10-06', skills: {} } } });
+    const r = audit('--catalog', join(root, 'cat.json'), '--offline', '--json');
+    assert.equal(r.json().candidates[0].state, 'never pinned');
+  });
+
   it('keeps the drift helpers identical to bin/ssdd.mjs', () => {
     const grab = (file) => {
       const t = readFileSync(file, 'utf8');
@@ -212,6 +234,45 @@ describe('collisions', () => {
       { file: 'skills/rn/SKILL.md', line: 11, rule: 'no-hex', text: 'color: #666;' },
     ]);
     assert.deepEqual(out.houseRules, ['AGENTS.md', '.claude/rules/animation.md', '.ssdd/reviewers/performance-reviewer.md']);
+  });
+
+  it('skips symlinks (no duplicate hits, no crash on dangling or self links); exit 0', () => {
+    put(repo, '.ssdd/config.json', { lint: [{ name: 'no-runOnJS', pattern: '\\brunOnJS\\b' }] });
+    const up = join(root, 'upstream');
+    put(up, 'skills/rn/SKILL.md', '```js\nrunOnJS()\n```\n');
+    mkdirSync(join(up, 'plugins/p/skills'), { recursive: true });
+    symlinkSync('../../../skills/rn', join(up, 'plugins/p/skills/rn'));
+    symlinkSync('../nowhere', join(up, 'plugins/dangling'));
+    symlinkSync('selfie', join(up, 'selfie'));
+    symlinkSync('skills/rn/SKILL.md', join(up, 'alias.md'));
+    const r = audit('collisions', up, '--json');
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(r.json().hits.map((h) => h.file), ['skills/rn/SKILL.md']);
+  });
+
+  it('a missing or non-directory <dir> prints usage and exits 2', () => {
+    for (const bad of [join(root, 'nope'), join(root, 'file.txt')]) {
+      put(root, 'file.txt', 'x');
+      const r = audit('collisions', bad);
+      assert.equal(r.code, 2, r.out);
+      assert.match(r.err, /usage/);
+      assert.doesNotMatch(r.err, /at .*\.mjs:\d+/);
+    }
+  });
+
+  it('a bad-regex lint rule or one without a pattern is skipped by name; good rules still hit', () => {
+    put(repo, '.ssdd/config.json', { lint: [
+      { name: 'broken', pattern: '(' },
+      { name: 'nopattern' },
+      { name: 'good', pattern: 'runOnJS' },
+    ] });
+    const up = join(root, 'upstream');
+    put(up, 'a.md', '```js\nrunOnJS()\n```\n');
+    const r = audit('collisions', up, '--json');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.err, /skills-audit: skipping lint rule broken \(/);
+    assert.doesNotMatch(r.err, /unreadable/);
+    assert.deepEqual(r.json().hits.map((h) => h.rule), ['good']);
   });
 
   it('needs a directory', () => {
@@ -284,5 +345,14 @@ describe('SKILL.md', () => {
     assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
     assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
     assert.doesNotMatch(desc, /^[>|]/, 'keep it a plain one-line value');
+  });
+
+  it('keeps the read-as-data, recorded-sha and persisted-path guidance', () => {
+    const text = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+    assert.match(text, /as data under review/);
+    assert.match(text, /rev-parse HEAD/);
+    assert.match(text, /not a fresh `ls-remote`/);
+    assert.match(text, /literal path/);
+    assert.match(text, /`present:`/);
   });
 });

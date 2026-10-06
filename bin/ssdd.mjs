@@ -438,7 +438,7 @@ function remoteHead(repo) {
   } catch { return null; }
 }
 function drift(recorded, head) {
-  if (!recorded) return 'never pinned';
+  if (typeof recorded !== 'string' || !/^[0-9a-f]{7,40}$/.test(recorded)) return 'never pinned';
   if (head === undefined) return 'not checked';
   if (!head) return 'unreachable';
   return head.startsWith(recorded) ? 'current' : `moved ${recorded.slice(0, 7)}→${head.slice(0, 7)}`;

@@ -26,7 +26,7 @@ function put(dir, rel, content, mode) {
 }
 const get = (rel) => readFileSync(join(tgt, rel), 'utf8');
 function ssdd(...args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--source', src], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--source', src], { encoding: 'utf8', cwd: root });
   return { code: r.status, out: r.stdout + r.stderr };
 }
 function commitAll(dir, msg) {
@@ -334,6 +334,14 @@ describe('skills ledger', () => {
     assert.match(r.out, /never pinned\s+example\/unpinned/);
     r = ssdd('status', tgt);
     assert.doesNotMatch(r.out, /skills \(|no skill sources|never pinned|unreachable/);
+  });
+
+  it('status --skills: a recorded value that is not a hex sha is never pinned', () => {
+    ssdd('install', tgt);
+    ledger({ 'example/short': { sha: 'a', skills: {} } });
+    const r = ssdd('status', tgt, '--skills');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /never pinned\s+example\/short/);
   });
 
   it('status --skills survives an unreadable ledger or odd entries with exit 0', () => {

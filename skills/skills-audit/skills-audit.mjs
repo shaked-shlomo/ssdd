@@ -51,7 +51,7 @@ function readLedger() {
   }
 }
 function drift(recorded, head) {
-  if (!recorded) return 'never pinned';
+  if (typeof recorded !== 'string' || !/^[0-9a-f]{7,40}$/.test(recorded)) return 'never pinned';
   if (head === undefined) return 'not checked';
   if (!head) return 'unreachable';
   return head.startsWith(recorded) ? 'current' : `moved ${recorded.slice(0, 7)}→${head.slice(0, 7)}`;
@@ -144,8 +144,9 @@ function printCandidates(r) {
   console.log(`Candidates (${r.candidates.length}):`);
   for (const c of r.candidates) {
     const dist = c.distribution.plugins ? `plugins ${c.distribution.plugins.join(', ')}` : 'vendored';
-    const shas = `recorded ${(c.ledger?.sha ?? c.audited?.sha ?? '-').slice(0, 7)}${c.ledger ? ' (ledger)' : ' (catalog audit)'}, upstream ${(c.upstream ?? '-').slice(0, 7)}`;
-    console.log(`\n  ${c.repo}  [${dist}]  ${c.state}  — ${shas}`);
+    const fromLedger = typeof c.ledger?.sha === 'string' && c.ledger.sha !== '';
+    const shas = `recorded ${((fromLedger ? c.ledger.sha : c.audited?.sha) ?? '-').slice(0, 7)}${fromLedger ? ' (ledger)' : ' (catalog audit)'}, upstream ${c.upstream ?? '-'}`;
+    console.log(`\n  ${c.repo}  [ships as: ${dist}]  ${c.state}  — ${shas}`);
     for (const s of c.skills) {
       console.log(`    ${s.name} — ${s.covers}  (${s.signals.join(', ')})${s.present.length ? `  present: ${s.present.join(', ')}` : ''}`);
     }
@@ -158,12 +159,13 @@ function printCandidates(r) {
 }
 
 // Every .md/.mdx file under dir, skipping .git and node_modules.
+// Symlinks are skipped: what they point at is reached through its real path.
 function docsIn(dir) {
-  return readdirSync(dir).flatMap((e) => {
-    if (e === '.git' || e === 'node_modules') return [];
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) return docsIn(p);
-    return /\.mdx?$/.test(e) ? [p] : [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.isSymbolicLink() || e.name === '.git' || e.name === 'node_modules') return [];
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return docsIn(p);
+    return e.isFile() && /\.mdx?$/.test(e.name) ? [p] : [];
   });
 }
 const mdIn = (rel) => (existsSync(join(root, rel)) ? readdirSync(join(root, rel)).filter((f) => f.endsWith('.md')).map((f) => `${rel}/${f}`) : []);
@@ -171,7 +173,15 @@ const mdIn = (rel) => (existsSync(join(root, rel)) ? readdirSync(join(root, rel)
 // Lint rules from .ssdd/config.json; unreadable means none, with a note.
 function lintRules() {
   try {
-    return (readJson(join(root, '.ssdd/config.json'))?.lint ?? []).map((r) => ({ name: r.name ?? r.pattern, re: new RegExp(r.pattern) }));
+    const rules = [];
+    for (const [i, r] of (readJson(join(root, '.ssdd/config.json'))?.lint ?? []).entries()) {
+      const name = r?.name ?? r?.pattern ?? `#${i + 1}`;
+      if (typeof r?.pattern !== 'string') { console.error(`skills-audit: skipping lint rule ${name} (no pattern)`); continue; }
+      try { rules.push({ name, re: new RegExp(r.pattern) }); } catch (e) {
+        console.error(`skills-audit: skipping lint rule ${name} (${e.message})`);
+      }
+    }
+    return rules;
   } catch (e) {
     console.error(`skills-audit: unreadable .ssdd/config.json (${e.message})`);
     return [];
@@ -210,6 +220,7 @@ function printCollisions(r) {
 const mode = args[0];
 if (mode === 'collisions') {
   if (!args[1]) { console.error('usage: skills-audit.mjs collisions <dir> [--json]'); process.exit(2); }
+  if (!existsSync(args[1]) || !statSync(args[1]).isDirectory()) { console.error('usage: skills-audit.mjs collisions <dir> [--json]  (<dir> must be an existing directory)'); process.exit(2); }
   const r = collisions(args[1]);
   if (asJson) console.log(JSON.stringify(r, null, 2)); else printCollisions(r);
 } else {
