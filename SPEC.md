@@ -557,11 +557,13 @@ Design decisions:
      command publishes an OTA update.
    - Plugin version strings don't change across commits, so track by sha.
    - `npx skills add` writes a second copy next to a plugin's.
-8. **Audited shas are recorded, never recalled.** The audits give
-   `fed69f5` (Software Mansion). `80090cc` is recorded for Expo only if it
-   resolves in `expo/skills`; the artifact names it as the official
-   marketplace's commit. Callstack and Vercel recorded a push date or a
-   folder hash, not a sha, so their `audited.sha` is `null`.
+8. **Audited shas are recorded, never recalled.** Each is upstream HEAD on
+   the audit date (`git rev-list -1 --before=2026-09-08T23:59 HEAD`), and
+   its commit date matches the push date the Hatedate audit states for that
+   source: Vercel `063bee9` (2026-08-28), Callstack `2766baa` (2026-08-07),
+   Expo `170589a` (2026-09-08), Software Mansion `fed69f5` (2026-09-02, as
+   the artifact names it). `80090cc` is the official marketplace's older
+   Expo pin, recorded as a hazard.
 9. **Script plus skill, the `new-reviewer` shape.** `skills-audit.mjs`
    (read-only, zero deps) does the deterministic parts. The model does
    rating and verdicts.
@@ -579,7 +581,7 @@ Design decisions:
 { "version": 1,
   "sources": [{
     "repo": "software-mansion-labs/skills",
-    "distribution": { "plugin": "skills@swmansion" },
+    "distribution": { "plugins": ["skills@swmansion"] },
     "signals": { "deps": ["react-native-reanimated", "react-native-gesture-handler"] },
     "skills": [{ "name": "react-native-best-practices", "covers": "animations, gestures, svg" }],
     "hazards": ["Version string stuck at 0.1.0 across commits; track by sha"],
@@ -588,15 +590,18 @@ Design decisions:
 ```
 
 - **Signals:** a source becomes a candidate when any signal matches. A
-  signal is a `package.json` dependency (`deps`) or a file (`files`, such
-  as `app.json` with an `expo` key, or `next.config.*`).
+  signal is a `package.json` dependency (`deps`) or a file (`files`: regexes over
+  the root's entries, such as `^next\.config\.`; Expo matches by
+  `deps: ["expo"]`).
 - **Sources:**
   - `vercel-labs/agent-skills` (React/Next.js and RN)
   - `callstackincubator/agent-skills`
   - `expo/skills`
   - `software-mansion-labs/skills`
-- **`distribution`:** `{ "plugin": "<name>@<marketplace>" }` or
-  `{ "vendored": true }`.
+- **`distribution`:** `{ "plugins": ["<name>@<marketplace>", …] }`
+  (Callstack and Expo ship several) or `{ "vendored": true }`. A skill may
+  carry its own `signals`, overriding its source's. A hazard may name a
+  skill, in which case it's shown only when that skill matches.
 
 ### Ledger — `.ssdd/skills.json`
 
@@ -631,7 +636,8 @@ Seeded empty from `mechanisms/skills.example.json`. It's project-owned, so
     HEAD via `git ls-remote` (`--offline` skips it)
   - name collisions between candidates and skills already present:
     `.agents/skills/`, `.claude/skills/`, and the skill folders of plugins
-    in `enabledPlugins`, found under `~/.claude/plugins/cache/`
+    in `enabledPlugins`, located through
+    `~/.claude/plugins/installed_plugins.json`
 - **`collisions <dir>`** takes a source checked out in a temp dir:
   - It applies each `lint` pattern in `.ssdd/config.json` to the source's
     code samples. A hit reads "this example would fail lint rule X".
@@ -667,7 +673,7 @@ The skill points to SDD.md instead of restating it.
 
 ### `ssdd.mjs status --skills`
 
-- Runs `git ls-remote <repo> HEAD` for each ledger source. `owner/repo`
+- Runs `git ls-remote -- <repo> HEAD` for each ledger source. `owner/repo`
   expands to `https://github.com/owner/repo`; a URL or a path is used as
   is.
 - Prints one of these per source: `current`, `moved <old>→<new>`,

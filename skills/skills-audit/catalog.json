@@ -1,0 +1,89 @@
+{
+  "$comment": "Best-practice skill sources for /skills-audit. Hazards here belong to the source itself; collisions with one repo's house rules are found per repo, never recorded here. audited.sha is the upstream commit an audit read (HEAD on its date). Sources: the HateDate RN skills audit (2026-09-08) and prizma commit 457cc0f.",
+  "version": 1,
+  "sources": [
+    {
+      "repo": "software-mansion-labs/skills",
+      "distribution": { "plugins": ["skills@swmansion"] },
+      "signals": { "deps": ["react-native-reanimated", "react-native-gesture-handler", "react-native-worklets", "react-native-svg"] },
+      "skills": [
+        { "name": "react-native-best-practices", "covers": "Reanimated, gestures, SVG, worklets and multithreading, as reference sub-skills; from the libraries' maintainers" }
+      ],
+      "hazards": [
+        { "text": "The marketplace version string stays at 0.1.0 across commits, so the plugin manager reports up to date; track by sha" },
+        { "skill": "react-native-best-practices", "text": "Callstack ships a skill with the same name on the same trigger words; keep one" },
+        { "skill": "react-native-best-practices", "text": "The multithreading and enable-worklets-bundle-mode references describe worklets 0.10+ and Reanimated 4.5+; check the installed versions" }
+      ],
+      "audited": { "sha": "fed69f566b78d3289b6f00e4bccc1d4a696ffde3", "date": "2026-09-08", "by": "HateDate RN skills audit" }
+    },
+    {
+      "repo": "callstackincubator/agent-skills",
+      "distribution": { "plugins": ["building-react-native-apps@callstack-agent-skills", "testing-react-native-apps@callstack-agent-skills"] },
+      "signals": { "deps": ["react-native"] },
+      "skills": [
+        { "name": "react-native-best-practices", "covers": "RN performance doctrine: measure, optimize, re-measure; bundle and startup" },
+        { "name": "react-native-testing", "covers": "React Native Testing Library: queries, userEvent, matchers", "signals": { "deps": ["@testing-library/react-native"] } },
+        { "name": "upgrading-react-native", "covers": "RN version upgrades for projects that own their native folders" },
+        { "name": "react-navigation", "covers": "React Navigation setup and patterns", "signals": { "deps": ["@react-navigation/native"] } },
+        { "name": "agent-device", "covers": "drives simulators and devices for testing" }
+      ],
+      "hazards": [
+        { "skill": "react-native-best-practices", "text": "Same name as Software Mansion's skill on the same trigger words; keep one" },
+        { "skill": "react-native-best-practices", "text": "Recommends React Compiler and Jotai, advises against useMemo/useCallback without profiling, and has a runOnJS sample and a Reanimated 3 install line" },
+        { "skill": "upgrading-react-native", "text": "Edits native folders; under Expo CNG they are generated, and expo-upgrade applies instead" },
+        { "skill": "agent-device", "text": "Bundled in testing-react-native-apps; it drives simulators and devices" },
+        { "skill": "react-navigation", "text": "Under expo-router most of it does not apply" }
+      ],
+      "audited": { "sha": "2766baa46ca0fe7c16cc5ab4d0077ccec2e95fb9", "date": "2026-09-08", "by": "HateDate RN skills audit" }
+    },
+    {
+      "repo": "expo/skills",
+      "distribution": { "plugins": ["expo@claude-plugins-official", "expo@expo-plugins"] },
+      "signals": { "deps": ["expo"] },
+      "skills": [
+        { "name": "expo-upgrade", "covers": "Expo SDK upgrades" },
+        { "name": "eas-update", "covers": "OTA updates with EAS Update", "signals": { "deps": ["expo-updates"] } },
+        { "name": "eas-update-insights", "covers": "OTA update adoption and health", "signals": { "deps": ["expo-updates"] } },
+        { "name": "eas-workflows", "covers": "EAS Workflows CI" },
+        { "name": "eas-app-stores", "covers": "store submission with EAS Submit" },
+        { "name": "expo-router", "covers": "file-based routing", "signals": { "deps": ["expo-router"] } },
+        { "name": "expo-animation", "covers": "motion design and Reanimated recipes", "signals": { "deps": ["react-native-reanimated"] } },
+        { "name": "expo-dev-client", "covers": "development builds", "signals": { "deps": ["expo-dev-client"] } },
+        { "name": "expo-data-fetching", "covers": "data fetching patterns" },
+        { "name": "expo-design-system", "covers": "design tokens and theming scaffolds" },
+        { "name": "expo-project-structure", "covers": "layout for new Expo projects" }
+      ],
+      "hazards": [
+        { "skill": "expo-dev-client", "text": "Lists `eas update` as a version check; that command publishes an OTA update" },
+        { "skill": "expo-upgrade", "text": "Runs `expo install expo@latest` and questions every expo.install.exclude entry; reconcile with the repo's dependency policy first" },
+        { "skill": "expo-animation", "text": "Prefers .get()/.set() on shared values and Pressable plus CSS-transition press feedback; check against the repo's animation rules" },
+        { "skill": "expo-router", "text": "Headline samples use NativeTabs and newer-SDK APIs; check against the installed SDK" },
+        { "skill": "expo-project-structure", "text": "Written for new projects; its src/app layout can invert an existing repo's" },
+        { "text": "The plugin ships hooks/hooks.json (telemetry hooks, documented opt-in); read it before enabling an update" },
+        { "text": "The official marketplace pinned an older commit (80090cc, 2026-09-02) than expo/skills HEAD; compare by sha, not plugin version" }
+      ],
+      "audited": { "sha": "170589a7ee8963156f63de8202fa96cf08a9e610", "date": "2026-09-08", "by": "HateDate RN skills audit" }
+    },
+    {
+      "repo": "vercel-labs/agent-skills",
+      "distribution": { "vendored": true },
+      "skills": [
+        { "name": "vercel-react-best-practices", "covers": "React and Next.js performance rules with ids; the performance reviewer cites them", "signals": { "deps": ["react-dom", "next"] } },
+        { "name": "vercel-composition-patterns", "covers": "component API design: compound components, no boolean props", "signals": { "deps": ["react-dom", "next"] } },
+        { "name": "vercel-react-view-transitions", "covers": "page and shared-element transitions", "signals": { "deps": ["react-dom", "next"] } },
+        { "name": "web-design-guidelines", "covers": "UI accessibility and interface-guideline review", "signals": { "deps": ["react-dom", "next"] } },
+        { "name": "vercel-optimize", "covers": "Vercel cost, cache-hit rate and Core Web Vitals, metric-first", "signals": { "deps": ["next"], "files": ["^vercel\\.json$"] } },
+        { "name": "deploy-to-vercel", "covers": "deploys from the CLI", "signals": { "deps": ["next"], "files": ["^vercel\\.json$"] } },
+        { "name": "vercel-cli-with-tokens", "covers": "Vercel CLI with access tokens", "signals": { "deps": ["next"], "files": ["^vercel\\.json$"] } },
+        { "name": "vercel-react-native-skills", "covers": "React Native rules", "signals": { "deps": ["react-native"] } }
+      ],
+      "hazards": [
+        { "skill": "vercel-react-native-skills", "text": "Teaches runOnJS and pins Reanimated 3.16.1 as correct; some samples don't compile, and the repo's eval harness has no RN cases" },
+        { "skill": "deploy-to-vercel", "text": "Encourages deploying from a laptop; skip it in a repo that ships on merge" },
+        { "skill": "vercel-cli-with-tokens", "text": "Encourages CLI deploys with tokens; skip it in a repo that ships on merge" },
+        { "text": "Installed with `npx skills add`; skills-lock.json's computedHash covers the upstream folder (including a metadata.json it doesn't copy), so it can't verify a local copy. Record the sha and diff against a clone" }
+      ],
+      "audited": { "sha": "063bee94c3f4df8453406c830b0a7df0f2860278", "date": "2026-09-08", "by": "prizma 457cc0f and the HateDate RN skills audit" }
+    }
+  ]
+}

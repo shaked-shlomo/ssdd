@@ -230,3 +230,47 @@ describe('collisions', () => {
     assert.deepEqual(r.json().hits, []);
   });
 });
+
+describe('catalog', () => {
+  const cat = JSON.parse(readFileSync(CATALOG, 'utf8'));
+
+  it('every source has the required fields', () => {
+    assert.equal(cat.version, 1);
+    for (const s of cat.sources) {
+      assert.match(s.repo, /^[\w.-]+\/[\w.-]+$/, s.repo);
+      assert.ok(s.distribution.vendored === true || (Array.isArray(s.distribution.plugins) && s.distribution.plugins.every((p) => /^[\w.-]+@[\w.-]+$/.test(p))), `${s.repo} distribution`);
+      assert.ok(s.skills.length, `${s.repo} skills`);
+      for (const k of s.skills) {
+        assert.ok(k.name && k.covers, `${s.repo} skill fields`);
+        assert.ok(k.signals ?? s.signals, `${s.repo}/${k.name} has no signals`);
+      }
+      for (const h of s.hazards ?? []) {
+        assert.ok(h.text, `${s.repo} hazard text`);
+        if (h.skill) assert.ok(s.skills.some((k) => k.name === h.skill), `${s.repo} hazard names unknown skill ${h.skill}`);
+      }
+      assert.ok(s.audited.sha === null || /^[0-9a-f]{40}$/.test(s.audited.sha), `${s.repo} sha`);
+      assert.match(s.audited.date, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(s.audited.by);
+    }
+  });
+
+  it('an RN/Expo repo gets all four sources and the react-native-best-practices clash', () => {
+    put(repo, 'package.json', { dependencies: {
+      expo: '55.0.0', 'react-native': '0.83.10', 'react-native-reanimated': '4.2.1', react: '19.2.0',
+    } });
+    const out = audit('--offline', '--json').json();
+    assert.deepEqual(out.candidates.map((c) => c.repo).sort(), [
+      'callstackincubator/agent-skills', 'expo/skills', 'software-mansion-labs/skills', 'vercel-labs/agent-skills',
+    ]);
+    assert.deepEqual(out.clashes.find((x) => x.name === 'react-native-best-practices')?.repos.sort(),
+      ['callstackincubator/agent-skills', 'software-mansion-labs/skills']);
+  });
+
+  it('a Next.js repo gets Vercel only, without the RN skill', () => {
+    put(repo, 'package.json', { dependencies: { next: '16.0.0', react: '19.2.0', 'react-dom': '19.2.0' } });
+    put(repo, 'next.config.ts', 'export default {}\n');
+    const out = audit('--offline', '--json').json();
+    assert.deepEqual(out.candidates.map((c) => c.repo), ['vercel-labs/agent-skills']);
+    assert.ok(!out.candidates[0].skills.some((s) => s.name === 'vercel-react-native-skills'));
+  });
+});
