@@ -509,7 +509,7 @@ guards the naming.
 
 # v2.4 — `/skills-audit`: best-practice skills catalog and automation recommender
 
-**Date:** 2026-10-06 · **Status:** spec · **Branch:** `v2.4-skills-audit`
+**Date:** 2026-10-06 · **Status:** shipped (v2.4) · **Branch:** `v2.4-skills-audit`
 
 ## Goal
 
@@ -704,34 +704,44 @@ The skill points to SDD.md instead of restating it.
 
 ## Acceptance criteria
 
-- [ ] **Catalog:**
+- [x] **Catalog:**
   - It parses.
   - Every entry has `repo`, `distribution`, `signals`, `skills` and
     `audited`.
   - Every non-null `audited.sha` resolves in its repo.
-- [ ] **Stack detection:**
+- [x] **Stack detection:**
   - An RN/Expo fixture gets the Software Mansion, Callstack, Expo and
     Vercel candidates.
   - A Next.js fixture gets Vercel.
   - A repo with no signals gets none.
-- [ ] **Name collision:** the Callstack / Software Mansion
+- [x] **Name collision:** the Callstack / Software Mansion
       `react-native-best-practices` pair is reported.
-- [ ] **`collisions <dir>`:** a fixture skill with `runOnJS` and a `lint`
+- [x] **`collisions <dir>`:** a fixture skill with `runOnJS` and a `lint`
       rule for it produce a hit.
-- [ ] **`status --skills`:**
+- [x] **`status --skills`:**
   - A local bare repo shows `current`, then `moved` after a commit.
   - An unreachable source shows `unreachable` and exits 0.
   - A null sha shows `never pinned`.
-- [ ] **Install and update:**
+- [x] **Install and update:**
   - `install` seeds `.ssdd/skills.json` and copies the skill folder.
   - An installed v2.3.2 repo updates cleanly.
   - An existing ledger is untouched by `update`.
-- [ ] **Frontmatter:**
+- [x] **Frontmatter:**
   - It parses with js-yaml.
   - The description is at most 300 chars, with no `": "` inside it.
-- [ ] **Existing tests:** all still pass.
-- [ ] **Live run 1:** `env -u CLAUDECODE claude -p --model claude-sonnet-5-5`
+- [x] **Existing tests:** all still pass.
+- [x] **Live run 1:** `env -u CLAUDECODE claude -p --model claude-sonnet-5-5`
       runs `/skills-audit` in a scratch Expo repo with v2.4 installed. It
       proposes and writes nothing.
-- [ ] **Live run 2:** given an approval, it writes only `.ssdd/skills.json`.
+- [x] **Live run 2:** given an approval, it writes only `.ssdd/skills.json`.
 - [ ] **Recommender:** both live runs confirm its skill name.
+
+*Verified 2026-10-06:*
+- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` → 421 pass, 0 fail (Node 24.15.0).
+- The catalog's four shas resolve upstream; every catalog skill name matches a SKILL.md `name:` at its sha.
+- An installed v2.3.2 repo updates cleanly: skills-audit added, `.ssdd/skills.json` seeded, no conflicts.
+- Live run 1 (`claude -p --model claude-sonnet-5-5`, scratch Expo repo): all four sources as candidates, the `react-native-best-practices` clash, a nine-row verdict table (Software Mansion adopt; Callstack `react-native-best-practices`, the Expo plugin and Vercel do-not-install; the rest skip) ending in a question; working tree clean; recommender: ran as `claude-code-setup:claude-automation-recommender` (one suggestion, the context7 MCP server).
+- Live run 2: only `.ssdd/skills.json` changed; `software-mansion-labs/skills` @ `e3f00cdb…` plugin `skills@swmansion`, `react-native-best-practices` adopt, and `callstackincubator/agent-skills` @ `61e6e7df…` `react-native-best-practices` do-not-install (name clash), both dated 2026-10-06; `status --skills` then printed `current` for both.
+- The `/skills-audit` slash form triggered the skill in print mode. The prompt has to come before `--allowedTools`, which is variadic: with the prompt last, as the plan wrote the command, it took the prompt as a tool name and `claude` exited 1 ("Input must be provided"). Claude Code 2.1.263 warned that `claude-sonnet-5-5` isn't in its model catalog and ran it anyway.
+- Recommender box left open: run 2, an approval to apply only the ledger, didn't reach step 6, so only run 1 confirmed the skill name.
+- Frontmatter checked with js-yaml 4.3.0: `name: skills-audit`, description 294 chars, no `": "`.
