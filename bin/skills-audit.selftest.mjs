@@ -274,3 +274,15 @@ describe('catalog', () => {
     assert.ok(!out.candidates[0].skills.some((s) => s.name === 'vercel-react-native-skills'));
   });
 });
+
+describe('SKILL.md', () => {
+  it('frontmatter has name and a plain description of at most 300 chars with no ": "', () => {
+    const text = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8');
+    const fm = text.match(/^---\n([\s\S]*?)\n---\n/)[1];
+    assert.match(fm, /^name: skills-audit$/m);
+    const desc = fm.match(/^description: (.+)$/m)[1];
+    assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
+    assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
+    assert.doesNotMatch(desc, /^[>|]/, 'keep it a plain one-line value');
+  });
+});

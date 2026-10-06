@@ -16,7 +16,7 @@ in a terminal, …).
 |---|---|---|
 | **Process** | `process/` | None — pure markdown. The lifecycle (brainstorm → spec → plan → task ledger → implement → verify → sync back), the principles, and the plan / spec / ledger / handover templates. |
 | **Reviewers** | `reviewers/` | None — each file is a self-contained review checklist an agent *or a human* can execute against a git diff. Frontmatter is included so agent harnesses can load them directly. |
-| **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `new-reviewer`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
+| **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
 | **Mechanisms** | `mechanisms/` | Node ≥ 18, no npm deps. Config-driven enforcement scripts with **two entry modes each**: a portable git-hook/CLI mode that works everywhere, and a harness stdin mode (Claude Code and Cursor payloads) for earlier interception. Tests: `node --test mechanisms/hooks/*.selftest.mjs` (named so no project's test runner collects them by default). Plus the docs-drift-audit runbook. |
 | **Adapters** | `adapters/` | Per-harness wiring: `claude-code/` (hooks JSON, `CLAUDE.md` loader), `cursor/` (hooks.json, always-on rule), and `generic/AGENTS.md` — the shared instructions template every adapter uses. |
 | **Installer / updater** | `bin/ssdd.mjs` (`inject.sh` = install) | Installs a tagged release into a repo, writes `.ssdd/ssdd.lock.json`, and later three-way merges updates. Harness discovery paths become symlinks. |
@@ -51,7 +51,7 @@ the newest release tag: `process/`, `reviewers/` and the hook scripts into
 `<project>/.ssdd/`, the git pre-commit hook, the skills into `.agents/skills/`,
 each named adapter (symlinked `.claude/agents` + `.claude/skills`, Cursor
 hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
-`AGENTS.md` — or `AGENTS.ssdd.md` to merge if one exists — `CLAUDE.md`,
+`.ssdd/skills.json`, `AGENTS.md` — or `AGENTS.ssdd.md` to merge if one exists — `CLAUDE.md`,
 `.claude/settings.json`), writes the lock, and prints the steps left. Then you **fill in the per-project half**:
 
 1. `.ssdd/config.json` — reviewer routing (which staged paths require which
@@ -69,7 +69,10 @@ hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
    your ledgers, then scaffolds an approved one from
    [reviewers/domain-reviewer-template.md](reviewers/domain-reviewer-template.md)
    (route, model, symlink).
-4. Git hook wiring (portable path): `git config core.hooksPath .githooks`.
+4. Best-practice skills — run `/skills-audit`: it matches the stack against
+   the catalog, audits each source at a pinned sha against your rules, and
+   records what you approve in `.ssdd/skills.json`.
+5. Git hook wiring (portable path): `git config core.hooksPath .githooks`.
 
 ## What deliberately stays per-project
 
@@ -77,6 +80,12 @@ Domain skills and rules do **not** live here: migration workflows, dependency
 version policies, design-system/Figma rules, realtime-RLS proofs, platform
 conventions. SSDD gives them a home (`.claude/skills/`, `.claude/rules/`, or
 plain docs) and the coupling discipline; their content is the project's.
+
+Third-party best-practice skills are chosen per project too. `/skills-audit`
+matches the stack against a small catalog (RN/Expo, Next.js/React), reads
+each source at a pinned sha against the repo's own rules, and records
+every verdict, rejections included, by sha in `.ssdd/skills.json`. It never
+installs anything unasked.
 
 Keep whatever the adapter injects into *session context* small — instruction
 files have real load budgets (hard lesson: a 37KB CLAUDE.md silently truncates
@@ -94,6 +103,7 @@ it:
 
 ```bash
 node ~/Developer/ssdd/bin/ssdd.mjs status <repo>                 # version, local customizations, update available?
+node ~/Developer/ssdd/bin/ssdd.mjs status <repo> --skills        # also: upstream skill sources that moved past .ssdd/skills.json
 node ~/Developer/ssdd/bin/ssdd.mjs update <repo>                 # to the newest tag (--to <ref> to choose)
 node ~/Developer/ssdd/bin/ssdd.mjs adopt  <repo> --base v1.0.1   # give a pre-lock (copy-era) install a lock
 ```
@@ -111,7 +121,7 @@ and the new release:
 | you added a file the release now ships | `<file>.ssdd-new` beside yours — reconcile, delete it |
 | removed upstream | deleted if you never edited it, else kept with a warning |
 
-Project-owned files (`config.json`, `AGENTS.md`, `CLAUDE.md`,
+Project-owned files (`config.json`, `skills.json`, `AGENTS.md`, `CLAUDE.md`,
 `.claude/settings.json`) are never touched; `update` prints how their
 templates changed so you can port what you need. It ends with the CHANGELOG
 entries since your version. Review with `git diff` in the repo and commit

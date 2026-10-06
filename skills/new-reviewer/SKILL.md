@@ -20,8 +20,9 @@ creates nothing until the user picks one.
   the requirements checklist, README limitations. Group them by defect class.
   A class that shows up across two or more plans is a candidate.
 - **Existing lenses:** `.ssdd/reviewers/*.md`, so a candidate doesn't
-  overlap one. Also any best-practices skill in `.agents/skills/`; the
-  performance reviewer already cites those.
+  overlap one. Also any best-practices skill in `.agents/skills/` or in
+  `.ssdd/skills.json`; the performance reviewer already cites those. A
+  class an upstream skill already covers may only need `/skills-audit`.
 
 ## 2. Propose, then stop
 

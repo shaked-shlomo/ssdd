@@ -225,6 +225,7 @@ function nextSteps(target, adapters) {
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
     'Fill the Documentation Map and Harnesses rows in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
     'Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md',
+    'Run /skills-audit to pick the stack\'s best-practice skills (in Claude Code it also offers the automation recommender)',
   ];
   if (adapters.includes('claude-code')) {
     steps.push('If .claude/settings.json already existed, merge adapters/claude-code/settings-hooks.json into it');

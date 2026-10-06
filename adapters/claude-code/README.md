@@ -22,7 +22,7 @@ replacement.
    (the next `install`/`update` creates it).
 3. **Skills** — the skills tree is `.agents/skills/` (harness-neutral; Cursor
    reads it natively). `.claude/skills/<name>` are symlinks to it. Invoke
-   `/new-plan`, `/new-reviewer`, `/cleanup`, `/docs-drift-audit`.
+   `/new-plan`, `/new-reviewer`, `/skills-audit`, `/cleanup`, `/docs-drift-audit`.
 4. **Instructions** — `AGENTS.md` is canonical; `CLAUDE.md` is
    [`@AGENTS.md` plus Claude-only harness notes](CLAUDE.md). Put the
    Documentation Map and review-gate paragraph in `AGENTS.md` once. Keep the
