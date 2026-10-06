@@ -10,6 +10,45 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.4.0] — 2026-10-06
+
+### Added
+- **`/skills-audit`.** It picks the stack's best-practice skills without
+  installing them blindly. A catalog (RN/Expo, Next.js/React: Software
+  Mansion, Callstack, Expo, Vercel) maps stack signals to skill sources,
+  with hazards that belong to the source and the sha its audit read.
+  - `skills-audit.mjs` lists candidates, sha drift, name clashes and skills
+    already present.
+  - `collisions <dir>` checks a source's code samples against the repo's
+    `lint` rules.
+  - The skill reads each source at a pinned sha against the repo's rules
+    and reviewers, then proposes adopt / cherry-pick / refresh /
+    do-not-install / skip.
+  - On approval it records each verdict by sha. It never installs a plugin
+    itself; it prints the command.
+  - In Claude Code it also runs `claude-automation-recommender` when
+    `claude-code-setup` is enabled, and otherwise says how to enable it.
+- **`.ssdd/skills.json`:** a project-owned ledger, seeded by `install` and
+  never touched by `update`.
+- **`status <repo> --skills`** reports ledger sources that moved upstream
+  (`current`, `moved`, `unreachable`, `never pinned`). It's network on
+  request only and never changes the exit code.
+
+### Changed
+- `performance-reviewer` and `/new-reviewer` look in `.ssdd/skills.json`
+  too.
+- `--force` and `--skills` are flags; they no longer consume the next
+  argument.
+
+### Upgrade notes (from 2.3.x)
+- `update` adds `.agents/skills/skills-audit/` and seeds
+  `.ssdd/skills.json`.
+- If your repo already records vendored skills in `skills-lock.json` or a
+  VERSIONS table, run `/skills-audit` once to move those decisions into the
+  ledger by sha. The other files can stay.
+- `claude-code-setup` is not enabled by the settings template. Enable it
+  per repo if you want the recommender.
+
 ## [2.3.2] — 2026-10-06
 
 ### Fixed
