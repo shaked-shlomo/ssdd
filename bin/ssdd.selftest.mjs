@@ -252,6 +252,49 @@ describe('status', () => {
   });
 });
 
+describe('skills ledger', () => {
+  const LEDGER = '{\n  "version": 1,\n  "sources": {}\n}\n';
+  function releaseWithLedger(tag, body = LEDGER) {
+    put(src, 'mechanisms/skills.example.json', body);
+    put(src, 'VERSION', `${tag.slice(1)}\n`);
+    commitAll(src, tag);
+    git(src, 'tag', tag);
+  }
+
+  it('install seeds .ssdd/skills.json as a project-owned file', () => {
+    releaseWithLedger('v2.1.0');
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/skills.json'), LEDGER);
+    const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
+    assert.equal(lock.seeded['.ssdd/skills.json'].src, 'mechanisms/skills.example.json');
+    assert.ok(!lock.managed['.ssdd/skills.json']);
+  });
+
+  it('update seeds a missing ledger and never rewrites an existing one', () => {
+    ssdd('install', tgt);                       // v2.0.0, no ledger yet
+    commitAll(tgt, 'install ssdd 2.0.0');       // update refuses dirty framework paths
+    releaseWithLedger('v2.1.0');
+    let r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/skills.json'), LEDGER);
+    const mine = '{ "version": 1, "sources": { "a/b": { "sha": "abc" } } }\n';
+    put(tgt, '.ssdd/skills.json', mine);
+    commitAll(tgt, 'ledger');
+    releaseWithLedger('v2.2.0', '{\n  "version": 1,\n  "sources": {},\n  "$comment": "new"\n}\n');
+    r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/skills.json'), mine);
+  });
+
+  it('--force and --skills are flags that take no value', () => {
+    ssdd('install', tgt);
+    const r = ssdd('status', tgt, '--skills');   // helper appends --source <src>
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /SSDD v2\.0\.0/);
+  });
+});
+
 describe('adopt (pre-lock install)', () => {
   it('traces a v1-layout install to its base, then updates it with merges', () => {
     // Simulate what the old copy-based inject.sh produced from v1.0.0.

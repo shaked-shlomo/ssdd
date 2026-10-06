@@ -4,7 +4,7 @@
 //   ssdd.mjs install <target> [adapters] [--ref <ref>] [--force]
 //   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--force]
 //   ssdd.mjs adopt   <target> --base <ref> [--to <ref>] [--adapters <a,b>]
-//   ssdd.mjs status  <target>
+//   ssdd.mjs status  <target> [--skills]
 //
 // adapters: comma-separated claude-code, cursor, generic (default: generic).
 //
@@ -15,7 +15,7 @@
 // source path and sha256. `update` three-way merges each managed file: base =
 // the locked commit's copy, ours = the project's file, theirs = the new
 // version. Project edits survive, upstream fixes land, real conflicts get
-// standard conflict markers. "Seeded" files (config.json, AGENTS.md,
+// standard conflict markers. "Seeded" files (config.json, skills.json, AGENTS.md,
 // CLAUDE.md, .claude/settings.json) are project-owned: update never touches
 // them and prints how their templates changed instead.
 //
@@ -43,7 +43,7 @@ const pos = [];
 const opt = {};
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
-  if (a === '--force') opt.force = true;
+  if (a === '--force' || a === '--skills') opt[a.slice(2)] = true;
   else if (a.startsWith('--')) opt[a.slice(2)] = argv[++i];
   else pos.push(a);
 }
@@ -52,7 +52,7 @@ const SRC = resolve(opt.source || process.env.SSDD_SOURCE || join(dirname(fileUR
 function die(msg) { console.error(`ssdd: ${msg}`); process.exit(2); }
 function usage() {
   die('usage: ssdd.mjs install <target> [adapters] [--ref <ref>] | update <target> [--to <ref>] ' +
-      '[--adapters a,b] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target>');
+      '[--adapters a,b] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target> [--skills]');
 }
 
 // ── git / fs helpers ─────────────────────────────────────────────────────────
@@ -151,6 +151,7 @@ function plan(tree, adapters) {
     add(managed, '.cursor/rules/ssdd.mdc', 'adapters/cursor/rules/ssdd.mdc');
   }
   add(seeded, '.ssdd/config.json', 'mechanisms/config.example.json');
+  add(seeded, '.ssdd/skills.json', 'mechanisms/skills.example.json');
   add(seeded, 'AGENTS.md', 'adapters/generic/AGENTS.md');
   if (adapters.includes('claude-code')) {
     add(seeded, '.claude/settings.json', 'adapters/claude-code/settings-hooks.json');
