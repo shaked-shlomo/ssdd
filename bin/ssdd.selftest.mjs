@@ -292,6 +292,7 @@ describe('skills ledger', () => {
     const r = ssdd('status', tgt, '--skills');   // helper appends --source <src>
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /SSDD v2\.0\.0/);
+    assert.ok(r.out.includes(`newest release in ${src}`), r.out);   // --source was not swallowed
   });
 });
 
