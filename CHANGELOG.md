@@ -37,8 +37,7 @@ the target, so upgrade steps belong here and not only in commit messages.
 ### Changed
 - `performance-reviewer` and `/new-reviewer` look in `.ssdd/skills.json`
   too.
-- `--force` and `--skills` are flags; they no longer consume the next
-  argument.
+- `--skills` is a flag: it doesn't take the next argument as a value.
 
 ### Upgrade notes (from 2.3.x)
 - `update` adds `.agents/skills/skills-audit/` and seeds

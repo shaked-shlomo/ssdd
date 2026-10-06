@@ -570,7 +570,9 @@ Design decisions:
 10. **The recommender step is Claude Code only.** Cursor reads
     `.agents/skills/` too, so the step is gated on the harness. Whether the
     plugin is present is read from `enabledPlugins` in
-    `.claude/settings.json`. The recommender's skill name is confirmed in
+    `~/.claude/settings.json`, `.claude/settings.json` and
+    `.claude/settings.local.json` (later wins), resolved through
+    `~/.claude/plugins/installed_plugins.json`. The recommender's skill name is confirmed in
     the live run, not assumed.
 
 ## Design
@@ -648,8 +650,9 @@ Seeded empty from `mechanisms/skills.example.json`. It's project-owned, so
 The skill points to SDD.md instead of restating it.
 
 1. Run the script.
-2. Shallow-clone each candidate at its HEAD sha into a temp dir outside the
-   repo, then read it.
+2. Clone each candidate with `--filter=blob:none` (the refresh diff needs
+   history) and check out its HEAD sha into a temp dir outside the repo,
+   then read it.
 3. Run `collisions <dir>`. Read the house-rule files for collisions no lint
    pattern catches.
 4. Rate each skill on the audit's criteria:
@@ -730,18 +733,19 @@ The skill points to SDD.md instead of restating it.
   - It parses with js-yaml.
   - The description is at most 300 chars, with no `": "` inside it.
 - [x] **Existing tests:** all still pass.
-- [x] **Live run 1:** `env -u CLAUDECODE claude -p --model claude-sonnet-5-5`
+- [x] **Live run 1:** `env -u CLAUDECODE claude -p "/skills-audit" --model claude-sonnet-5-5 --allowedTools <tools>`
       runs `/skills-audit` in a scratch Expo repo with v2.4 installed. It
-      proposes and writes nothing.
+      proposes and writes nothing. The prompt goes before `--allowedTools`,
+      whose variadic value would swallow a trailing prompt.
 - [x] **Live run 2:** given an approval, it writes only `.ssdd/skills.json`.
-- [ ] **Recommender:** both live runs confirm its skill name.
+- [x] **Recommender:** live run 1 confirms the recommender's skill name.
 
 *Verified 2026-10-06:*
-- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` → 421 pass, 0 fail (Node 24.15.0).
+- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` → 428 pass, 0 fail (Node 24.15.0).
 - The catalog's four shas resolve upstream; every catalog skill name matches a SKILL.md `name:` at its sha.
 - An installed v2.3.2 repo updates cleanly: skills-audit added, `.ssdd/skills.json` seeded, no conflicts.
 - Live run 1 (`claude -p --model claude-sonnet-5-5`, scratch Expo repo): all four sources as candidates, the `react-native-best-practices` clash, a nine-row verdict table (Software Mansion adopt; Callstack `react-native-best-practices`, the Expo plugin and Vercel do-not-install; the rest skip) ending in a question; working tree clean; recommender: ran as `claude-code-setup:claude-automation-recommender` (one suggestion, the context7 MCP server).
 - Live run 2: only `.ssdd/skills.json` changed; `software-mansion-labs/skills` @ `e3f00cdb…` plugin `skills@swmansion`, `react-native-best-practices` adopt, and `callstackincubator/agent-skills` @ `61e6e7df…` `react-native-best-practices` do-not-install (name clash), both dated 2026-10-06; `status --skills` then printed `current` for both.
 - The `/skills-audit` slash form triggered the skill in print mode. The prompt has to come before `--allowedTools`, which is variadic: with the prompt last, as the plan wrote the command, it took the prompt as a tool name and `claude` exited 1 ("Input must be provided"). Claude Code 2.1.263 warned that `claude-sonnet-5-5` isn't in its model catalog and ran it anyway.
-- Recommender box left open: run 2, an approval to apply only the ledger, didn't reach step 6, so only run 1 confirmed the skill name.
+- Recommender: run 2 was an approval pass limited to the ledger and didn't reach step 6, so live run 1 alone confirms the skill name; re-running step 6 isn't needed.
 - Frontmatter checked with js-yaml 4.3.0: `name: skills-audit`, description 294 chars, no `": "`.
