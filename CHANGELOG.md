@@ -10,6 +10,26 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.3.2] — 2026-10-06
+
+### Fixed
+- **SSDD's hook tests no longer break a project's test runner.** They were
+  installed as `.ssdd/hooks/*.test.mjs` and written with `node:test`.
+  Vitest's default include collected them and failed ("No test suite
+  found"), which would have broken the first injected project's
+  `npm run check`.
+- The tests are now `*.selftest.mjs`, which no default pattern of vitest,
+  jest, playwright, `node --test`, bun or deno matches. A new test keeps it
+  that way. Run them with `node --test .ssdd/hooks/*.selftest.mjs`.
+
+### Upgrade notes (from 2.3.x)
+- `update` removes the old `*.test.mjs` hook tests (unless you edited them)
+  and adds the `*.selftest.mjs` ones. If you excluded `.ssdd/hooks/**` from
+  your test runner as a workaround, you can drop that.
+- A repo that wrote its own hook tests under `.ssdd/hooks/` before v2 keeps
+  them, since `update` only manages its own files. They test the old hooks;
+  delete them in favor of the selftests.
+
 ## [2.3.1] — 2026-10-05
 
 ### Changed

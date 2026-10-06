@@ -490,3 +490,17 @@ framework.
   docs-sync reviewer, and `reviewerModels: ["opus>=5.5","sonnet>=5.5"]`:
   the reviewer ran on the session's `claude-sonnet-5-5`; its completion
   stamped (`by: hook`, ISSUES 1); the commit passed with the triage note.
+
+**v2.3.2 (2026-10-06).** SSDD's installed hook tests (`*.test.mjs`,
+written with `node:test`) were collected by vitest's default include and
+failed. That reproduced with the first injected project's vitest; its
+`npm run check` would have broken on update. They're renamed
+`*.selftest.mjs`, which no default runner pattern matches, and a test
+guards the naming.
+
+*Verified:*
+- 396 tests pass.
+- Real vitest in a scratch project collects only the project's own test
+  (before: 2 "No test suite found" failures).
+- An installed v2.3.1 repo updates with the 5 old files removed and the 5
+  selftests added; 379 pass + 1 skipped there.
