@@ -504,3 +504,229 @@ guards the naming.
   (before: 2 "No test suite found" failures).
 - An installed v2.3.1 repo updates with the 5 old files removed and the 5
   selftests added; 379 pass + 1 skipped there.
+
+---
+
+# v2.4 — `/skills-audit`: best-practice skills catalog and automation recommender
+
+**Date:** 2026-10-06 · **Status:** spec · **Branch:** `v2.4-skills-audit`
+
+## Goal
+
+When SSDD is injected into a repo, help it pick its stack's best-practice
+skills without installing them blindly, and point at Claude Code's automation
+recommender. The method is the one two audits used by hand: the Hatedate RN
+skills audit (2026-09-08, artifact `Mp8hy1ouga8i3m3tjoiCJB`) and prizma's
+(commit `457cc0f`, AGENTS.md "Skills: which one, when"). Their finding: no
+source installs wholesale, because every one ships rules a hook or reviewer
+would block.
+
+## Clarify pass
+
+Owner rulings, 2026-10-06:
+
+1. **Name:** `/skills-audit`. It names the method, and pairs with
+   `docs-drift-audit`.
+2. **First catalog:** RN/Expo and Next.js/React only, where audit evidence
+   exists. Supabase and stack-agnostic sources wait for their own audit.
+3. **Recommender:** not enabled by `install`. Every plugin's descriptions
+   cost context in every session. The skill runs
+   `claude-automation-recommender` when `claude-code-setup` is enabled, and
+   otherwise prints the line that enables it.
+4. **Ledger:** `.ssdd/skills.json`, project-owned. It isn't npx's
+   `skills-lock.json`, whose hash covers the upstream folder and which
+   can't hold plugins or rejections. It isn't a markdown table, which status
+   can't parse, and it isn't the SSDD lock, which `update` rewrites.
+5. **Drift:** `ssdd.mjs status --skills` is opt-in, so plain `status` stays
+   offline.
+
+Design decisions:
+
+6. **The catalog ships inside the skill**, as
+   `skills/skills-audit/catalog.json`. `install` already copies `skills/` to
+   `.agents/skills/`, so no installer change and no new target path is
+   needed, and it updates through the normal three-way merge.
+7. **The catalog holds only hazards that belong to the source.** One
+   project's house rules (Hatedate's Pressable, `#666`, AppText) stay out;
+   step 3 of the skill recomputes collisions for each repo. Hazards that
+   belong in the catalog:
+   - Two sources ship a skill named `react-native-best-practices`, on the
+     same trigger words.
+   - Vercel's RN skill teaches `runOnJS` and Reanimated 3.
+   - `expo-dev-client` lists `eas update` as a version check, but that
+     command publishes an OTA update.
+   - Plugin version strings don't change across commits, so track by sha.
+   - `npx skills add` writes a second copy next to a plugin's.
+8. **Audited shas are recorded, never recalled.** The audits give
+   `fed69f5` (Software Mansion). `80090cc` is recorded for Expo only if it
+   resolves in `expo/skills`; the artifact names it as the official
+   marketplace's commit. Callstack and Vercel recorded a push date or a
+   folder hash, not a sha, so their `audited.sha` is `null`.
+9. **Script plus skill, the `new-reviewer` shape.** `skills-audit.mjs`
+   (read-only, zero deps) does the deterministic parts. The model does
+   rating and verdicts.
+10. **The recommender step is Claude Code only.** Cursor reads
+    `.agents/skills/` too, so the step is gated on the harness. Whether the
+    plugin is present is read from `enabledPlugins` in
+    `.claude/settings.json`. The recommender's skill name is confirmed in
+    the live run, not assumed.
+
+## Design
+
+### Catalog — `skills/skills-audit/catalog.json`
+
+```json
+{ "version": 1,
+  "sources": [{
+    "repo": "software-mansion-labs/skills",
+    "distribution": { "plugin": "skills@swmansion" },
+    "signals": { "deps": ["react-native-reanimated", "react-native-gesture-handler"] },
+    "skills": [{ "name": "react-native-best-practices", "covers": "animations, gestures, svg" }],
+    "hazards": ["Version string stuck at 0.1.0 across commits; track by sha"],
+    "collides": [{ "skill": "react-native-best-practices", "with": "callstackincubator/agent-skills", "kind": "name" }],
+    "audited": { "sha": "fed69f5", "date": "2026-09-08", "by": "Hatedate RN audit" } }] }
+```
+
+- **Signals:** a source becomes a candidate when any signal matches. A
+  signal is a `package.json` dependency (`deps`) or a file (`files`, such
+  as `app.json` with an `expo` key, or `next.config.*`).
+- **Sources:**
+  - `vercel-labs/agent-skills` (React/Next.js and RN)
+  - `callstackincubator/agent-skills`
+  - `expo/skills`
+  - `software-mansion-labs/skills`
+- **`distribution`:** `{ "plugin": "<name>@<marketplace>" }` or
+  `{ "vendored": true }`.
+
+### Ledger — `.ssdd/skills.json`
+
+Seeded empty from `mechanisms/skills.example.json`. It's project-owned, so
+`update` never touches it.
+
+```json
+{ "version": 1,
+  "sources": { "software-mansion-labs/skills": {
+    "distribution": "plugin", "install": "skills@swmansion",
+    "sha": "<full sha>", "date": "2026-10-06",
+    "skills": {
+      "react-native-best-practices": { "verdict": "adopt", "reason": "…" },
+      "pulsar-haptics": { "verdict": "skip", "reason": "uses expo-haptics" } } } } }
+```
+
+- **Verdicts:**
+  - `adopt`
+  - `cherry-pick` (with `landed`: the rule file it was ported into)
+  - `refresh`
+  - `do-not-install`
+  - `skip`
+- **Rejections are kept**, with the reason. The ledger replaces a
+  hand-written "not vendored on purpose" list.
+
+### `skills-audit.mjs` (read-only)
+
+- **Default mode** prints:
+  - the stack signals it found
+  - the candidate sources with their skills and catalog hazards
+  - per candidate: the ledger sha, the catalog's audited sha, and upstream
+    HEAD via `git ls-remote` (`--offline` skips it)
+  - name collisions between candidates and skills already present:
+    `.agents/skills/`, `.claude/skills/`, and the skill folders of plugins
+    in `enabledPlugins`, found under `~/.claude/plugins/cache/`
+- **`collisions <dir>`** takes a source checked out in a temp dir:
+  - It applies each `lint` pattern in `.ssdd/config.json` to the source's
+    code samples. A hit reads "this example would fail lint rule X".
+  - It lists the house-rule files for the model to read: `AGENTS.md`,
+    `.claude/rules/` and `.ssdd/reviewers/`.
+
+### `/skills-audit` steps
+
+The skill points to SDD.md instead of restating it.
+
+1. Run the script.
+2. Shallow-clone each candidate at its HEAD sha into a temp dir outside the
+   repo, then read it.
+3. Run `collisions <dir>`. Read the house-rule files for collisions no lint
+   pattern catches.
+4. Rate each skill on the audit's criteria:
+   - the author's proximity to the stack
+   - API currency against the repo's installed versions
+   - a validation harness
+   - the collision count
+
+   Stars are not used. Propose a table with a verdict per skill, then stop.
+5. On approval:
+   - Write the ledger rows by full sha.
+   - Port cherry-picks into rule files, each with a source line.
+   - For plugins, print the `/plugin install` / `/plugin update` commands
+     for the user to run.
+   - For vendored skills, warn against a second copy next to a plugin's.
+
+   Nothing is installed without approval.
+6. Claude Code only: run `claude-automation-recommender` if `claude-code-setup`
+   is enabled; otherwise print the line that enables it.
+
+### `ssdd.mjs status --skills`
+
+- Runs `git ls-remote <repo> HEAD` for each ledger source. `owner/repo`
+  expands to `https://github.com/owner/repo`; a URL or a path is used as
+  is.
+- Prints one of these per source: `current`, `moved <old>→<new>`,
+  `unreachable`, or `never pinned` (null sha).
+- The section never changes the exit code. Plain `status` is unchanged.
+
+### Links
+
+- `performance-reviewer.md` and `new-reviewer` reference the ledger next to
+  `.agents/skills/`.
+- README: the Skills row, and `status --skills` in the commands block.
+
+## Scope
+
+**In:**
+- `skills/skills-audit/`: `SKILL.md`, `skills-audit.mjs`, `catalog.json`.
+- `mechanisms/skills.example.json`, seeded by `install`.
+- `status --skills`.
+- The reviewer and `new-reviewer` links.
+- README, CHANGELOG, VERSION.
+- Tests in `*.selftest.mjs`.
+
+**Out:**
+- Supabase and stack-agnostic catalog sources.
+- Enabling `claude-code-setup` in the settings template.
+- The gate-evasion weaknesses (README → Known limitations).
+- A CI workflow.
+- Upgrading injected projects; each one runs `update` itself.
+
+## Acceptance criteria
+
+- [ ] **Catalog:**
+  - It parses.
+  - Every entry has `repo`, `distribution`, `signals`, `skills` and
+    `audited`.
+  - Every non-null `audited.sha` resolves in its repo.
+- [ ] **Stack detection:**
+  - An RN/Expo fixture gets the Software Mansion, Callstack, Expo and
+    Vercel candidates.
+  - A Next.js fixture gets Vercel.
+  - A repo with no signals gets none.
+- [ ] **Name collision:** the Callstack / Software Mansion
+      `react-native-best-practices` pair is reported.
+- [ ] **`collisions <dir>`:** a fixture skill with `runOnJS` and a `lint`
+      rule for it produce a hit.
+- [ ] **`status --skills`:**
+  - A local bare repo shows `current`, then `moved` after a commit.
+  - An unreachable source shows `unreachable` and exits 0.
+  - A null sha shows `never pinned`.
+- [ ] **Install and update:**
+  - `install` seeds `.ssdd/skills.json` and copies the skill folder.
+  - An installed v2.3.2 repo updates cleanly.
+  - An existing ledger is untouched by `update`.
+- [ ] **Frontmatter:**
+  - It parses with js-yaml.
+  - The description is at most 300 chars, with no `": "` inside it.
+- [ ] **Existing tests:** all still pass.
+- [ ] **Live run 1:** `env -u CLAUDECODE claude -p --model claude-sonnet-5-5`
+      runs `/skills-audit` in a scratch Expo repo with v2.4 installed. It
+      proposes and writes nothing.
+- [ ] **Live run 2:** given an approval, it writes only `.ssdd/skills.json`.
+- [ ] **Recommender:** both live runs confirm its skill name.
