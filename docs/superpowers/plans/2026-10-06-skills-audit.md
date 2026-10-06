@@ -152,6 +152,10 @@ In `bin/ssdd.mjs`:
 
 In `usage()`, replace `| status <target>'` with `| status <target> [--skills]'`.
 
+In the header comment, change the seeded-files list
+`"Seeded" files (config.json, AGENTS.md,` to
+`"Seeded" files (config.json, skills.json, AGENTS.md,`.
+
 In `plan()`, after `add(seeded, '.ssdd/config.json', 'mechanisms/config.example.json');`:
 
 ```js
@@ -1018,6 +1022,13 @@ Replace clarify item 8 with:
    Expo pin, recorded as a hazard.
 ```
 
+In Design → Catalog, replace the signals example "(`files`, such as
+`app.json` with an `expo` key, or `next.config.*`)" with
+"(`files`: regexes over the root's entries, such as `^next\.config\.`;
+Expo matches by `deps: ["expo"]`)". In Design → `skills-audit.mjs`, replace
+"found under `~/.claude/plugins/cache/`" with "located through
+`~/.claude/plugins/installed_plugins.json`".
+
 In Design → Catalog, replace the `distribution` bullet with:
 
 ```markdown
@@ -1048,6 +1059,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `README.md`: the What's in the box Skills row, the Versioning commands
     block, and the "What deliberately stays per-project" paragraph
   - `adapters/claude-code/README.md` (step 3's skill list)
+  - `bin/ssdd.mjs` (`nextSteps()`: one line pointing at `/skills-audit`)
 - Test: `bin/skills-audit.selftest.mjs` (new `describe('SKILL.md')`)
 
 **Interfaces:**
@@ -1279,6 +1291,26 @@ In `README.md`:
 - **Project-owned files list** (the `update` section: "Project-owned files
   (`config.json`, `AGENTS.md`, …)"): add `skills.json`.
 
+In `bin/ssdd.mjs` `nextSteps()`, add this step right after the
+docs-drift-audit step:
+
+```js
+    'Run /skills-audit to pick the stack\'s best-practice skills (in Claude Code it also offers the automation recommender)',
+```
+
+In `README.md` → "Injecting into a project":
+- Add `.ssdd/skills.json` to the "It seeds the project-owned files (…)"
+  sentence.
+- Add a numbered step after step 3 (Domain reviewers):
+
+  ```markdown
+  4. Best-practice skills — run `/skills-audit`: it matches the stack against
+     the catalog, audits each source at a pinned sha against your rules, and
+     records what you approve in `.ssdd/skills.json`.
+  ```
+
+  Then renumber the git-hook step to 5.
+
 In `adapters/claude-code/README.md` step 3, change
 "Invoke `/new-plan`, `/new-reviewer`, `/cleanup`, `/docs-drift-audit`." to
 "Invoke `/new-plan`, `/new-reviewer`, `/skills-audit`, `/cleanup`, `/docs-drift-audit`."
@@ -1292,7 +1324,7 @@ Expected: all pass, at 396 plus the new tests.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/skills-audit/SKILL.md reviewers/performance-reviewer.md skills/new-reviewer/SKILL.md README.md adapters/claude-code/README.md bin/skills-audit.selftest.mjs
+git add skills/skills-audit/SKILL.md reviewers/performance-reviewer.md skills/new-reviewer/SKILL.md README.md adapters/claude-code/README.md bin/skills-audit.selftest.mjs bin/ssdd.mjs
 git commit -m "feat(skills-audit): the /skills-audit skill; link the ledger from the reviewers and docs
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1403,7 +1435,7 @@ git add -A && git -c user.email=t@t -c user.name=t commit -qm ssdd
 Run it from `$L`:
 
 ```bash
-env -u CLAUDECODE claude -p --model claude-sonnet-5-5 --allowedTools "Bash(node:*) Bash(git:*) Read Grep Glob Skill" "/skills-audit"
+env -u CLAUDECODE claude -p --model claude-sonnet-5-5 --allowedTools "Bash Read Grep Glob Skill" "/skills-audit"
 git -C $L status --porcelain
 ```
 
@@ -1416,10 +1448,16 @@ Expected:
   (it's enabled at user scope on this machine) and the exact skill name it
   used.
 
+Bash is allowed broadly: steps 2–3 clone into `$TMPDIR` with `mkdir`, `ls`
+and the like. The "writes nothing" check is `git status`, not the allowlist.
+If `"/skills-audit"` doesn't trigger the skill in print mode, retry with
+`"Use the skills-audit skill on this repo"`, and record which form worked
+in the verification note.
+
 - [ ] **Step 5: Live run 2 (records on approval)**
 
 ```bash
-env -u CLAUDECODE claude -p --model claude-sonnet-5-5 --allowedTools "Bash(node:*) Bash(git:*) Read Grep Glob Skill Edit Write" \
+env -u CLAUDECODE claude -p --model claude-sonnet-5-5 --allowedTools "Bash Read Grep Glob Skill Edit Write" \
   "/skills-audit — I approve: record software-mansion-labs/skills react-native-best-practices as adopt (plugin skills@swmansion) and callstackincubator/agent-skills react-native-best-practices as do-not-install (name clash). Apply only the ledger; no cherry-picks, no installs."
 git -C $L status --porcelain
 cat $L/.ssdd/skills.json
