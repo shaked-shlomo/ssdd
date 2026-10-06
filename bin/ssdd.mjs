@@ -229,7 +229,7 @@ function nextSteps(target, adapters) {
     steps.push('If .claude/settings.json already existed, merge adapters/claude-code/settings-hooks.json into it');
     steps.push('Make sure CLAUDE.md starts with @AGENTS.md (see adapters/claude-code/CLAUDE.md)');
   }
-  steps.push('Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.test.mjs');
+  steps.push('Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.selftest.mjs');
   steps.push(`Commit the whole setup, including ${LOCK} — the framework travels with the repo`);
   console.log('\nManual steps left:');
   steps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));

@@ -1,11 +1,11 @@
 // Tests for the SSDD installer/updater. Each case builds a fake ssdd source
 // repo with three releases and a scratch target repo, then drives bin/ssdd.mjs
-// the way a user would. Run: node --test bin/ssdd.test.mjs
+// the way a user would. Run: node --test bin/ssdd.selftest.mjs
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
 import {
-  cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync,
+  cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync,
   rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -69,7 +69,7 @@ function buildSource() {
   put(src, 'process/SDD.md', edit(lines(20, 'sdd'), 18, 'sdd 18 UPSTREAM'));
   put(src, 'reviewers/alpha-reviewer.md', edit(lines(10, 'alpha'), 3, 'alpha 3 UPSTREAM'));
   put(src, 'mechanisms/hooks/review-gate.mjs', 'gate v2\n');
-  put(src, 'mechanisms/hooks/review-gate.test.mjs', 'upstream test\n');
+  put(src, 'mechanisms/hooks/review-gate.selftest.mjs', 'upstream test\n');
   put(src, 'reviewers/beta-reviewer.md', 'beta\n');
   rmSync(join(src, 'mechanisms/drift-audit.md'));
   put(src, 'skills/new-plan/SKILL.md', edit(lines(6, 'skill'), 6, 'skill 6 UPSTREAM'));
@@ -157,7 +157,7 @@ describe('update', () => {
     put(tgt, '.ssdd/process/SDD.md', edit(get('.ssdd/process/SDD.md'), 2, 'sdd 2 PROJECT'));
     put(tgt, '.ssdd/reviewers/alpha-reviewer.md', edit(get('.ssdd/reviewers/alpha-reviewer.md'), 3, 'alpha 3 PROJECT'));
     put(tgt, '.ssdd/process/templates/plan-template.md', edit(get('.ssdd/process/templates/plan-template.md'), 1, 'plan 1 PROJECT'));
-    put(tgt, '.ssdd/hooks/review-gate.test.mjs', 'project test\n');
+    put(tgt, '.ssdd/hooks/review-gate.selftest.mjs', 'project test\n');
     put(tgt, '.ssdd/config.json', '{ "routing": [{ "reviewer": "alpha-reviewer", "paths": ["^src/"] }] }\n');
     commitAll(tgt, 'project edits');
 
@@ -179,8 +179,8 @@ describe('update', () => {
     // changed locally, unchanged upstream → kept
     assert.match(get('.ssdd/process/templates/plan-template.md'), /plan 1 PROJECT/);
     // both added with different content → sidecar
-    assert.equal(get('.ssdd/hooks/review-gate.test.mjs'), 'project test\n');
-    assert.equal(get('.ssdd/hooks/review-gate.test.mjs.ssdd-new'), 'upstream test\n');
+    assert.equal(get('.ssdd/hooks/review-gate.selftest.mjs'), 'project test\n');
+    assert.equal(get('.ssdd/hooks/review-gate.selftest.mjs.ssdd-new'), 'upstream test\n');
     // removed upstream, unmodified locally → removed
     assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
     // added upstream → added and linked
@@ -291,5 +291,23 @@ describe('adopt (pre-lock install)', () => {
     const r = ssdd('adopt', tgt);
     assert.equal(r.code, 2);
     assert.match(r.out, /--base/);
+  });
+});
+
+describe('framework files', () => {
+  // SSDD installs mechanisms/hooks/*.mjs into every project's .ssdd/hooks/.
+  // Its own tests use node:test, so a project runner that collects them by
+  // default fails (prizma's vitest did). No file there may match the default
+  // patterns of vitest/jest/playwright, node --test, bun or deno.
+  const DEFAULT_TEST_PATTERNS = [
+    /\.(test|spec)\.[cm]?[jt]sx?$/, // vitest, jest, playwright, bun, deno (.test.)
+    /[-_]test\.[cm]?[jt]s$/,        // node --test (*-test), bun/deno (*_test)
+    /[-_]spec\.[cm]?[jt]s$/,        // bun (*_spec)
+    /^test[-.]/,                    // node --test (test-*, test.mjs)
+  ];
+  it('no installed hook file matches a test runner\'s default pattern', () => {
+    const dir = join(dirname(SCRIPT), '..', 'mechanisms', 'hooks');
+    const hits = readdirSync(dir).filter((f) => DEFAULT_TEST_PATTERNS.some((re) => re.test(f)));
+    assert.deepEqual(hits, []);
   });
 });
