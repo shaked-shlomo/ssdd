@@ -4,7 +4,7 @@
 framework-side Remove/Change/Add rows: shorter descriptions, the gate
 procedure in one place, merged evidence principle, `effort:` frontmatter,
 "reviews at the gate" line, prompt audit and the new-model checklist.
-Mechanical stamping via `SubagentStop` is planned for **v2.3**. The
+Mechanical stamping via `SubagentStop` shipped in **v2.3.0** (models: v2.3.1). The
 project-side rows (the first injected project's AGENTS.md trim, design-sync
 → skill, Superpowers) belong in a plan in that project.
 **Baseline:** SSDD v2 = the framework as it runs in its first injected project,

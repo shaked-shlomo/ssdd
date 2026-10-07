@@ -159,14 +159,15 @@ security boundary. Six weaknesses reproduced in the source project, filed
 there for their own plan (a rushed fix grown inside an unrelated commit was
 reverted after several rounds found it incomplete):
 
-1. It fails open on a config it can't use (missing/invalid JSON exits 0; a
-   bad regex crashes `--pre-commit` but passes the stdin mode).
+1. It fails open on invalid config JSON, treated like "no config": exit 0
+   in both layers. (Since v2.1 a bad regex blocks in both.)
 2. Unrouted paths get no review — including the instruction files, the hook
    scripts and `.claude/settings.json`, which arms the hooks.
 3. It reads the *working-tree* config, so a commit that removes a route is
    judged by the table it just edited.
-4. A stale `.git/hooks/pre-commit` wins over `core.hooksPath`, and a fresh
-   clone has the hook dormant until `git config core.hooksPath .githooks`.
+4. A fresh clone has the hook dormant until
+   `git config core.hooksPath .githooks`. (Once that's set, git ignores
+   `.git/hooks` entirely, verified on git 2.54.)
 5. `SSDD_PROJECT_DIR` pointing elsewhere made the hook judge that path —
    closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
    harness layer starts from the tool call's cwd.
