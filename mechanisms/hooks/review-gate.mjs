@@ -67,7 +67,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { expandWrappers, flatten, gitInvocation, isCommit, skeleton } from './git-cmd.mjs';
-import { loadSsddConfig } from './ssdd-config.mjs';
+import { ARM_HOOK, dormantHook, loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
 const git = (...args) =>
@@ -500,16 +500,23 @@ try {
 } catch (e) {
   deny(`[ssdd-review-gate] could not evaluate the staged diff (${String(e?.message ?? e).split('\n')[0]}) — fix .ssdd/config.json or the repo, then retry.\n`);
 }
+// The pre-commit layer backs this hook up for commits made outside the agent;
+// say so when it is switched off. git-guard denies the fix, so it's the user's.
+const dormant = dormantHook(cfg.root);
+const dormantNote = dormant
+  ? `[ssdd-review-gate] note: the pre-commit hook is dormant in this repo (${dormant}), so commits\n` +
+    `  made outside this agent aren't gated. Ask the user to run: ${ARM_HOOK}\n`
+  : '';
 if (!verdict.owed.length) {
   if (verdict.warning) process.stderr.write(verdict.warning);
-  const note = triageNote(cfg);
+  const note = triageNote(cfg) + dormantNote;
   if (note) {
     process.stderr.write(note);
     finish(0, 'allow', { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: note } });
   }
   finish(0, 'allow');
 }
-deny(blockMessage(verdict, stampingMode(cfg) === 'hooks' ? '' : repoHint, stampingMode(cfg)), 'SSDD review gate: stamps owed before commit.');
+deny(blockMessage(verdict, stampingMode(cfg) === 'hooks' ? '' : repoHint, stampingMode(cfg)) + dormantNote, 'SSDD review gate: stamps owed before commit.');
 
 // ── completion stamps (SubagentStart / SubagentStop) ─────────────────────────
 // The verdict is the reviewer contract's last line: CLEAN / SECURE /

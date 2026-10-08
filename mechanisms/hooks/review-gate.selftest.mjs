@@ -600,3 +600,43 @@ describe('the config a commit is judged by', () => {
     assert.doesNotMatch(pc.stderr, /alpha/);
   });
 });
+
+describe('dormant pre-commit hook', () => {
+  const armable = (d) => {
+    mkdirSync(join(d, '.githooks'), { recursive: true });
+    writeFileSync(join(d, '.githooks', 'pre-commit'), '#!/bin/sh\n');
+  };
+  const NOTE = /pre-commit hook is dormant in this repo \(core\.hooksPath is unset\)[\s\S]*git config core\.hooksPath \.githooks/;
+
+  it('a blocked and an allowed commit both carry the note while core.hooksPath is unset', () => {
+    armable(dir);
+    write(dir, 'docs/x.md', 'x\n');
+    const ok = hook(dir, 'git commit -m x');
+    assert.strictEqual(ok.status, 0);
+    assert.match(ok.stderr, NOTE);
+    assert.match(JSON.parse(ok.stdout).hookSpecificOutput.additionalContext, NOTE);
+    write(dir, 'src/a.ts', 'a\n');
+    const blocked = hook(dir, 'git commit -m x');
+    assert.strictEqual(blocked.status, 2);
+    assert.match(blocked.stderr, NOTE);
+  });
+
+  it('names a wrong value, and is silent once it points at .githooks', () => {
+    armable(dir);
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'config', 'core.hooksPath', '.git/hooks');
+    assert.match(hook(dir, 'git commit -m x').stderr, /core\.hooksPath is "\.git\/hooks"/);
+    git(dir, 'config', 'core.hooksPath', '.githooks/');
+    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+    write(dir, 'src/a.ts', 'b\n');
+    git(dir, 'config', 'core.hooksPath', join(dir, '.githooks'));
+    const r = hook(dir, 'git commit -m x');
+    assert.strictEqual(r.status, 2);
+    assert.doesNotMatch(r.stderr, /dormant/);
+  });
+
+  it('a repo without .githooks/pre-commit gets no note', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+  });
+});

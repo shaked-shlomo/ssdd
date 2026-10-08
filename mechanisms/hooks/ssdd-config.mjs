@@ -21,9 +21,10 @@
 //   reviewGate.maxRoutedFiles     the index's (it only warns)
 //   gitGuard.block*         off only when every present config turns it off
 //   gitGuard.extraRules     both lists
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const PATH = '.ssdd/config.json';
 const GUARD_TOGGLES = ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath'];
@@ -99,3 +100,19 @@ export function loadSsddConfig(repo) {
   const good = found.filter((s) => s.cfg);
   return { root, cfg: { root, ...merge(good.map((s) => s.cfg)) }, error, warnings, sources: found.map((s) => s.label) };
 }
+
+// The portable pre-commit layer runs only while core.hooksPath points at the
+// repo's .githooks (git then ignores .git/hooks entirely). Returns why it is
+// dormant ("core.hooksPath is unset"), or '' when it is armed or the repo has
+// no .githooks/pre-commit. git-guard denies writes to core.hooksPath, so the
+// fix is the user's to run.
+export function dormantHook(root) {
+  if (!existsSync(join(root, '.githooks', 'pre-commit'))) return '';
+  let value = '';
+  try { value = gitText(root, 'config', '--get', 'core.hooksPath').trim(); } catch { /* unset */ }
+  if (!value) return 'core.hooksPath is unset';
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  const abs = resolve(root, value.replace(/^~(?=\/|$)/, homedir()));
+  return real(abs) === real(join(root, '.githooks')) ? '' : `core.hooksPath is "${value}"`;
+}
+export const ARM_HOOK = 'git config core.hooksPath .githooks';
