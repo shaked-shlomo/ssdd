@@ -52,6 +52,6 @@ lens. Ask which to create.
    class and its evidence. Confirm its match count with `coverage.mjs`.
 3. Claude Code: `ln -s ../../.ssdd/reviewers/<name>-reviewer.md .claude/agents/<name>-reviewer.md`.
    Cursor needs nothing; the Task tool uses the name.
-4. Tell the user: from the next commit touching those paths, the gate
-   requires this reviewer. The new files go through the gate like any other
+4. Tell the user: once the route is staged, the gate requires this reviewer
+   on those paths, starting with the commit that adds it. The new files go through the gate like any other
    change.

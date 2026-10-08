@@ -48,7 +48,7 @@ any path you don't want reviewed), then commit it:
 
 ```json
 { "reviewer": "gate-reviewer",
-  "paths": ["^\\.ssdd/(config\\.json$|hooks/|reviewers/|process/)", "^\\.githooks/", "^\\.claude/(settings\\.json$|agents/)", "^\\.cursor/(hooks\\.json$|rules/)", "^(AGENTS|CLAUDE)\\.md$"] }
+  "paths": ["^\\.ssdd/(config\\.json$|hooks/|reviewers/|process/)", "^\\.githooks/", "^\\.claude/(settings\\.json$|agents/|rules/)", "^\\.cursor/(hooks\\.json$|rules/)", "^(AGENTS|CLAUDE)\\.md$"] }
 ```
 
 `status` lists the gate files still unrouted. That commit is the first one

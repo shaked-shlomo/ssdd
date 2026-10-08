@@ -817,7 +817,7 @@ Design decisions:
 8. **Gate files** (route in `config.example.json`, to `gate-reviewer`):
    `.ssdd/config.json`, `.ssdd/hooks/`, `.ssdd/reviewers/`,
    `.ssdd/process/`, `.githooks/`, `.claude/settings.json`,
-   `.claude/agents/`, `.cursor/hooks.json`, `.cursor/rules/`, `AGENTS.md`,
+   `.claude/agents/`, `.claude/rules/`, `.cursor/hooks.json`, `.cursor/rules/`, `AGENTS.md`,
    `CLAUDE.md`. A reviewer checklist or the process doc weakens review as
    much as a route does. The route carries a `$comment` saying a project
    may drop paths it doesn't want reviewed.

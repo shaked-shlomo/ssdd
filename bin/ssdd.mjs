@@ -475,7 +475,7 @@ function skillsDrift(target) {
 // The config is seeded, so a project installed before v2.5 has no such route
 // until someone adds it; status is where that shows. Informational only.
 const GATE_FILES = ['.ssdd/config.json', '.ssdd/hooks', '.ssdd/reviewers', '.ssdd/process', '.githooks',
-  '.claude/settings.json', '.claude/agents', '.cursor/hooks.json', '.cursor/rules', 'AGENTS.md', 'CLAUDE.md'];
+  '.claude/settings.json', '.claude/agents', '.claude/rules', '.cursor/hooks.json', '.cursor/rules', 'AGENTS.md', 'CLAUDE.md'];
 function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);

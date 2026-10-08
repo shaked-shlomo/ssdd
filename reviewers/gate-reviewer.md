@@ -20,7 +20,13 @@ commit message cites the owner's explicit go-ahead for it.
    the whole file at HEAD (`git show HEAD:<path>`) and staged
    (`git show :<path>`): a narrowed regex or a dropped hook entry is easy to
    miss in a hunk.
-2. Report `❌ <check> — file:line — what loosened, and the fix or the
+2. **A framework update** (`.ssdd/ssdd.lock.json` moves to a tagged
+   release, from `ssdd.mjs update`) is the go-ahead for the managed files it
+   rewrites. Check that the lock's `ref` is a release tag and each managed
+   file matches its lock `sha256` (`shasum -a 256 <file>`); a mismatch is a
+   local edit — review it. Review in full only the files outside the lock's
+   `managed` set, and read the release's CHANGELOG entry for loosenings.
+3. Report `❌ <check> — file:line — what loosened, and the fix or the
    go-ahead it needs`, `⚠️` for judgment calls, `✅ <check>` for clean ones.
    End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit.
    If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
@@ -56,7 +62,7 @@ changed (the completion stamp parses `CLEAN` / `SECURE` / `N ISSUE(S)` /
 symlink replaced with a diverging copy, a process step that requires review
 made optional.
 
-**6. Instruction files (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`).** Text
+**6. Instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, `.cursor/rules/`).** Text
 that permits skipping review, stamping before reviewers ran,
 `SSDD_REVIEW_SKIP` without the user's go-ahead, `--no-verify`, or editing
 the gate's state files; removal of the rules that forbid them.

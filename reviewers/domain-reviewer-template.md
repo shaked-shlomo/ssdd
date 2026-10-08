@@ -12,7 +12,7 @@ their own reviewer in the source project: a backend-platform security reviewer
 (row-level security, service-role writes, realtime publication), and a
 text-surface reviewer (sanctioned text renderer, RTL-safe layout props,
 text-map doc coupling). A domain reviewer exists when a class of bug keeps
-appearing that the five general reviewers' lenses don't cover.
+appearing that the general reviewers' lenses don't cover.
 
 Rules for writing one:
 1. One job. Name the neighboring reviewers' lanes explicitly so lenses don't

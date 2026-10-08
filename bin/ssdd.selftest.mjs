@@ -485,7 +485,7 @@ describe('framework files', () => {
     const cfg = JSON.parse(readFileSync(join(dirname(SCRIPT), '..', 'mechanisms', 'config.example.json'), 'utf8'));
     const gate = cfg.routing.filter((r) => r.reviewer === 'gate-reviewer').flatMap((r) => r.paths.map((p) => new RegExp(p)));
     const files = ['.ssdd/config.json', '.ssdd/hooks/review-gate.mjs', '.ssdd/reviewers/gate-reviewer.md',
-      '.ssdd/process/SDD.md', '.githooks/pre-commit', '.claude/settings.json', '.claude/agents/gate-reviewer.md',
+      '.ssdd/process/SDD.md', '.githooks/pre-commit', '.claude/settings.json', '.claude/agents/gate-reviewer.md', '.claude/rules/git.md',
       '.cursor/hooks.json', '.cursor/rules/ssdd.mdc', 'AGENTS.md', 'CLAUDE.md'];
     assert.deepEqual(files.filter((f) => !gate.some((re) => re.test(f))), []);
     assert.ok(existsSync(join(dirname(SCRIPT), '..', 'reviewers', 'gate-reviewer.md')));
