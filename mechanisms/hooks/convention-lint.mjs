@@ -24,10 +24,19 @@ const repo = resolveHookRepo(payload);
 const git = (...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-let root, rules;
+// No repo or no config → nothing to lint (exit 0). A config that isn't valid
+// JSON, or a rule whose regex doesn't compile, is reported as a finding: an
+// agent that just wrote it hears at once, and `--staged` fails the commit.
+const failCode = stdinMode ? 2 : 1;
+let root, text, rules;
+try { root = git('rev-parse', '--show-toplevel').trim(); } catch { process.exit(0); }
+try { text = readFileSync(join(root, '.ssdd', 'config.json'), 'utf8'); } catch (e) {
+  if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') process.exit(0);
+  text = null;
+}
 try {
-  root = git('rev-parse', '--show-toplevel').trim();
-  rules = (JSON.parse(readFileSync(join(root, '.ssdd', 'config.json'), 'utf8'))?.lint ?? [])
+  if (text === null) throw new Error('unreadable');
+  rules = (JSON.parse(text)?.lint ?? [])
     .map((r) => ({
       name: r.name ?? r.pattern,
       message: r.message ?? '',
@@ -35,8 +44,9 @@ try {
       include: r.include ? new RegExp(r.include) : null,
       exclude: r.exclude ? new RegExp(r.exclude) : null,
     }));
-} catch {
-  process.exit(0); // no repo / no config → nothing to lint
+} catch (e) {
+  process.stderr.write(`[ssdd-convention-lint] .ssdd/config.json can't be used (${e.message}) — fix it; lint rules are not running.\n`);
+  process.exit(failCode);
 }
 if (!rules.length) process.exit(0);
 

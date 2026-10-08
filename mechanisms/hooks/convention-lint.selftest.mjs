@@ -100,3 +100,26 @@ describe('convention-lint stdin', () => {
     }
   });
 });
+
+describe('convention-lint config', () => {
+  const staged = (d) => spawnSync(NODE, [HOOK, '--staged'], { cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8' });
+
+  it('invalid JSON: exit 2 as a hook, 1 with --staged, naming the problem', () => {
+    writeFileSync(join(dir, '.ssdd', 'config.json'), '{ "lint": [');
+    assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'README' } })), 2);
+    const r = staged(dir);
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /config\.json can't be used/);
+  });
+
+  it('a rule whose regex does not compile is reported, not skipped', () => {
+    writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({ lint: [{ pattern: '(' }] }));
+    assert.strictEqual(staged(dir).status, 1);
+  });
+
+  it('no config is still a no-op', () => {
+    rmSync(join(dir, '.ssdd', 'config.json'));
+    assert.strictEqual(staged(dir).status, 0);
+    assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'README' } })), 0);
+  });
+});
