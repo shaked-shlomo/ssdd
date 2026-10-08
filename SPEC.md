@@ -754,7 +754,7 @@ The skill points to SDD.md instead of restating it.
 
 # v2.5 — close the remaining gate weaknesses
 
-**Date:** 2026-10-09 · **Status:** in progress · **Branch:** `v2.5-gate-hardening`
+**Date:** 2026-10-09 · **Status:** implemented (v2.5.0), CI pending · **Branch:** `v2.5-gate-hardening`
 
 ## Goal
 
@@ -862,14 +862,14 @@ Design decisions:
 
 ## Acceptance criteria
 
-- [ ] **Broken config:** invalid JSON in the staged config blocks
+- [x] **Broken config:** invalid JSON in the staged config blocks
       `--pre-commit` (1) and the harness hook (2) with the parse error;
       `--stamp` exits 1; no config anywhere still exits 0.
-- [ ] **Broken HEAD config** with a valid staged one: allowed, with a
+- [x] **Broken HEAD config** with a valid staged one: allowed, with a
       warning.
-- [ ] **convention-lint:** invalid JSON exits 1 with `--staged`, 2 as a
+- [x] **convention-lint:** invalid JSON exits 1 with `--staged`, 2 as a
       hook; no config exits 0.
-- [ ] **Union (gate):**
+- [x] **Union (gate):**
   - HEAD routes `src/` to a reviewer; a staged config with no routes plus a
     staged `src/` file → blocked.
   - A staged deletion of the config → still blocked by HEAD's routes.
@@ -877,21 +877,28 @@ Design decisions:
   - A working-tree config that differs from the staged one is ignored.
   - `--stamp` accepts a reviewer named only in HEAD's config.
   - HEAD's `reviewGate.exclude` doesn't widen the staged config's routes.
-- [ ] **Union (guard):** HEAD has `stamping: "hooks"`; a working-tree (and
+- [x] **Union (guard):** HEAD has `stamping: "hooks"`; a working-tree (and
       a staged) `"manual"` → `--stamp` still denied. HEAD
       `blockNoVerify` on, working tree off → `commit -n` denied.
-- [ ] **Completion stamps** honour the union: a HEAD-only reviewer's
+- [x] **Completion stamps** honour the union: a HEAD-only reviewer's
       subagent stop stamps its files.
-- [ ] **Gate files:** `config.example.json` routes each gate path to
+- [x] **Gate files:** `config.example.json` routes each gate path to
       `gate-reviewer`; `install` links `.claude/agents/gate-reviewer.md`.
-- [ ] **`status`:** lists unrouted gate files; warns on unset or wrong
+- [x] **`status`:** lists unrouted gate files; warns on unset or wrong
       `core.hooksPath`; silent when routed and armed; exit code unchanged.
-- [ ] **Harness note:** a blocked and an allowed commit in a repo with
+- [x] **Harness note:** a blocked and an allowed commit in a repo with
       `.githooks/pre-commit` and no `core.hooksPath` both carry the note;
       with it set, neither does.
-- [ ] **Next steps:** `install` into a target with `package.json` prints the
+- [x] **Next steps:** `install` into a target with `package.json` prints the
       `prepare` suggestion; without one, it doesn't.
 - [ ] **CI:** the workflow ran green on GitHub for Node 18 and 24.
-- [ ] **Existing tests:** all still pass.
-- [ ] **Update:** an installed v2.4.0 repo updates cleanly; its config is
+- [x] **Existing tests:** all still pass.
+- [x] **Update:** an installed v2.4.0 repo updates cleanly; its config is
       untouched and `status` then names the unrouted gate files.
+
+*Verified 2026-10-09, on `85b0b82` unless marked:*
+- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` → 466 pass, 0 fail (Node 24.15.0).
+- A scratch repo with a `package.json`, installed at v2.4.0 and committed, updated to `v2.5.0+85b0b82`: `gate-reviewer` (reviewer and `.claude/agents` symlink), `ssdd-config.mjs` and its selftest added, six hook files updated, `.ssdd/config.json` untouched. `status` (exit 0) listed 9 unrouted gate groups and the dormant hook. The installed `node --test .ssdd/hooks/*.selftest.mjs` → 412 pass.
+- In that repo, with `core.hooksPath .githooks` and the CHANGELOG route pasted and staged, `git commit` was blocked: `gate-reviewer — never stamped on this diff`, for `.ssdd/config.json`. After the stamp it committed, and `status` printed only its version lines.
+- Deviation: convention-lint also reports a rule regex that doesn't compile (it used to skip the whole lint silently), under the same "can't be used" message.
+- Not run: the suite under Node 18 locally (no Node 18 here); CI covers it.
