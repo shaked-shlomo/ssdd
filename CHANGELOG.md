@@ -10,6 +10,50 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.5.0] — 2026-10-09
+
+Closes the four gate weaknesses README → Known limitations still listed.
+
+### Added
+- **`gate-reviewer`.** It reviews changes to the gate itself (routing,
+  gate settings, hook wiring, hook scripts, reviewer checklists, process,
+  instruction files) for anything that loosens it without the owner's
+  recorded go-ahead. The shipped config routes the gate's own files to it.
+- **`status` says whether the gate is armed:** it lists gate files no route
+  covers, warns when the pre-commit hook is dormant (`core.hooksPath` isn't
+  `.githooks`), and names a config that isn't valid JSON. The exit code is
+  unchanged.
+- **The harness gate notes a dormant pre-commit hook** on every commit, in
+  its block message and its allow result.
+- `install` suggests a `"prepare"` script when the target has a
+  `package.json`.
+- **CI:** every selftest runs on Node 18 and 24 for pushes to `main` and PRs.
+
+### Changed
+- **A commit is judged by HEAD's config and the staged one**, the stricter of
+  the two: routes from both, `stamping: "hooks"` if either says so, both
+  `reviewerModels` lists, a `gitGuard` block off only when both turn it off.
+  The working-tree file is read only when neither exists. So **a config edit
+  takes effect once it's committed**, and an uncommitted edit changes
+  nothing. git-guard reads the same pair.
+- **A config that isn't valid JSON blocks** (pre-commit exit 1, harness
+  deny, `--stamp` refused) instead of disarming the gate. A broken HEAD
+  config with a valid staged one only warns, so the fix can land.
+  convention-lint reports a broken config or a rule regex that doesn't
+  compile instead of skipping silently.
+
+### Upgrade
+`update` doesn't touch `.ssdd/config.json`, so add the route by hand (drop
+any path you don't want reviewed), then commit it:
+
+```json
+{ "reviewer": "gate-reviewer",
+  "paths": ["^\\.ssdd/(config\\.json$|hooks/|reviewers/|process/)", "^\\.githooks/", "^\\.claude/(settings\\.json$|agents/)", "^\\.cursor/(hooks\\.json$|rules/)", "^(AGENTS|CLAUDE)\\.md$"] }
+```
+
+`status` lists the gate files still unrouted. That commit is the first one
+`gate-reviewer` reviews.
+
 ## [2.4.0] — 2026-10-06
 
 ### Added

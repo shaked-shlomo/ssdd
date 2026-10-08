@@ -1,25 +1,9 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-07 at v2.4.0 (428
-tests pass). When an item ships, delete it here and record it in
-`CHANGELOG.md`. When one is planned, it gets a `SPEC.md` section first.
-
-## Next: v2.5 — close the remaining gate weaknesses
-
-The gate is what SSDD exists for. These are the known ways around it that
-aren't fixed yet (README → Known limitations). Each is small; together they
-make one release.
-
-| # | Weakness | Direction | Size |
-|---|---|---|---|
-| 1 | **Fails open on invalid config JSON.** A missing config means "not an SSDD repo" (fine), but unparseable JSON is treated the same: exit 0 in both layers. *(Verified 2026-10-07: a bad regex already blocks in both: `--pre-commit` exits 1, harness 2.)* | Distinguish *absent* from *broken*: broken JSON blocks in both layers, with the parse error. | S |
-| 2 | **The gate's own files route to no reviewer:** `.ssdd/config.json`, `.ssdd/hooks/`, `.githooks/`, `.claude/settings.json` (which arms the hooks), `.cursor/hooks.json`, and the instruction files. | Route them in `config.example.json`, to `security-reviewer` or a small gate lens. The first injected project left `.ssdd/hooks/` unrouted by choice, so make it the default but easy to drop. | S |
-| 3 | **A commit can loosen its own review.** The gate reads the working-tree config, so a commit that removes a route is judged by the table it just edited. | Judge with the union of the routes in HEAD's config and the staged config: the strictest of the two. | S–M |
-| 4 | **Dormant on a fresh clone.** `.githooks/pre-commit` runs only once `git config core.hooksPath .githooks` is set. *(Verified on git 2.54: once it's set, git ignores `.git/hooks`. README's "a stale `.git/hooks/pre-commit` wins" was wrong and is corrected.)* | `ssdd.mjs status` warns when `core.hooksPath` isn't `.githooks`, and the harness gate's block message mentions it. A one-line `npm prepare` / postinstall suggestion for projects that have a package manifest. | S |
-| 5 | **No CI.** SSDD's own tests run only locally. | A GitHub Actions workflow running `node --test` over every `*.selftest.mjs` on PRs and pushes to `main` (Node 18 and current), which also checks the Node ≥ 18 claim. | S |
-
-Also in v2.5, housekeeping:
-- Delete the merged branch `v2.3.2-selftest`, locally and on GitHub.
+The single list of remaining SSDD work. Updated 2026-10-09 at v2.5.0 (466
+tests pass). v2.5 closed the known gate weaknesses; nothing is planned next.
+When an item ships, delete it here and record it in `CHANGELOG.md`. When one
+is planned, it gets a `SPEC.md` section first.
 
 ## Later
 
@@ -46,6 +30,9 @@ re-discovered as new.
 - Completion stamps cover the repo at the session's cwd. A `git -C <other>`
   commit from elsewhere needs manual mode.
 - A re-stage that changes nothing keeps its stamps (by design since v2).
+- The first commit of `.ssdd/config.json` is judged by that config alone;
+  there's no committed table to compare against. convention-lint reads the
+  working-tree config (it's advisory; the gate stands behind it).
 - Injection is copy-based. A release that moves a *target* path needs a
   move entry in `bin/ssdd.mjs`, or `update` sees a removal plus an addition.
 
@@ -58,6 +45,10 @@ re-discovered as new.
   skill, the 786-char `bias-semantics-reviewer` description, the
   Superpowers decision) are a prizma plan. See `docs/model-era-review.md`
   → project-side rows.
+- **Every injected project, on its v2.5 update:** paste the `gate-reviewer`
+  route from CHANGELOG 2.5.0 → Upgrade into `.ssdd/config.json` and commit
+  it; `status` lists what's still unrouted. Arm the hook if `status` says
+  it's dormant.
 - **Hatedate:** partial adoption, mechanisms first: per-file stamps, the
   gate in `.githooks/pre-commit`, a tracked ledger. Full adoption waits for
   configurable artifact paths (above).
