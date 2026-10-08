@@ -17,6 +17,10 @@
 // Stamping without actually running the named reviewers defeats the gate and
 // is forbidden by the process (process/SDD.md §4).
 //
+// The routing table is HEAD's .ssdd/config.json AND the staged one, whichever
+// is stricter (ssdd-config.mjs): a commit can't loosen its own review, and an
+// unstaged edit changes nothing. A config that isn't valid JSON blocks.
+//
 // Modes (same script, no deps, Node >= 18):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
 //                                   attest reviewers ran on the CURRENT staged
@@ -63,30 +67,39 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { expandWrappers, flatten, gitInvocation, isCommit, skeleton } from './git-cmd.mjs';
+import { loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
 const git = (...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
+// The config the commit is judged by: HEAD's and the staged one, strictest of
+// the two (ssdd-config.mjs). null → not an SSDD repo, gate disarmed. A broken
+// staged config comes back with `error` set and every mode fails closed on it.
 function loadConfig() {
-  try {
-    const root = git('rev-parse', '--show-toplevel').trim();
-    return { root, ...JSON.parse(readFileSync(join(root, '.ssdd', 'config.json'), 'utf8')) };
-  } catch {
-    return null; // no repo or no config → gate disarmed
-  }
+  const r = loadSsddConfig(repo);
+  for (const w of r?.warnings ?? []) process.stderr.write(`[ssdd-review-gate] warning: ${w}\n`);
+  return r;
 }
+const brokenMessage = (error) =>
+  `[ssdd-review-gate] ${error}\n` +
+  'The gate fails closed on a config it cannot read. Fix the JSON, re-stage it, and retry.\n';
 // [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
 // of the route's `paths` and neither the route's `exclude` nor the global
 // `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
+// Routes naming the same reviewer (HEAD's and the staged config's) merge.
 const rx = (list) => (list ?? []).map((p) => new RegExp(p));
 const routes = (cfg) => {
   const global = rx(cfg?.reviewGate?.exclude);
-  return (cfg?.routing ?? []).map(({ reviewer, paths, exclude }) => {
+  const byName = new Map();
+  for (const { reviewer, paths, exclude } of cfg?.routing ?? []) {
     const inc = rx(paths);
     const exc = [...global, ...rx(exclude)];
-    return [reviewer, (f) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f))];
-  });
+    const one = (f) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f));
+    const prev = byName.get(reviewer);
+    byName.set(reviewer, prev ? (f) => prev(f) || one(f) : one);
+  }
+  return [...byName];
 };
 
 const stampPath = () => {
@@ -270,8 +283,10 @@ if (process.argv[2] === '--stamp') {
     console.error('usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]');
     process.exit(1);
   }
-  const cfg = loadConfig();
-  if (!cfg) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
+  const loaded = loadConfig();
+  if (!loaded) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
+  if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
+  const { cfg } = loaded;
   const staged = stagedChanges();
   const table = new Map(reviewerFiles(cfg, staged));
   const known = new Set(routes(cfg).map(([name]) => name));
@@ -328,8 +343,10 @@ if (process.argv[2] === '--pre-commit') {
     console.error('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead.');
     process.exit(0);
   }
-  const cfg = loadConfig();
-  if (!cfg) process.exit(0);
+  const loaded = loadConfig();
+  if (!loaded) process.exit(0);
+  if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
+  const { cfg } = loaded;
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     if (verdict.warning) process.stderr.write(verdict.warning);
@@ -473,8 +490,10 @@ const toplevel = (dir) => {
 const defaults = [start, process.env.CLAUDE_PROJECT_DIR, process.env.SSDD_PROJECT_DIR].filter(Boolean).map(toplevel);
 const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
 
-const cfg = loadConfig();
-if (!cfg) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
+const loaded = loadConfig();
+if (!loaded) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
+if (loaded.error) deny(brokenMessage(loaded.error), 'SSDD review gate: .ssdd/config.json is not valid JSON.');
+const { cfg } = loaded;
 let verdict;
 try {
   verdict = judge(cfg);
@@ -546,7 +565,9 @@ function subagentHook(p) {
   const type = String(p.agent_type ?? '').replace(/^.*:/, ''); // plugin-scoped name → bare
   if (!agentId || !type) return;
   repo = p.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const cfg = loadConfig();
+  const loaded = loadConfig();
+  if (loaded?.error) throw new Error(loaded.error);
+  const cfg = loaded?.cfg;
   if (!cfg || !routes(cfg).some(([n]) => n === type)) return; // not a routed reviewer
   repo = cfg.root;
   const dir = join(gitDir(), 'ssdd-review-dispatch');
@@ -576,8 +597,8 @@ function subagentHook(p) {
   // enforced only when the project sets a floor.
   let models = [];
   try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
-  const allowed = cfg.reviewGate?.reviewerModels;
-  if (Array.isArray(allowed) && allowed.length) {
+  // HEAD's and the staged config's lists both apply: a model must pass each.
+  for (const allowed of cfg.reviewGate?.reviewerModelSets ?? []) {
     const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
     if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (run the session on an allowed model, and don't override the model when dispatching)`);
   }

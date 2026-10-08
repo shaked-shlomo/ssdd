@@ -135,9 +135,41 @@ describe('completion stamps', () => {
     writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
       routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
     }));
+    git('commit', '-qm', 'unset reviewerModels', '--', '.ssdd/config.json'); // the src files stay staged
     start('u1', 'alpha-reviewer');
     stop('u1', 'alpha-reviewer', 'CLEAN', ['grok-4-7']);
     assert.equal(stamp().reviewers['alpha-reviewer']['src/b.ts'].model, 'grok-4-7');
+  });
+
+  it('unsetting reviewerModels without committing it changes nothing: HEAD\'s list still applies', () => {
+    writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
+      routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
+    }));
+    git('add', '.ssdd/config.json');
+    start('u2', 'alpha-reviewer');
+    stop('u2', 'alpha-reviewer', 'CLEAN', ['grok-4-7']);
+    assert.equal(stamp().reviewers['alpha-reviewer'], undefined);
+    assert.match(stamp().refused['alpha-reviewer'].reason, /reviewerModels allows opus>=5\.5/);
+  });
+
+  it('a reviewer routed only by HEAD\'s config still gets completion stamps', () => {
+    writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
+      routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
+    }));
+    git('add', '.ssdd/config.json');
+    start('h1', 'beta-reviewer');
+    stop('h1', 'beta-reviewer', 'CLEAN');
+    assert.deepEqual(Object.keys(stamp().reviewers['beta-reviewer']), ['src/lib/a.ts']);
+  });
+
+  it('a broken staged config skips the completion stamp with a stderr line', () => {
+    writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
+    git('add', '.ssdd/config.json');
+    assert.equal(start('b1', 'alpha-reviewer').status, 0);
+    const r = stop('b1', 'alpha-reviewer', 'CLEAN');
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /completion stamp skipped: \.ssdd\/config\.json \(staged\) is not valid JSON/);
+    assert.equal(stamp().reviewers['alpha-reviewer'], undefined);
   });
 
   it('a review that mixed models (one turn on a disallowed one) stamps nothing', () => {
