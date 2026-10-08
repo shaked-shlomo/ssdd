@@ -272,3 +272,42 @@ describe('stamping: "manual" (default)', () => {
     assert.equal(hook({ tool_name: 'Edit', tool_input: { file_path: join(repo, '.git/ssdd-review-stamp.json') }, cwd: repo }, GUARD).status, 2);
   });
 });
+
+// v2.5: the guard reads HEAD's config AND the staged one, like the gate.
+describe('the guard can\'t be loosened by an uncommitted config edit', () => {
+  const guard = (command) => hook({ tool_input: { command }, cwd: repo }, GUARD);
+  const setConfig = (body) => writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify(body));
+  const routing = [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }];
+
+  it('HEAD says "hooks": a working-tree or staged "manual" still denies --stamp', () => {
+    makeRepo({ stamping: 'hooks' });
+    setConfig({ routing, reviewGate: { stamping: 'manual' } });
+    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
+    git('add', '.ssdd/config.json');
+    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
+  });
+
+  it('HEAD blocks -n: turning blockNoVerify off on disk or in the index changes nothing', () => {
+    makeRepo();
+    setConfig({ routing, gitGuard: { blockNoVerify: false } });
+    assert.equal(guard('git commit -n -m x').status, 2);
+    git('add', '.ssdd/config.json');
+    assert.equal(guard('git commit -n -m x').status, 2);
+  });
+
+  it('once committed in both, the toggle takes effect', () => {
+    makeRepo();
+    setConfig({ routing, gitGuard: { blockNoVerify: false } });
+    git('add', '.ssdd/config.json');
+    git('commit', '-qm', 'allow -n');
+    assert.equal(guard('git commit -n -m x').status, 0);
+  });
+
+  it('a broken staged config leaves every default block on', () => {
+    makeRepo();
+    writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
+    git('add', '.ssdd/config.json');
+    assert.equal(guard('git add -A').status, 2);
+    assert.equal(guard('git commit --amend').status, 2);
+  });
+});

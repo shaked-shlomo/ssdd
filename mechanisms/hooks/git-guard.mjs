@@ -4,7 +4,8 @@
 // .cursor/hooks.json). `git add` cannot be intercepted by a git hook, so a
 // harness hook is the only mechanical enforcement point for it.
 //
-// Default blocks (each toggleable in .ssdd/config.json → gitGuard):
+// Default blocks (each toggleable in .ssdd/config.json → gitGuard; a toggle is
+// off only when HEAD's config and the staged one both turn it off):
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
 //   git commit … --amend                                     (never amend)
@@ -25,10 +26,9 @@
 // typed directly. Grammar: git-cmd.mjs.
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
 import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { cluster, collapseGlobalFlags, expandWrappers, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
+import { loadSsddConfig } from './ssdd-config.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
 const cmd = hookCommand(payload);
@@ -45,13 +45,15 @@ function deny(msg) {
 const full = expandWrappers(cmd); // the command plus any script it hands to a shell
 const probe = skeleton(full);
 
+// HEAD's config AND the staged one (ssdd-config.mjs): a block is off only when
+// both turn it off, and "hooks" stamping in either holds — an unstaged edit
+// switches nothing off. No config, or one that isn't valid JSON, contributes
+// nothing, so the defaults stay on.
 let config = {};
 try {
-  const repo = resolveHookRepo(payload);
-  const root = execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  config = JSON.parse(readFileSync(join(root, '.ssdd', 'config.json'), 'utf8')) ?? {};
+  config = loadSsddConfig(resolveHookRepo(payload))?.cfg ?? {};
 } catch {
-  // no config → defaults on
+  // not a repo → defaults on
 }
 const guard = config.gitGuard ?? {};
 const STAMP_FILES = /ssdd-review-(?:stamp|dispatch)/;
