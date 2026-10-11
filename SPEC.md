@@ -754,7 +754,7 @@ The skill points to SDD.md instead of restating it.
 
 # v2.5 — close the remaining gate weaknesses
 
-**Date:** 2026-10-09 · **Status:** implemented (v2.5.0), CI pending · **Branch:** `v2.5-gate-hardening`
+**Date:** 2026-10-09 · **Status:** implemented (v2.5.0), not yet tagged · **Branch:** `v2.5-gate-hardening`
 
 ## Goal
 
@@ -891,7 +891,7 @@ Design decisions:
       with it set, neither does.
 - [x] **Next steps:** `install` into a target with `package.json` prints the
       `prepare` suggestion; without one, it doesn't.
-- [ ] **CI:** the workflow ran green on GitHub for Node 18 and 24.
+- [x] **CI:** the workflow ran green on GitHub for Node 18 and 24.
 - [x] **Existing tests:** all still pass.
 - [x] **Update:** an installed v2.4.0 repo updates cleanly; its config is
       untouched and `status` then names the unrouted gate files.
@@ -901,4 +901,4 @@ Design decisions:
 - A scratch repo with a `package.json`, installed at v2.4.0 and committed, updated to `v2.5.0+85b0b82`: `gate-reviewer` (reviewer and `.claude/agents` symlink), `ssdd-config.mjs` and its selftest added, six hook files updated, `.ssdd/config.json` untouched. `status` (exit 0) listed 9 unrouted gate groups and the dormant hook. The installed `node --test .ssdd/hooks/*.selftest.mjs` → 412 pass.
 - In that repo, with `core.hooksPath .githooks` and the CHANGELOG route pasted and staged, `git commit` was blocked: `gate-reviewer — never stamped on this diff`, for `.ssdd/config.json`. After the stamp it committed, and `status` printed only its version lines.
 - Deviation: convention-lint also reports a rule regex that doesn't compile (it used to skip the whole lint silently), under the same "can't be used" message.
-- Not run: the suite under Node 18 locally (no Node 18 here); CI covers it.
+- CI on PR #2 (`v2.5-gate-hardening`): `selftest (18)` pass, `selftest (24)` pass — https://github.com/shaked-shlomo/ssdd/actions/runs/37859053395. The suite was not run under Node 18 locally (no Node 18 here).
