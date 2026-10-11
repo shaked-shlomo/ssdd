@@ -1,0 +1,33 @@
+# SSDD's own tests: every *.selftest.mjs, on the oldest supported Node and a
+# current one. Zero dependencies, so there's nothing to install.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 24]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: git identity for the scratch repos
+        run: |
+          git config --global user.email ci@example.invalid
+          git config --global user.name ci
+          git config --global init.defaultBranch main
+      - run: node --version && git --version
+      - run: node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs

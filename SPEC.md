@@ -749,3 +749,156 @@ The skill points to SDD.md instead of restating it.
 - Live run 2 (approval, Edit and Write allowed): `git status` showed only ` M .ssdd/skills.json`. It cloned both approved sources, checked out the upstream shas run 1 read, and recorded `git rev-parse HEAD` from those checkouts: `software-mansion-labs/skills` @ `e3f00cdb34942cee8b788abe10fe0d78a7f2b4e9` plugin `skills@swmansion`, `react-native-best-practices` adopt; `callstackincubator/agent-skills` @ `61e6e7dfdf3a8ee862254c200d751fcb1fb863dc` `react-native-best-practices` do-not-install (name clash); both dated 2026-10-06. It didn't re-read the skill contents, and said so. `status --skills` then printed `current` for both. It made no Skill call: step 6 belongs to the proposing pass.
 - From the `786a644` runs: with the prompt after `--allowedTools`, which is variadic, `claude` took the prompt as a tool name and exited 1 ("Input must be provided"); hence the prompt-first form above.
 - Frontmatter checked with js-yaml 4.3.0: `name: skills-audit`, description 294 chars, no `": "`.
+
+---
+
+# v2.5 — close the remaining gate weaknesses
+
+**Date:** 2026-10-09 · **Status:** implemented (v2.5.0), not yet tagged · **Branch:** `v2.5-gate-hardening`
+
+## Goal
+
+Close the four gate weaknesses README → Known limitations still lists as open
+(1–4 there), and run SSDD's own tests in CI. After v2.5 the gate fails closed
+on a broken config, reviews its own files, can't be loosened by the commit it
+judges, and says when its pre-commit layer is dormant.
+
+## Clarify pass
+
+Owner rulings, 2026-10-09:
+
+1. **Gate files get a new lens, `gate-reviewer`**, not `security-reviewer`,
+   whose checklist is app security.
+2. **Existing projects learn about the route from `status`.** The config is
+   seeded, so `update` never adds the route to prizma or Hatedate.
+   `ssdd.mjs status` lists gate files that route to no reviewer, and the
+   CHANGELOG gives the route to paste.
+3. **git-guard reads the same union as the gate.** Otherwise an unstaged edit
+   to `stamping: "manual"` re-enables `--stamp` in hooks mode, and an
+   unstaged `blockNoVerify: false` lets `commit -n` through.
+4. **CI is verified by a real run:** push the branch and open a PR.
+
+Design decisions:
+
+5. **Which config is "the config".** The gate judges the commit, so it
+   reads the config the commit leaves behind (the index blob,
+   `git show :.ssdd/config.json`) and the one it starts from
+   (`git show HEAD:.ssdd/config.json`). It applies both: the strictest.
+   The working-tree file is read only when neither exists (the setup
+   commit), which loosens nothing because there's no committed table yet.
+   `GIT_INDEX_FILE` (set by git for `commit -a` / pathspec commits) is
+   inherited, so the pre-commit layer reads the index being committed.
+6. **Absent vs broken.** Absent everywhere means "not an SSDD repo": exit 0,
+   as today. A broken index config (or working-tree config, in the
+   fallback) blocks with the parse error: `--pre-commit` exits 1, the
+   harness hook denies (2), `--stamp` exits 1, completion stamps are
+   skipped with a stderr line. A broken *HEAD* config with a valid index
+   config is a warning, so the commit that fixes it can land.
+   `convention-lint` makes the same split on its own (working-tree) config:
+   exit 1 in `--staged` / file mode, 2 as a PostToolUse hook, so an agent
+   that just wrote bad JSON hears it at once. git-guard already fails
+   closed: an unparseable config contributes nothing, so its defaults
+   stay on.
+7. **The union, field by field** (one shared loader,
+   `mechanisms/hooks/ssdd-config.mjs`, returns the existing config shape so
+   `routes()`, `judge()`, `--stamp` and the subagent hooks don't change):
+   - `routing`: both lists. Each config's `reviewGate.exclude` is baked into
+     its own routes, so one config's exclude never widens the other's
+     routes. Routes naming the same reviewer merge (a file matching either
+     routes to it).
+   - `reviewGate.stamping`: `hooks` if either says so.
+   - `reviewGate.reviewerModels`: when both set one, a model must satisfy
+     both lists.
+   - `reviewGate.maxRoutedFiles`: the index's (it only warns).
+   - `gitGuard.block*`: off only when every present config turns it off.
+     `extraRules`: both lists.
+   - `lint` stays per config file; convention-lint keeps reading the
+     working tree (it's advisory, and the review gate stands behind it).
+8. **Gate files** (route in `config.example.json`, to `gate-reviewer`):
+   `.ssdd/config.json`, `.ssdd/hooks/`, `.ssdd/reviewers/`,
+   `.ssdd/process/`, `.githooks/`, `.claude/settings.json`,
+   `.claude/agents/`, `.claude/rules/`, `.cursor/hooks.json`, `.cursor/rules/`, `AGENTS.md`,
+   `CLAUDE.md`. A reviewer checklist or the process doc weakens review as
+   much as a route does. The route carries a `$comment` saying a project
+   may drop paths it doesn't want reviewed.
+9. **`gate-reviewer`** checks whether the diff loosens the gate: a route
+   removed or narrowed, an exclude widened, a hook unwired or its matcher
+   narrowed, `failClosed` dropped, a guard toggle off, `stamping` back to
+   manual, a hook script that now fails open, a reviewer check deleted or a
+   verdict line changed, instruction text that permits a bypass. A
+   loosening isn't wrong by itself; it's an issue unless the diff or plan
+   cites the owner's go-ahead. Verdict `CLEAN` / `N ISSUE(S)`.
+10. **Dormant hook.** git-guard denies every write to `core.hooksPath`,
+    including the fix, so messages tell the *user* to run
+    `git config core.hooksPath .githooks`. When `.githooks/pre-commit`
+    exists and `core.hooksPath` doesn't resolve to the repo's `.githooks`:
+    - the harness gate adds a note to its block message, and to its allow
+      result as `additionalContext`;
+    - `ssdd.mjs status` prints a warning (exit code unchanged);
+    - `install`'s next steps suggest a `"prepare"` script when the target
+      has a `package.json` (never written by SSDD).
+11. **CI:** `.github/workflows/test.yml` runs
+    `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` on
+    pushes to `main` and on PRs, Node 18 and 24, ubuntu-latest.
+
+## Scope
+
+**In:**
+- `ssdd-config.mjs` (shared loader) used by `review-gate.mjs` and
+  `git-guard.mjs`; the absent/broken split in `convention-lint.mjs`.
+- `reviewers/gate-reviewer.md` and its route in `config.example.json`.
+- The dormant-hook note (gate), `status` warnings (unrouted gate files,
+  dormant hook), the `prepare` next step.
+- The CI workflow.
+- README (Known limitations rewritten, reviewer list), CHANGELOG, VERSION,
+  BACKLOG.
+- Tests in `*.selftest.mjs`.
+
+**Out:**
+- convention-lint reading the union (advisory; noted above).
+- Allowing `git config core.hooksPath .githooks` through git-guard.
+- Writing `package.json` in a target repo.
+- Upgrading injected projects; each one runs `update` and adds the route.
+
+## Acceptance criteria
+
+- [x] **Broken config:** invalid JSON in the staged config blocks
+      `--pre-commit` (1) and the harness hook (2) with the parse error;
+      `--stamp` exits 1; no config anywhere still exits 0.
+- [x] **Broken HEAD config** with a valid staged one: allowed, with a
+      warning.
+- [x] **convention-lint:** invalid JSON exits 1 with `--staged`, 2 as a
+      hook; no config exits 0.
+- [x] **Union (gate):**
+  - HEAD routes `src/` to a reviewer; a staged config with no routes plus a
+    staged `src/` file → blocked.
+  - A staged deletion of the config → still blocked by HEAD's routes.
+  - First commit (no HEAD): the staged config alone applies.
+  - A working-tree config that differs from the staged one is ignored.
+  - `--stamp` accepts a reviewer named only in HEAD's config.
+  - HEAD's `reviewGate.exclude` doesn't widen the staged config's routes.
+- [x] **Union (guard):** HEAD has `stamping: "hooks"`; a working-tree (and
+      a staged) `"manual"` → `--stamp` still denied. HEAD
+      `blockNoVerify` on, working tree off → `commit -n` denied.
+- [x] **Completion stamps** honour the union: a HEAD-only reviewer's
+      subagent stop stamps its files.
+- [x] **Gate files:** `config.example.json` routes each gate path to
+      `gate-reviewer`; `install` links `.claude/agents/gate-reviewer.md`.
+- [x] **`status`:** lists unrouted gate files; warns on unset or wrong
+      `core.hooksPath`; silent when routed and armed; exit code unchanged.
+- [x] **Harness note:** a blocked and an allowed commit in a repo with
+      `.githooks/pre-commit` and no `core.hooksPath` both carry the note;
+      with it set, neither does.
+- [x] **Next steps:** `install` into a target with `package.json` prints the
+      `prepare` suggestion; without one, it doesn't.
+- [x] **CI:** the workflow ran green on GitHub for Node 18 and 24.
+- [x] **Existing tests:** all still pass.
+- [x] **Update:** an installed v2.4.0 repo updates cleanly; its config is
+      untouched and `status` then names the unrouted gate files.
+
+*Verified 2026-10-09, on `85b0b82` unless marked:*
+- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` → 466 pass, 0 fail (Node 24.15.0).
+- A scratch repo with a `package.json`, installed at v2.4.0 and committed, updated to `v2.5.0+85b0b82`: `gate-reviewer` (reviewer and `.claude/agents` symlink), `ssdd-config.mjs` and its selftest added, six hook files updated, `.ssdd/config.json` untouched. `status` (exit 0) listed 9 unrouted gate groups and the dormant hook. The installed `node --test .ssdd/hooks/*.selftest.mjs` → 412 pass.
+- In that repo, with `core.hooksPath .githooks` and the CHANGELOG route pasted and staged, `git commit` was blocked: `gate-reviewer — never stamped on this diff`, for `.ssdd/config.json`. After the stamp it committed, and `status` printed only its version lines.
+- Deviation: convention-lint also reports a rule regex that doesn't compile (it used to skip the whole lint silently), under the same "can't be used" message.
+- CI on PR #2 (`v2.5-gate-hardening`): `selftest (18)` pass, `selftest (24)` pass — https://github.com/shaked-shlomo/ssdd/actions/runs/37859053395. The suite was not run under Node 18 locally (no Node 18 here).

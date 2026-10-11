@@ -17,7 +17,7 @@ in a terminal, …).
 | **Process** | `process/` | None — pure markdown. The lifecycle (brainstorm → spec → plan → task ledger → implement → verify → sync back), the principles, and the plan / spec / ledger / handover templates. |
 | **Reviewers** | `reviewers/` | None — each file is a self-contained review checklist an agent *or a human* can execute against a git diff. Frontmatter is included so agent harnesses can load them directly. |
 | **Skills** | `skills/` | None — `SKILL.md` folders (`new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `docs-drift-audit`) injected into the harness-neutral `.agents/skills/` tree. |
-| **Mechanisms** | `mechanisms/` | Node ≥ 18, no npm deps. Config-driven enforcement scripts with **two entry modes each**: a portable git-hook/CLI mode that works everywhere, and a harness stdin mode (Claude Code and Cursor payloads) for earlier interception. Tests: `node --test mechanisms/hooks/*.selftest.mjs` (named so no project's test runner collects them by default). Plus the docs-drift-audit runbook. |
+| **Mechanisms** | `mechanisms/` | Node ≥ 18, no npm deps. Config-driven enforcement scripts with **two entry modes each**: a portable git-hook/CLI mode that works everywhere, and a harness stdin mode (Claude Code and Cursor payloads) for earlier interception. Tests: `node --test mechanisms/hooks/*.selftest.mjs` (named so no project's test runner collects them by default); CI runs them with `bin/*.selftest.mjs` on Node 18 and 24. Plus the docs-drift-audit runbook. |
 | **Adapters** | `adapters/` | Per-harness wiring: `claude-code/` (hooks JSON, `CLAUDE.md` loader), `cursor/` (hooks.json, always-on rule), and `generic/AGENTS.md` — the shared instructions template every adapter uses. |
 | **Installer / updater** | `bin/ssdd.mjs` (`inject.sh` = install) | Installs a tagged release into a repo, writes `.ssdd/ssdd.lock.json`, and later three-way merges updates. Harness discovery paths become symlinks. |
 
@@ -58,7 +58,9 @@ hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
    reviewers; a route may carry a `$comment` saying why), lint rules,
    git-guard toggles, `reviewGate.maxRoutedFiles`. The config is the
    injection contract: the mechanism is the framework, the regexes are the
-   project.
+   project. Keep the `gate-reviewer` route: it reviews changes to the gate
+   itself. Edits to the config take effect once committed; until then the
+   committed table still applies.
 2. `AGENTS.md` — merge `AGENTS.ssdd.md` in, with a **Documentation Map**:
    every canonical doc, its one purpose, and its "when to update" trigger.
    `docs-sync-reviewer` enforces it per-diff; the
@@ -73,6 +75,8 @@ hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
    the catalog, audits each source at a pinned sha against your rules, and
    records what you approve in `.ssdd/skills.json`.
 5. Git hook wiring (portable path): `git config core.hooksPath .githooks`.
+   With a `package.json`, a `"prepare"` script running it arms the hook on
+   every fresh clone's install.
 
 ## What deliberately stays per-project
 
@@ -102,7 +106,7 @@ hash. **A repo runs fully without this checkout** — only these commands need
 it:
 
 ```bash
-node ~/Developer/ssdd/bin/ssdd.mjs status <repo>                 # version, local customizations, update available?
+node ~/Developer/ssdd/bin/ssdd.mjs status <repo>                 # version, local customizations, update available, gate armed?
 node ~/Developer/ssdd/bin/ssdd.mjs status <repo> --skills        # also: upstream skill sources that moved past .ssdd/skills.json
 node ~/Developer/ssdd/bin/ssdd.mjs update <repo>                 # to the newest tag (--to <ref> to choose)
 node ~/Developer/ssdd/bin/ssdd.mjs adopt  <repo> --base v1.0.1   # give a pre-lock (copy-era) install a lock
@@ -155,23 +159,34 @@ a source path) needs a move entry in `bin/ssdd.mjs`, or `update` sees it as a
 removal plus an addition.
 
 **The gate can be evaded** — it keeps honest agents honest; it is not a
-security boundary. Six weaknesses reproduced in the source project, filed
-there for their own plan (a rushed fix grown inside an unrelated commit was
-reverted after several rounds found it incomplete):
+security boundary. Of the weaknesses reproduced in the source project, v2.5
+closed the last four:
 
-1. It fails open on invalid config JSON, treated like "no config": exit 0
-   in both layers. (Since v2.1 a bad regex blocks in both.)
-2. Unrouted paths get no review — including the instruction files, the hook
-   scripts and `.claude/settings.json`, which arms the hooks.
-3. It reads the *working-tree* config, so a commit that removes a route is
-   judged by the table it just edited.
-4. A fresh clone has the hook dormant until
-   `git config core.hooksPath .githooks`. (Once that's set, git ignores
-   `.git/hooks` entirely, verified on git 2.54.)
-5. `SSDD_PROJECT_DIR` pointing elsewhere made the hook judge that path —
-   closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
-   harness layer starts from the tool call's cwd.
-6. A re-stage that changes nothing keeps its stamps — by design since v2.
+- A config that isn't valid JSON blocks in both layers (it used to read as
+  "no config"); convention-lint reports it too. Absent still means "not an
+  SSDD repo".
+- The gate's own files (config, hooks and their wiring, reviewer checklists,
+  process, instruction files) route to `gate-reviewer` in the shipped
+  config. A project installed earlier adds the route itself; `status` lists
+  the gate files no route covers.
+- A commit is judged by HEAD's config *and* the staged one, the stricter of
+  the two, so it can't loosen its own review. git-guard reads the same pair,
+  so an uncommitted edit can't switch a block off or `stamping` back to
+  `manual`.
+- A dormant pre-commit hook (`core.hooksPath` not `.githooks`, the fresh-clone
+  state) is named by `status` and by the harness gate on every commit. The
+  user runs `git config core.hooksPath .githooks`; git-guard denies the agent
+  any write to it. Once set, git ignores `.git/hooks` entirely (verified on
+  git 2.54).
+
+What remains:
+
+- `SSDD_PROJECT_DIR` pointing elsewhere made the hook judge that path —
+  closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
+  harness layer starts from the tool call's cwd.
+- A re-stage that changes nothing keeps its stamps — by design since v2.
+- The first commit of a config is judged by that config alone: there is no
+  committed table to compare against.
 
 Since v2.3, Claude Code can make attestation mechanical: a reviewer
 subagent's completion stamps its files, and `reviewGate.stamping: "hooks"`

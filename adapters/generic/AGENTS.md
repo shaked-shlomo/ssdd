@@ -25,7 +25,10 @@ criterion with real command output.
 ## Review gate
 
 Commits touching paths routed in `.ssdd/config.json` are blocked until the
-reviewers routed to those files have reviewed them. The block message says
+reviewers routed to those files have reviewed them. Routes come from the
+committed config and the staged one (the stricter applies), so a config edit
+takes effect once committed and can't loosen the commit that makes it. The
+block message says
 exactly what to run. Stamping without running the reviewers is forbidden;
 `SSDD_REVIEW_SKIP=1` needs the user's go-ahead. Stage and commit in separate
 calls. Reviews happen at the gate and in the final whole-plan review. Don't

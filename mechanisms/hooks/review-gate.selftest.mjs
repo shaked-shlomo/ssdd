@@ -484,3 +484,159 @@ describe('the oversize warning', () => {
     assert.match(r.stderr, WARN);
   });
 });
+
+// v2.5: the gate judges a commit by HEAD's config AND the staged one.
+describe('the config a commit is judged by', () => {
+  const cfgPath = (d) => join(d, '.ssdd', 'config.json');
+  const setConfig = (d, body) => writeFileSync(cfgPath(d), typeof body === 'string' ? body : JSON.stringify(body));
+  const commitConfig = (d, body) => {
+    setConfig(d, body);
+    git(d, 'add', '.ssdd/config.json');
+    git(d, 'commit', '-qm', 'config');
+  };
+
+  it('a broken staged config blocks every mode, with the parse error', () => {
+    commitConfig(dir, CONFIG);
+    setConfig(dir, '{ "routing": [');
+    git(dir, 'add', '.ssdd/config.json');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 1);
+    assert.match(pc.stderr, /\.ssdd\/config\.json \(staged\) is not valid JSON/);
+    const h = hook(dir, 'git commit -m x');
+    assert.strictEqual(h.status, 2);
+    assert.match(h.stderr, /not valid JSON/);
+    write(dir, 'src/a.ts', 'a\n');
+    const s = stamp(dir, 'alpha');
+    assert.strictEqual(s.status, 1);
+    assert.match(s.stderr, /not valid JSON/);
+  });
+
+  it('a broken working-tree config (nothing committed or staged) blocks too', () => {
+    setConfig(dir, 'nope');
+    assert.strictEqual(preCommit(dir).status, 1);
+    assert.strictEqual(hook(dir, 'git commit -m x').status, 2);
+  });
+
+  it('a broken HEAD config with a valid staged one passes, with a warning', () => {
+    commitConfig(dir, '{ broken');
+    setConfig(dir, CONFIG);
+    git(dir, 'add', '.ssdd/config.json');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 0, pc.stderr);
+    assert.match(pc.stderr, /warning: HEAD's \.ssdd\/config\.json is not valid JSON/);
+  });
+
+  it('a staged config that drops a route is still judged by HEAD\'s', () => {
+    commitConfig(dir, CONFIG);
+    setConfig(dir, { routing: [{ reviewer: 'beta', paths: ['^src/'] }] });
+    git(dir, 'add', '.ssdd/config.json');
+    write(dir, 'src/a.ts', 'a\n');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 1);
+    assert.match(pc.stderr, /alpha/);
+    assert.strictEqual(hook(dir, 'git commit -m x').status, 2);
+  });
+
+  it('a staged deletion of the config does not disarm the gate', () => {
+    commitConfig(dir, CONFIG);
+    git(dir, 'rm', '-q', '.ssdd/config.json');
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+
+  it('an unstaged edit to the config is ignored', () => {
+    commitConfig(dir, CONFIG);
+    setConfig(dir, { routing: [] });
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+
+  it('first commit of the config: the staged one alone applies', () => {
+    setConfig(dir, { routing: [{ reviewer: 'gamma', paths: ['^lib/'] }] });
+    git(dir, 'add', '.ssdd/config.json');
+    setConfig(dir, CONFIG); // working tree differs; ignored
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(preCommit(dir).status, 0);
+    write(dir, 'lib/x.ts', 'x\n');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 1);
+    assert.match(pc.stderr, /gamma/);
+    assert.doesNotMatch(pc.stderr, /alpha|beta/);
+  });
+
+  it('--stamp accepts a reviewer only HEAD\'s config names, and then the commit passes', () => {
+    commitConfig(dir, CONFIG);
+    setConfig(dir, { routing: [{ reviewer: 'beta', paths: ['^src/'] }] });
+    git(dir, 'add', '.ssdd/config.json');
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(stamp(dir, 'alpha,beta').status, 0);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+
+  it('one reviewer named by both configs is listed once', () => {
+    commitConfig(dir, CONFIG);
+    setConfig(dir, { routing: [...CONFIG.routing, { reviewer: 'alpha', paths: ['^src/b\\.ts$'] }] });
+    git(dir, 'add', '.ssdd/config.json');
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.stderr.match(/• alpha/g).length, 1);
+    assert.match(pc.stderr, /alpha — never stamped on this diff \(2 routed file/);
+  });
+
+  it('HEAD\'s global exclude does not widen the staged config\'s routes', () => {
+    commitConfig(dir, { routing: [{ reviewer: 'alpha', paths: ['^src/'] }], reviewGate: { exclude: ['\\.test\\.ts$'] } });
+    setConfig(dir, { routing: [{ reviewer: 'alpha', paths: ['^src/'] }, { reviewer: 'beta', paths: ['^src/'] }], reviewGate: { exclude: ['\\.test\\.ts$'] } });
+    git(dir, 'add', '.ssdd/config.json');
+    write(dir, 'src/a.test.ts', 'a\n');
+    assert.strictEqual(preCommit(dir).status, 0);
+    commitConfig(dir, { routing: [{ reviewer: 'alpha', paths: ['^src/'] }], reviewGate: { exclude: ['\\.test\\.ts$'] } });
+    setConfig(dir, { routing: [{ reviewer: 'beta', paths: ['^src/'] }] });
+    git(dir, 'add', '.ssdd/config.json');
+    write(dir, 'src/b.test.ts', 'b\n');
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 1);
+    assert.match(pc.stderr, /beta/);
+    assert.doesNotMatch(pc.stderr, /alpha/);
+  });
+});
+
+describe('dormant pre-commit hook', () => {
+  const armable = (d) => {
+    mkdirSync(join(d, '.githooks'), { recursive: true });
+    writeFileSync(join(d, '.githooks', 'pre-commit'), '#!/bin/sh\n');
+  };
+  const NOTE = /pre-commit hook is dormant in this repo \(core\.hooksPath is unset\)[\s\S]*git config core\.hooksPath \.githooks/;
+
+  it('a blocked and an allowed commit both carry the note while core.hooksPath is unset', () => {
+    armable(dir);
+    write(dir, 'docs/x.md', 'x\n');
+    const ok = hook(dir, 'git commit -m x');
+    assert.strictEqual(ok.status, 0);
+    assert.match(ok.stderr, NOTE);
+    assert.match(JSON.parse(ok.stdout).hookSpecificOutput.additionalContext, NOTE);
+    write(dir, 'src/a.ts', 'a\n');
+    const blocked = hook(dir, 'git commit -m x');
+    assert.strictEqual(blocked.status, 2);
+    assert.match(blocked.stderr, NOTE);
+  });
+
+  it('names a wrong value, and is silent once it points at .githooks', () => {
+    armable(dir);
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'config', 'core.hooksPath', '.git/hooks');
+    assert.match(hook(dir, 'git commit -m x').stderr, /core\.hooksPath is "\.git\/hooks"/);
+    git(dir, 'config', 'core.hooksPath', '.githooks/');
+    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+    write(dir, 'src/a.ts', 'b\n');
+    git(dir, 'config', 'core.hooksPath', join(dir, '.githooks'));
+    const r = hook(dir, 'git commit -m x');
+    assert.strictEqual(r.status, 2);
+    assert.doesNotMatch(r.stderr, /dormant/);
+  });
+
+  it('a repo without .githooks/pre-commit gets no note', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+  });
+});

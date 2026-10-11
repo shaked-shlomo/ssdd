@@ -252,6 +252,57 @@ describe('status', () => {
   });
 });
 
+describe('status: is the gate armed?', () => {
+  const GATE_ROUTE = JSON.parse(readFileSync(join(dirname(SCRIPT), '..', 'mechanisms', 'config.example.json'), 'utf8'))
+    .routing.find((r) => r.reviewer === 'gate-reviewer');
+
+  it('lists unrouted gate files and a dormant hook; exit code unchanged', () => {
+    ssdd('install', tgt, '--ref', 'v2.0.0');
+    commitAll(tgt, 'ssdd');
+    const r = ssdd('status', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /gate files routed to no reviewer \(\d+\)/);
+    assert.match(r.out, /^  \.ssdd\/config\.json$/m);
+    assert.match(r.out, /^  \.githooks\/ \(1 of 1 files\)$/m);
+    assert.match(r.out, /^  AGENTS\.md$/m);
+    assert.match(r.out, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is unset\)/);
+  });
+
+  it('is silent once the gate route is in the committed config and the hook is armed', () => {
+    ssdd('install', tgt, '--ref', 'v2.0.0');
+    put(tgt, '.ssdd/config.json', JSON.stringify({ routing: [GATE_ROUTE] }));
+    commitAll(tgt, 'ssdd');
+    git(tgt, 'config', 'core.hooksPath', '.githooks');
+    const r = ssdd('status', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /routed to no reviewer|dormant/);
+  });
+
+  it('an uncommitted route removal still counts as routed (HEAD applies); a broken config is named', () => {
+    ssdd('install', tgt, '--ref', 'v2.0.0');
+    put(tgt, '.ssdd/config.json', JSON.stringify({ routing: [GATE_ROUTE] }));
+    commitAll(tgt, 'ssdd');
+    put(tgt, '.ssdd/config.json', '{ "routing": [');
+    git(tgt, 'add', '.ssdd/config.json');
+    const r = ssdd('status', tgt);
+    assert.match(r.out, /WARNING: \.ssdd\/config\.json \(staged\) is not valid JSON/);
+    assert.doesNotMatch(r.out, /routed to no reviewer/);
+  });
+
+  it('install suggests a prepare script only when the target has a package.json', () => {
+    let r = ssdd('install', tgt, '--ref', 'v2.0.0');
+    assert.doesNotMatch(r.out, /"prepare"/);
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(root);
+    buildSource();
+    initRepo(tgt);
+    put(tgt, 'package.json', '{}\n');
+    commitAll(tgt, 'init');
+    r = ssdd('install', tgt, '--ref', 'v2.0.0');
+    assert.match(r.out, /Optional: add "prepare": "git config core\.hooksPath \.githooks" to package\.json scripts/);
+  });
+});
+
 describe('skills ledger', () => {
   const LEDGER = '{\n  "version": 1,\n  "sources": {}\n}\n';
   function releaseWithLedger(tag, body = LEDGER) {
@@ -430,6 +481,15 @@ describe('framework files', () => {
     /[-_]spec\.[cm]?[jt]s$/,        // bun (*_spec)
     /^test[-.]/,                    // node --test (test-*, test.mjs)
   ];
+  it('config.example.json routes every gate file to gate-reviewer', () => {
+    const cfg = JSON.parse(readFileSync(join(dirname(SCRIPT), '..', 'mechanisms', 'config.example.json'), 'utf8'));
+    const gate = cfg.routing.filter((r) => r.reviewer === 'gate-reviewer').flatMap((r) => r.paths.map((p) => new RegExp(p)));
+    const files = ['.ssdd/config.json', '.ssdd/hooks/review-gate.mjs', '.ssdd/reviewers/gate-reviewer.md',
+      '.ssdd/process/SDD.md', '.githooks/pre-commit', '.claude/settings.json', '.claude/agents/gate-reviewer.md', '.claude/rules/git.md',
+      '.cursor/hooks.json', '.cursor/rules/ssdd.mdc', 'AGENTS.md', 'CLAUDE.md'];
+    assert.deepEqual(files.filter((f) => !gate.some((re) => re.test(f))), []);
+    assert.ok(existsSync(join(dirname(SCRIPT), '..', 'reviewers', 'gate-reviewer.md')));
+  });
   it('no installed hook file matches a test runner\'s default pattern', () => {
     const dir = join(dirname(SCRIPT), '..', 'mechanisms', 'hooks');
     const hits = readdirSync(dir).filter((f) => DEFAULT_TEST_PATTERNS.some((re) => re.test(f)));
