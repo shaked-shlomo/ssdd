@@ -1124,8 +1124,7 @@ and the D13 `if` filter tested and included (item 9).
       doesn't run for `npm test` or `ls`. git-guard runs for all of them.
       A selftest checks that the template's review-gate entry carries
       `"if": "Bash(git *)"` and git-guard's doesn't.
-- [ ] **Existing tests:** the rest pass. CI runs green on Node 18 and 24.
-      *(Tests pass locally; pending: push + PR (owner), CI on Node 18 and 24.)*
+- [x] **Existing tests:** the rest pass. CI runs green on Node 18 and 24.
 - [x] **Update:** a scratch repo installed at v2.5.0, with the
       `gate-reviewer` route committed, updates to v2.6.0 cleanly.
   - Its config is untouched, and the route still blocks until it's stamped.
@@ -1148,4 +1147,4 @@ and the D13 `if` filter tested and included (item 9).
   | `git -c user.name=x commit -m x` | ran | ran |
   | `npm test` | skipped | ran |
   | `ls` | skipped | ran |
-- CI: pending: push + PR (owner).
+- CI on PR #3 (`v2.6-simplify`, `bec338e`): `selftest (18)` pass, `selftest (24)` pass — https://github.com/shaked-shlomo/ssdd/actions/runs/38240168314.
