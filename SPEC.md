@@ -924,7 +924,7 @@ lock), not hardening.
 
 Owner rulings, 2026-10-12: items 4, 5 and 6 as proposed (the working-tree
 config; cut the wrapper unwrapping; `gate-reviewer` opt-in, not deleted),
-and the D13 `if` filter left for later (Out).
+and the D13 `if` filter tested and included (item 9).
 
 1. **Which hardening answered something that happened** (from this spec's
    history):
@@ -987,6 +987,42 @@ and the D13 `if` filter left for later (Out).
 8. **Version: 2.6.0 (MINOR).** No manual step is required: the config shape
    and the stamp file are unchanged. The one optional step (drop the
    `gate-reviewer` route) goes under Upgrade.
+9. **The review gate runs only on git commands in Claude Code** (D13,
+   withdrawn after v2.1.1 because the gate unwrapped wrappers). The filter
+   was tested live on Claude Code 2.1.295 (the desktop app), 2026-10-12. Hooks
+   that only log ran on 18 command shapes, with an unfiltered hook as the
+   control:
+
+   | Shape | `Bash(git commit*)` | `Bash(git *)` |
+   |---|---|---|
+   | `git commit -m x` | runs | runs |
+   | `cd sub && git commit`, `(cd sub && git commit)` | runs | runs |
+   | `GIT_AUTHOR_NAME=x git commit` | runs | runs |
+   | `git status && git commit`, `npm test; git commit` | runs | runs |
+   | `git commit -F - <<'MSG' … MSG` | runs | runs |
+   | **`git -C ../wt commit`**, `git -C sub commit` | **skipped** | runs |
+   | `D=sub; git -C "$D" commit` | skipped | runs |
+   | `git -c user.name=x commit`, `git --no-pager commit` | skipped | runs |
+   | `/usr/bin/git commit`, `env X=1 git commit`, `sudo git commit` | skipped | skipped |
+   | `bash -c 'git commit -m x'` | skipped | skipped |
+   | `git log \| grep commit`, `git status` (not commits) | skipped | runs |
+   | `echo "git commit"` (not a commit) | skipped | skipped |
+
+   `Bash(git commit*)` is rejected: it skips `git -C <worktree> commit`,
+   the real gap v2.1 closed. **`Bash(git *)` is chosen.** It catches every
+   shape v2.1 answered. It skips the absolute-path, `env` and `sudo` runners
+   (v2.1.1 additions, constructed like the wrappers) and `bash -c`, which
+   v2.6 stops unwrapping anyway. In Claude Code those shapes now reach only
+   the pre-commit backstop. `commandStart` still serves Cursor's
+   `beforeShellExecution` (it has no such filter) and git-guard.
+   The `if` field is best-effort by Anthropic's docs ("use the permission
+   system rather than a hook to enforce"), which fits a gate that isn't a
+   sandbox. It predates 2.1.214 (that release changed its file-tool
+   matching), so the CLI versions SSDD targets have it.
+   git-guard stays unfiltered: its hooks-mode `--stamp` check fires on
+   `node … review-gate.mjs --stamp`, which isn't a git command. Only the
+   review gate's PreToolUse entry gets the filter; SubagentStart / Stop
+   don't take `if`.
 
 ## Scope
 
@@ -999,6 +1035,10 @@ and the D13 `if` filter left for later (Out).
 - `git-cmd.mjs`: the wrapper functions removed (Clarify 6).
 - `config.example.json`: the `gate-reviewer` route removed. The route moves
   into `reviewers/gate-reviewer.md` as the opt-in snippet.
+- `adapters/claude-code/settings-hooks.json`: the review gate's
+  PreToolUse(Bash) entry gets `"if": "Bash(git *)"` (Clarify 9). The
+  project's `.claude/settings.json` is project-owned, so `update` prints the
+  template diff and CHANGELOG gives the line.
 - `bin/ssdd.mjs status`: the gate-files listing (`GATE_FILES`) removed; the
   broken-config and dormant-hook warnings stay.
 - Tests:
@@ -1014,8 +1054,11 @@ and the D13 `if` filter left for later (Out).
     commit of a config is judged by that config alone" limitation (moot with
     one config).
   - `adapters/generic/AGENTS.md`: the "once committed" paragraph is removed.
-  - `docs/model-era-review.md` D13: the note that the gate unwraps wrappers
-    is corrected.
+  - `docs/model-era-review.md` D13: un-withdrawn, done in v2.6 with
+    `Bash(git *)`; points at Clarify 9.
+  - README Known limitations: in Claude Code the harness gate doesn't see
+    `/usr/bin/git`, `env` / `sudo` runners or shell wrappers; the pre-commit
+    layer does.
   - CHANGELOG 2.6.0, VERSION.
   - BACKLOG: add the threat-model rule and move the adoption items to the
     top. Drop the "first commit … judged by that config alone" limitation
@@ -1028,12 +1071,7 @@ and the D13 `if` filter left for later (Out).
   completion stamps, `stamping: "hooks"`. All kept.
 - Removing `reviewerModels` (Clarify 7).
 - Deleting `gate-reviewer`: it becomes opt-in, and the file stays.
-- Registering the review gate with `"if": "Bash(git commit*)"` (D13). It's
-  possible again once wrappers aren't unwrapped, but it only saves a Node
-  start per non-commit Bash call. It's unverified whether the filter matches
-  `git -C <worktree> commit`, `cd x && git commit` or `VAR=x git commit`;
-  a miss there would drop those commits to the pre-commit backstop. Revisit
-  after testing those shapes against the current CLI.
+- Filtering git-guard or convention-lint with `if` (Clarify 9).
 - Configurable artifact paths and prizma's adoption: the next work, each
   with its own spec.
 
@@ -1078,6 +1116,13 @@ and the D13 `if` filter left for later (Out).
     SPEC.md and CHANGELOG.md.
 - [ ] **Size, recorded:** line counts of `mechanisms/hooks/*.mjs` (non-test)
       and the test count, before and after.
+- [ ] **`if` filter, live:** with the template's hooks installed in a scratch
+      repo on the current Claude Code, the Clarify 9 probe still holds:
+      the review gate runs for `git commit`, `git -C <worktree> commit`,
+      `cd x && git commit`, `VAR=x git commit` and `git -c k=v commit`, and
+      doesn't run for `npm test` or `ls`. git-guard runs for all of them.
+      A selftest checks that the template's review-gate entry carries
+      `"if": "Bash(git *)"` and git-guard's doesn't.
 - [ ] **Existing tests:** the rest pass. CI runs green on Node 18 and 24.
 - [ ] **Update:** a scratch repo installed at v2.5.0, with the
       `gate-reviewer` route committed, updates to v2.6.0 cleanly.
