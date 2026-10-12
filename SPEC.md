@@ -991,7 +991,8 @@ and the D13 `if` filter tested and included (item 9).
    withdrawn after v2.1.1 because the gate unwrapped wrappers). The filter
    was tested live on Claude Code 2.1.295 (the desktop app), 2026-10-12. Hooks
    that only log ran on 18 command shapes, with an unfiltered hook as the
-   control:
+   control. A headless `claude -p` rerun of 13 of the shapes on the CLI at
+   2.1.263 gave the same result for each:
 
    | Shape | `Bash(git commit*)` | `Bash(git *)` |
    |---|---|---|
