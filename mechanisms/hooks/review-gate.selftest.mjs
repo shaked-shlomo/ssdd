@@ -6,7 +6,7 @@
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -566,5 +566,34 @@ describe('dormant pre-commit hook', () => {
   it('a repo without .githooks/pre-commit gets no note', () => {
     write(dir, 'src/a.ts', 'a\n');
     assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+  });
+});
+
+describe('the pre-commit layer is the backstop for shell hand-offs', () => {
+  it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", () => {
+    // Arm the portable hook the way install does: pre-commit in .githooks/,
+    // the hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
+    const here = dirname(HOOK);
+    mkdirSync(join(dir, '.githooks'));
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(join(here, 'pre-commit'), 'utf8'));
+    chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
+    mkdirSync(join(dir, '.ssdd', 'hooks'));
+    for (const f of readdirSync(here)) {
+      if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(here, f), join(dir, '.ssdd', 'hooks', f));
+    }
+    writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
+    git(dir, 'config', 'core.hooksPath', '.githooks');
+    git(dir, 'add', '.ssdd/config.json'); // the hook refuses while anything is untracked
+    write(dir, 'src/a.ts', 'a\n');
+    const head = git(dir, 'rev-parse', 'HEAD');
+
+    // The harness hook does not see inside the shell string.
+    assert.strictEqual(hook(dir, "bash -c 'git commit -m x'").status, 0);
+
+    // Run for real, the commit is refused by git's pre-commit.
+    const r = spawnSync('bash', ['-c', 'git commit -m x'], { cwd: dir, encoding: 'utf8' });
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /alpha/);
+    assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
   });
 });

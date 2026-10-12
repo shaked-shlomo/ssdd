@@ -74,11 +74,7 @@ describe('un-evaluable commits are refused before anything is judged', () => {
     ['add chained before commit', 'git add x.ts && git commit -m "x"', /`git add` chained/],
     ['rm chained before commit', 'git rm x.ts; git commit -m x', /`git rm` chained/],
     ['-C add chained before -C commit', 'git -C /tmp/wt add a.ts && git -C /tmp/wt commit -m x', /chained/],
-    // v2.1.1 — scripts handed to a shell, every commit in the call, runners.
-    ['bash -c with -am', "bash -c 'git commit -am x'", /`-am`/],
-    ['eval with a chained add', 'eval "git add x.ts && git commit -m y"', /chained/],
-    ['a heredoc script with a pathspec', "bash <<'EOF'\ngit commit -m x foo.ts\nEOF", /pathspec/],
-    ['a script piped to sh', "echo 'git commit -a -m x' | sh", /`-a`/],
+    // v2.1.1 — every commit in the call, runners.
     ['a second commit with -a', 'git commit -m x; git commit -am y', /`-am`/],
     ['sudo git commit -am', 'sudo git commit -am x', /`-am`/],
   ];
@@ -109,6 +105,11 @@ describe('shapes that pass the checks (nothing staged → allowed)', () => {
     'git commit --date "2026-01-01 10:00" -m x',
     "bash -lc 'echo hi'",
     `git commit -m 'use bash -c "git commit -am x"'`,
+    // v2.6: shell hand-offs aren't unwrapped; the pre-commit layer is the backstop.
+    "bash -c 'git commit -am x'",
+    'eval "git add x.ts && git commit -m y"',
+    "bash <<'EOF'\ngit commit -m x foo.ts\nEOF",
+    "echo 'git commit -a -m x' | sh",
   ];
   for (const command of passes) {
     for (const [name, h] of BOTH) {
@@ -138,7 +139,6 @@ describe('the gate judges the repo the commit targets', () => {
     ['cd <r>; git commit', (r) => `cd ${r}; git commit -m "x"`],
     ['cd /tmp && cd <r> && git commit', (r) => `cd /tmp && cd ${r} && git commit -m "x"`],
     ['cd <r> && git -C . commit', (r) => `cd ${r} && git -C . commit -m "x"`],
-    ["bash -c 'cd <r> && git commit'", (r) => `bash -c 'cd ${r} && git commit -m x'`],
   ];
   for (const [label, f] of shapes) {
     for (const [name, h] of BOTH) {

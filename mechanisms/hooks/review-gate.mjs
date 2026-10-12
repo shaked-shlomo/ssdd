@@ -40,7 +40,7 @@
 // starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
 // `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED. Scripts
 // handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
-// judged in place, as if typed directly.
+// not unwrapped: the pre-commit layer is the backstop for them.
 //
 //   (stdin, SubagentStart / SubagentStop — Claude Code)
 //                                   completion stamps: a routed reviewer's start
@@ -65,7 +65,7 @@ import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { expandWrappers, flatten, gitInvocation, isCommit, skeleton } from './git-cmd.mjs';
+import { gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
 import { ARM_HOOK, dormantHook, loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
@@ -374,7 +374,7 @@ function deny(msg, user = 'SSDD review gate: blocked — see the message.') {
 // Quoted strings and heredoc bodies are blanked first, so a commit MESSAGE
 // that mentions "git commit" (or the bypass token) never triggers or
 // authorizes anything.
-const probe = skeleton(expandWrappers(cmd));
+const probe = skeleton(cmd);
 if (!isCommit(probe)) finish(0, 'allow');
 if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
   process.stderr.write('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead in chat.\n');
@@ -382,7 +382,7 @@ if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
 }
 
 // ── commits whose content this hook can't see are refused outright ──────────
-const commands = flatten(cmd); // in execution order, shell-wrapped scripts in place
+const commands = splitCommands(cmd); // in execution order
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
 let staging = null;
 const commitArgs = []; // every commit in the call, not just the first
