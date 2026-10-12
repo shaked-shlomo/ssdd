@@ -6,7 +6,7 @@
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -569,13 +569,17 @@ describe('dormant pre-commit hook', () => {
   });
 });
 
+// The portable hook: mechanisms/hooks/pre-commit in the source tree,
+// .githooks/pre-commit in an installed repo (.ssdd/hooks/ is two levels down).
+const PRE_COMMIT = [join(dirname(HOOK), 'pre-commit'), join(dirname(HOOK), '..', '..', '.githooks', 'pre-commit')].find((p) => existsSync(p));
+
 describe('the pre-commit layer is the backstop for shell hand-offs', () => {
-  it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", () => {
+  it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", { skip: !PRE_COMMIT }, () => {
     // Arm the portable hook the way install does: pre-commit in .githooks/,
     // the hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
     const here = dirname(HOOK);
     mkdirSync(join(dir, '.githooks'));
-    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(join(here, 'pre-commit'), 'utf8'));
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
     chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
     mkdirSync(join(dir, '.ssdd', 'hooks'));
     for (const f of readdirSync(here)) {
@@ -591,7 +595,7 @@ describe('the pre-commit layer is the backstop for shell hand-offs', () => {
     assert.strictEqual(hook(dir, "bash -c 'git commit -m x'").status, 0);
 
     // Run for real, the commit is refused by git's pre-commit.
-    const r = spawnSync('bash', ['-c', 'git commit -m x'], { cwd: dir, encoding: 'utf8' });
+    const r = spawnSync('bash', ['-c', 'git commit -m x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
     assert.strictEqual(r.status, 1, r.stderr);
     assert.match(r.stderr, /alpha/);
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
