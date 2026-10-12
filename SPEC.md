@@ -907,7 +907,7 @@ Design decisions:
 
 # v2.6 — simplify the gate to its threat model
 
-**Date:** 2026-10-12 · **Status:** spec (owner rulings 2026-10-12) · **Branch:** `v2.6-simplify`
+**Date:** 2026-10-12 · **Status:** implemented (v2.6.0), not yet tagged · **Branch:** `v2.6-simplify`
 
 ## Goal
 
@@ -1078,7 +1078,7 @@ and the D13 `if` filter tested and included (item 9).
 
 ## Acceptance criteria
 
-- [ ] **The harness hooks no longer unwrap shell wrappers; the pre-commit
+- [x] **The harness hooks no longer unwrap shell wrappers; the pre-commit
       backstop still catches them:**
   - git-guard passes `bash -c 'git commit -anm x'` and `eval "git add -A"`
     through unjudged, and so does the harness gate for
@@ -1086,38 +1086,38 @@ and the D13 `if` filter tested and included (item 9).
   - With the pre-commit hook armed and a routed file staged,
     `bash -c 'git commit -m x'` run from a shell is still blocked by
     `--pre-commit`.
-- [ ] **Direct shapes unchanged:** every non-wrapper git-guard and shapes
+- [x] **Direct shapes unchanged:** every non-wrapper git-guard and shapes
       case still passes: bulk add, `-n`, amend, `core.hooksPath`, chained
       staging, `-a/-i/-o`, pathspec, `cd` / `-C` / worktree, `$VAR` failing
       closed.
-- [ ] **Quoted mentions still ignored:** a commit message mentioning
+- [x] **Quoted mentions still ignored:** a commit message mentioning
       `git add -A` or `bash -c "git commit -n"` triggers nothing, and
       `git commit -F - <<EOF … EOF` with `--no-verify` in the body is
       allowed.
-- [ ] **The working-tree config applies** in both layers:
+- [x] **The working-tree config applies** in both layers:
   - An unstaged route edit applies to the next commit.
   - An unstaged `stamping: "manual"` re-enables `--stamp`.
   - HEAD's routes no longer apply once the working-tree config drops them.
-- [ ] **Broken / absent config:**
+- [x] **Broken / absent config:**
   - Invalid working-tree JSON blocks `--pre-commit` (1), the harness hook
     (2) and `--stamp` (1).
   - No config exits 0.
   - git-guard keeps its defaults on a broken config.
-- [ ] **`gate-reviewer` is opt-in:**
+- [x] **`gate-reviewer` is opt-in:**
   - `config.example.json` has no `gate-reviewer` route.
   - `install` still ships `reviewers/gate-reviewer.md` and its
     `.claude/agents` link.
   - `status` prints no gate-files listing and still warns on a broken
     config and a dormant hook.
-- [ ] **Docs:**
+- [x] **Docs:**
   - README and the AGENTS template have no "once committed" or
     "the stricter of the two" wording.
   - README states the threat-model rule.
   - `git grep -n -e expandWrappers -e "flatten("` finds nothing outside
     SPEC.md and CHANGELOG.md.
-- [ ] **Size, recorded:** line counts of `mechanisms/hooks/*.mjs` (non-test)
+- [x] **Size, recorded:** line counts of `mechanisms/hooks/*.mjs` (non-test)
       and the test count, before and after.
-- [ ] **`if` filter, live:** with the template's hooks installed in a scratch
+- [x] **`if` filter, live:** with the template's hooks installed in a scratch
       repo on the current Claude Code, the Clarify 9 probe still holds:
       the review gate runs for `git commit`, `git -C <worktree> commit`,
       `cd x && git commit`, `VAR=x git commit` and `git -c k=v commit`, and
@@ -1125,7 +1125,27 @@ and the D13 `if` filter tested and included (item 9).
       A selftest checks that the template's review-gate entry carries
       `"if": "Bash(git *)"` and git-guard's doesn't.
 - [ ] **Existing tests:** the rest pass. CI runs green on Node 18 and 24.
-- [ ] **Update:** a scratch repo installed at v2.5.0, with the
+      *(Tests pass locally; pending: push + PR (owner), CI on Node 18 and 24.)*
+- [x] **Update:** a scratch repo installed at v2.5.0, with the
       `gate-reviewer` route committed, updates to v2.6.0 cleanly.
   - Its config is untouched, and the route still blocks until it's stamped.
   - A commit that deletes the route needs no `gate-reviewer` stamp.
+
+*Verified 2026-10-12, on `fcd873b` (the code to be tagged) unless marked:*
+- `node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs` -> 455 pass, 0 fail (Node 24.15.0). Named cases: the `bash -c` / `eval` cases are in the allowed lists; "the pre-commit layer is the backstop for shell hand-offs" (`bash -c 'git commit -m x'` run for real exits 1); "an unstaged route edit applies to the next commit"; "HEAD says "hooks", the unstaged file says "manual": --stamp is allowed"; "HEAD's routes stop applying once the working-tree config drops them"; "a broken config blocks every mode"; "a broken config leaves every default block on"; "no config is still a no-op"; "gate-reviewer ships and is linked by install, but config.example.json does not route it"; "names a dormant hook and lists no gate files". The template's review-gate entry carries `"if": "Bash(git *)"` and git-guard's doesn't (`bin/ssdd.selftest.mjs:507`).
+- Size: `mechanisms/hooks/*.mjs` without selftests 1,169 -> 1,062 lines; selftests (`mechanisms/hooks/` + `bin/`) 2,575 -> 2,485 lines; tests 466 -> 455.
+- `git grep -n -e expandWrappers -e "flatten(" -e "once committed" -e "stricter of the two"` -> hits only in CHANGELOG.md, SPEC.md and `docs/superpowers/plans/`. README, the AGENTS template and the code have none. `mechanisms/config.example.json` has 0 `gate-reviewer` matches; README line 160 states the threat-model rule.
+- Update: a scratch repo installed at the v2.5.0 commit `85b0b82` (no v2.5.0 tag yet) with the shipped `gate-reviewer` route committed, updated with `update --to fcd873b` to `v2.6.0+fcd873b`: `.ssdd/config.json` sha256 unchanged, no conflict markers, `status` exit 0 with no gate-files listing. With the hook armed, a staged `.ssdd/config.json` edit was blocked (`gate-reviewer — never stamped on this diff`, exit 1) and committed after `--stamp gate-reviewer`. A commit deleting the route went through with no stamp (exit 0).
+- Deviation: the update copies `review-gate.selftest.mjs`, and in the installed layout its "backstop for shell hand-offs" test fails with ENOENT (it reads `.ssdd/hooks/pre-commit`, which an install puts at `.githooks/pre-commit`). The installed `node --test .ssdd/hooks/*.selftest.mjs` -> 399 pass, 1 fail. The hook behavior is unaffected; the test needs the source layout.
+- Live `if` probe, Claude Code 2.1.263 (`claude -p --model sonnet --allowedTools Bash`, in a scratch repo; probe hooks log `{hook, cmd}` and a separate unfiltered hook exits 2, so nothing ran; the `if` field is as the template ships it):
+
+  | Command | review gate | git-guard |
+  |---|---|---|
+  | `git commit -m x` | ran | ran |
+  | `git -C ../wt commit -m x` | ran | ran |
+  | `cd sub && git commit -m x` | ran | ran |
+  | `GIT_AUTHOR_NAME=x git commit -m x` | ran | ran |
+  | `git -c user.name=x commit -m x` | ran | ran |
+  | `npm test` | skipped | ran |
+  | `ls` | skipped | ran |
+- CI: pending: push + PR (owner).
