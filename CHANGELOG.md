@@ -17,11 +17,11 @@ the process and isn't a sandbox. A new evasion shape is out of scope unless
 an agent was seen using it in a real project.
 
 ### Removed
-- **Shell-wrapper unwrapping.** The harness hooks no longer judge `bash -c
-  '…'`, `eval "…"`, a heredoc fed to a shell or `… | sh` as if typed
-  directly (v2.1.1). The pre-commit layer still blocks the commit. `sudo`,
-  `env` and an absolute `git` path are still seen by git-guard and Cursor's
-  hook.
+- **Shell-wrapper unwrapping**, added in v2.1.1. The harness hooks no longer
+  judge `bash -c '…'`, `eval "…"`, a heredoc fed to a shell or `… | sh` as if
+  typed directly. The pre-commit layer still blocks the commit. Runner
+  prefixes (`sudo`, `env`, an absolute `git` path) are still recognized by
+  git-guard and Cursor's hook.
 - **The HEAD ∪ staged config** (v2.5). The working-tree `.ssdd/config.json`
   applies, so an edit takes effect at once, in both layers and in git-guard.
   A broken config is fixed in place, with no commit needed.

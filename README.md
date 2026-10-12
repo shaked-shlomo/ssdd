@@ -151,12 +151,6 @@ Instructions tuned for one generation drift with the next (see
 
 ## Known limitations
 
-**Copies, not a live link.** Each repo carries its own copy (the framework
-must travel with the repo and be editable per project); updates arrive only
-when you run `update`. A future release that moves a *target* path (not just
-a source path) needs a move entry in `bin/ssdd.mjs`, or `update` sees it as a
-removal plus an addition.
-
 **The gate is not a sandbox.** The harness hooks catch what a cooperating
 agent does by mistake or habit: bulk staging, `-n`, amend, force push,
 re-pointing `core.hooksPath`, committing content the gate can't see,
@@ -183,6 +177,12 @@ an agent was seen using it in a real project.
   closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
   harness layer starts from the tool call's cwd.
 - A re-stage that changes nothing keeps its stamps — by design since v2.
+
+**Copies, not a live link.** Each repo carries its own copy (the framework
+must travel with the repo and be editable per project); updates arrive only
+when you run `update`. A future release that moves a *target* path (not just
+a source path) needs a move entry in `bin/ssdd.mjs`, or `update` sees it as a
+removal plus an addition.
 
 Since v2.3, Claude Code can make attestation mechanical: a reviewer
 subagent's completion stamps its files, and `reviewGate.stamping: "hooks"`
