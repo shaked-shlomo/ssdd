@@ -902,3 +902,184 @@ Design decisions:
 - In that repo, with `core.hooksPath .githooks` and the CHANGELOG route pasted and staged, `git commit` was blocked: `gate-reviewer — never stamped on this diff`, for `.ssdd/config.json`. After the stamp it committed, and `status` printed only its version lines.
 - Deviation: convention-lint also reports a rule regex that doesn't compile (it used to skip the whole lint silently), under the same "can't be used" message.
 - CI on PR #2 (`v2.5-gate-hardening`): `selftest (18)` pass, `selftest (24)` pass — https://github.com/shaked-shlomo/ssdd/actions/runs/37859053395. The suite was not run under Node 18 locally (no Node 18 here).
+
+---
+
+# v2.6 — simplify the gate to its threat model
+
+**Date:** 2026-10-12 · **Status:** spec (owner rulings 2026-10-12) · **Branch:** `v2.6-simplify`
+
+## Goal
+
+Bring the gate back to the threat model README already states: it keeps a
+cooperating agent on the process; it isn't a sandbox. Remove the hardening
+that defends against an agent deliberately hiding from the gate (shell-wrapper
+unwrapping, the HEAD ∪ staged config, the gate reviewing itself by default).
+Keep everything that catches a sloppy or forgetful one. Write the threat model
+down as a rule so the next evasion shape doesn't start another release. After
+v2.6 the next SSDD work is adoption (configurable artifact paths, prizma's
+lock), not hardening.
+
+## Clarify pass
+
+Owner rulings, 2026-10-12: items 4, 5 and 6 as proposed (the working-tree
+config; cut the wrapper unwrapping; `gate-reviewer` opt-in, not deleted),
+and the D13 `if` filter left for later (Out).
+
+1. **Which hardening answered something that happened** (from this spec's
+   history):
+   - **v2.1** ported the source project's fixes for gaps it hit: staging
+     chained before `git commit` in one call (its 2026-08-10 gap), and
+     `git -C <worktree> commit` judged against the main checkout, a silent
+     bypass in a project that uses worktrees. Real. Kept.
+   - **v2.1.1** shell wrappers (`bash -c`, `eval`, a heredoc fed to a shell,
+     `… | sh`): "a final check found" them. They were constructed; no agent
+     was seen using one. Cut.
+   - **v2.5** set out to "close the four weaknesses Known limitations still
+     lists". v2.1's Out list calls them "evasion by an agent editing the
+     gate's own inputs", and none cites an incident. Cut the two that cost
+     friction (HEAD ∪ staged config, `gate-reviewer` routed by default). Keep
+     the two that catch accidents (a broken config blocks; a dormant hook is
+     named).
+2. **Who runs v2.5 today.** No injected repo: prizma is on v1.0.1 with no
+   lock, and Hatedate hasn't adopted (BACKLOG). Nothing downstream depends on
+   the behavior being cut, so the cut needs no migration.
+3. **The threat model, as a rule.** The harness hooks catch what a
+   cooperating agent does by mistake or habit: bulk staging, `-n`, amend,
+   force push, re-pointing `core.hooksPath`, committing content the gate
+   can't see, committing to the wrong repo, a broken config. They don't try
+   to catch an agent that hides a command from them; the pre-commit layer is
+   the backstop for what they can't see. **A new evasion shape is out of
+   scope unless an agent was seen using it in a real project**, and the spec
+   that closes it records that incident.
+4. **Which config applies.** The working-tree `.ssdd/config.json`, as before
+   v2.5. Chosen over the staged blob alone because it's the rule people
+   already expect (edit the file, it applies). convention-lint and `status`
+   already read it, and the "a config edit takes effect once committed"
+   caveat leaves README and the AGENTS template. Absent vs broken stays:
+   absent means not an SSDD repo; broken blocks (`--pre-commit` 1, harness
+   2, `--stamp` 1) and git-guard keeps its defaults on. A broken config is
+   fixed in place, with no commit needed.
+5. **`gate-reviewer` becomes opt-in.** The reviewer still ships and
+   `install` still links it. `config.example.json` no longer routes to it,
+   and `status` no longer lists unrouted gate files. The reviewer's header
+   gives the route for a project that wants it. A repo that pasted the 2.5
+   route keeps it (the config is project-owned), and CHANGELOG says it may
+   drop it. With the working-tree loader, the commit that drops the route
+   isn't reviewed by `gate-reviewer`.
+6. **What stays of the command grammar** (`git-cmd.mjs`):
+   - `splitCommands`, `gitInvocation` and `commandStart`. `VAR=x git …` is
+     everyday usage; `sudo` / `env` cost nothing more.
+   - `skeleton` / `stripHeredocs`, so a `git commit -F - <<EOF` message never
+     reads as commands.
+   - `cd` / `-C` repo resolution, and failing closed on `$VAR` / `$(…)` in a
+     repo target. That's about judging the right repo, not about evasion.
+
+   Removed: `flatten`, `expandWrappers`, `innerScript`, `heredocBodies`,
+   `SHELLS` and `PIPE_TO_SHELL`. Callers use `splitCommands(cmd)` and
+   `skeleton(cmd)`. git-guard's hooks-mode `--stamp` check reads the
+   heredoc-stripped raw text, so `bash -c '… --stamp …'` is still denied as
+   a side effect. It costs nothing, so its test stays.
+7. **`reviewerModels` stays.** It has been opt-in and unset by default since
+   v2.3.1, so projects that don't use it pay nothing. With one config,
+   `reviewerModelSets` collapses back to the one list. Revisit if no project
+   turns it on.
+8. **Version: 2.6.0 (MINOR).** No manual step is required: the config shape
+   and the stamp file are unchanged. The one optional step (drop the
+   `gate-reviewer` route) goes under Upgrade.
+
+## Scope
+
+**In:**
+- `ssdd-config.mjs`: read the working-tree config; keep the absent / broken
+  split and `dormantHook`; remove `merge` and the HEAD / index reads.
+- `review-gate.mjs` and `git-guard.mjs`: `splitCommands(cmd)` /
+  `skeleton(cmd)` in place of the wrapper expansion; header comments
+  updated.
+- `git-cmd.mjs`: the wrapper functions removed (Clarify 6).
+- `config.example.json`: the `gate-reviewer` route removed. The route moves
+  into `reviewers/gate-reviewer.md` as the opt-in snippet.
+- `bin/ssdd.mjs status`: the gate-files listing (`GATE_FILES`) removed; the
+  broken-config and dormant-hook warnings stay.
+- Tests:
+  - Remove the wrapper cases (git-guard, shapes), the union suites ("the
+    config a commit is judged by", "the guard can't be loosened by an
+    uncommitted config edit", the union cases in `ssdd-config.selftest.mjs`),
+    and the gate-files `status` / example-config tests.
+  - Add the cases in the criteria below.
+- Docs:
+  - README: the threat-model rule leads Known limitations; "What remains"
+    is rewritten. Remove "Keep the `gate-reviewer` route…" from Injecting
+    step 1, the `gate-reviewer` bullet in Known limitations, and the "first
+    commit of a config is judged by that config alone" limitation (moot with
+    one config).
+  - `adapters/generic/AGENTS.md`: the "once committed" paragraph is removed.
+  - `docs/model-era-review.md` D13: the note that the gate unwraps wrappers
+    is corrected.
+  - CHANGELOG 2.6.0, VERSION.
+  - BACKLOG: add the threat-model rule and move the adoption items to the
+    top. Drop the "first commit … judged by that config alone" limitation
+    and the "on its v2.5 update: paste the `gate-reviewer` route" item.
+
+**Out:**
+- v2.1's repo-target resolution and its refusal of commits the gate can't
+  see. They answer real gaps.
+- A broken config blocking, the dormant-hook note, per-file stamps,
+  completion stamps, `stamping: "hooks"`. All kept.
+- Removing `reviewerModels` (Clarify 7).
+- Deleting `gate-reviewer`: it becomes opt-in, and the file stays.
+- Registering the review gate with `"if": "Bash(git commit*)"` (D13). It's
+  possible again once wrappers aren't unwrapped, but it only saves a Node
+  start per non-commit Bash call. It's unverified whether the filter matches
+  `git -C <worktree> commit`, `cd x && git commit` or `VAR=x git commit`;
+  a miss there would drop those commits to the pre-commit backstop. Revisit
+  after testing those shapes against the current CLI.
+- Configurable artifact paths and prizma's adoption: the next work, each
+  with its own spec.
+
+## Acceptance criteria
+
+- [ ] **The harness hooks no longer unwrap shell wrappers; the pre-commit
+      backstop still catches them:**
+  - git-guard passes `bash -c 'git commit -anm x'` and `eval "git add -A"`
+    through unjudged, and so does the harness gate for
+    `bash -c 'git commit -am x'`.
+  - With the pre-commit hook armed and a routed file staged,
+    `bash -c 'git commit -m x'` run from a shell is still blocked by
+    `--pre-commit`.
+- [ ] **Direct shapes unchanged:** every non-wrapper git-guard and shapes
+      case still passes: bulk add, `-n`, amend, `core.hooksPath`, chained
+      staging, `-a/-i/-o`, pathspec, `cd` / `-C` / worktree, `$VAR` failing
+      closed.
+- [ ] **Quoted mentions still ignored:** a commit message mentioning
+      `git add -A` or `bash -c "git commit -n"` triggers nothing, and
+      `git commit -F - <<EOF … EOF` with `--no-verify` in the body is
+      allowed.
+- [ ] **The working-tree config applies** in both layers:
+  - An unstaged route edit applies to the next commit.
+  - An unstaged `stamping: "manual"` re-enables `--stamp`.
+  - HEAD's routes no longer apply once the working-tree config drops them.
+- [ ] **Broken / absent config:**
+  - Invalid working-tree JSON blocks `--pre-commit` (1), the harness hook
+    (2) and `--stamp` (1).
+  - No config exits 0.
+  - git-guard keeps its defaults on a broken config.
+- [ ] **`gate-reviewer` is opt-in:**
+  - `config.example.json` has no `gate-reviewer` route.
+  - `install` still ships `reviewers/gate-reviewer.md` and its
+    `.claude/agents` link.
+  - `status` prints no gate-files listing and still warns on a broken
+    config and a dormant hook.
+- [ ] **Docs:**
+  - README and the AGENTS template have no "once committed" or
+    "the stricter of the two" wording.
+  - README states the threat-model rule.
+  - `git grep -n -e expandWrappers -e "flatten("` finds nothing outside
+    SPEC.md and CHANGELOG.md.
+- [ ] **Size, recorded:** line counts of `mechanisms/hooks/*.mjs` (non-test)
+      and the test count, before and after.
+- [ ] **Existing tests:** the rest pass. CI runs green on Node 18 and 24.
+- [ ] **Update:** a scratch repo installed at v2.5.0, with the
+      `gate-reviewer` route committed, updates to v2.6.0 cleanly.
+  - Its config is untouched, and the route still blocks until it's stamped.
+  - A commit that deletes the route needs no `gate-reviewer` stamp.
