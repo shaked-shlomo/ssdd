@@ -81,7 +81,7 @@ honestly. Exact token savings aren't measured yet; step 1 below measures them.
 | **SDD.md principles** | Merge 1–3 into one evidence rule (D5's wording). Keep 4–6 as they are: they're about *what* to do (class coverage, failure owners, budgets), not nagging. | D4, D5 |
 | **Clarify pass checklist** | Keep it, but frame it as "the kinds of assumptions that bit before" rather than an exhaustive enumeration. Fable 5 follows a brief instruction without needing every case named. | D3, Fable 5 "strong instruction following" |
 | **Superpowers plugin** (enabled project-wide) | Decide deliberately. Its `using-superpowers` session hook injects "EXTREMELY_IMPORTANT … ABSOLUTELY MUST" text every session, and SSDD already owns brainstorm → plan → verify. AGENTS.md currently has to outrank it in words. Try a plan with it disabled and compare. | D6, D1 |
-| ~~**Review-gate hook registration**~~ | *Withdrawn after v2.1.1.* An `"if": "Bash(git commit*)"` filter would skip the hook for `bash -c '…'`, `eval "…"` and piped scripts, which the gate now unwraps and judges. Starting node on every Bash call is the cheaper cost. | D13 |
+| **Review-gate hook registration** | Done in v2.6: `"if": "Bash(git *)"` on the review gate's PreToolUse(Bash) entry only. `Bash(git commit*)` was rejected because it skips `git -C <worktree> commit`; `Bash(git *)` skips only `/usr/bin/git`, `env` / `sudo` runners and shell wrappers, which reach the pre-commit layer. The first withdrawal (after v2.1.1) no longer applies since v2.6 stops unwrapping wrappers. See `SPEC.md` v2.6 Clarify 9. | D13 |
 
 ## Add
 

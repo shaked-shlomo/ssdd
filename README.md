@@ -58,9 +58,8 @@ hooks and rule). It seeds the project-owned files (`.ssdd/config.json`,
    reviewers; a route may carry a `$comment` saying why), lint rules,
    git-guard toggles, `reviewGate.maxRoutedFiles`. The config is the
    injection contract: the mechanism is the framework, the regexes are the
-   project. Keep the `gate-reviewer` route: it reviews changes to the gate
-   itself. Edits to the config take effect once committed; until then the
-   committed table still applies.
+   project. `gate-reviewer`, which reviews changes to the gate's own files, is
+   opt-in: its route snippet is in `reviewers/gate-reviewer.md`.
 2. `AGENTS.md` — merge `AGENTS.ssdd.md` in, with a **Documentation Map**:
    every canonical doc, its one purpose, and its "when to update" trigger.
    `docs-sync-reviewer` enforces it per-diff; the
@@ -158,35 +157,32 @@ when you run `update`. A future release that moves a *target* path (not just
 a source path) needs a move entry in `bin/ssdd.mjs`, or `update` sees it as a
 removal plus an addition.
 
-**The gate can be evaded** — it keeps honest agents honest; it is not a
-security boundary. Of the weaknesses reproduced in the source project, v2.5
-closed the last four:
+**The gate is not a sandbox.** The harness hooks catch what a cooperating
+agent does by mistake or habit: bulk staging, `-n`, amend, force push,
+re-pointing `core.hooksPath`, committing content the gate can't see,
+committing to the wrong repo, a broken config. They don't try to catch an
+agent that hides a command from them; the git pre-commit layer is the
+backstop for what they can't see. A new evasion shape is out of scope unless
+an agent was seen using it in a real project.
 
 - A config that isn't valid JSON blocks in both layers (it used to read as
   "no config"); convention-lint reports it too. Absent still means "not an
-  SSDD repo".
-- The gate's own files (config, hooks and their wiring, reviewer checklists,
-  process, instruction files) route to `gate-reviewer` in the shipped
-  config. A project installed earlier adds the route itself; `status` lists
-  the gate files no route covers.
-- A commit is judged by HEAD's config *and* the staged one, the stricter of
-  the two, so it can't loosen its own review. git-guard reads the same pair,
-  so an uncommitted edit can't switch a block off or `stamping` back to
-  `manual`.
+  SSDD repo". The working-tree config is the one that applies, so a broken
+  one is fixed in place.
 - A dormant pre-commit hook (`core.hooksPath` not `.githooks`, the fresh-clone
   state) is named by `status` and by the harness gate on every commit. The
   user runs `git config core.hooksPath .githooks`; git-guard denies the agent
   any write to it. Once set, git ignores `.git/hooks` entirely (verified on
   git 2.54).
-
-What remains:
-
+- In Claude Code the review gate runs only on commands that start with `git`
+  (`"if": "Bash(git *)"`). `/usr/bin/git`, `env …` / `sudo …` runners and
+  shell wrappers (`bash -c`, `eval`, `… | sh`, a heredoc fed to a shell)
+  reach only the pre-commit layer. git-guard no longer unwraps shell wrappers
+  either. Cursor's hook has no such filter.
 - `SSDD_PROJECT_DIR` pointing elsewhere made the hook judge that path —
   closed in v2.1 for the pre-commit layer (it uses git's own cwd); the
   harness layer starts from the tool call's cwd.
 - A re-stage that changes nothing keeps its stamps — by design since v2.
-- The first commit of a config is judged by that config alone: there is no
-  committed table to compare against.
 
 Since v2.3, Claude Code can make attestation mechanical: a reviewer
 subagent's completion stamps its files, and `reviewGate.stamping: "hooks"`
@@ -198,12 +194,10 @@ review.
 Since v2.1 the harness gate refuses commits whose content it can't see
 (`git add … && git commit`, `commit -a/-i/-o`, `commit <pathspec>`) and
 judges the repo a commit targets (`cd`, `git -C`, worktrees), failing closed
-on `$VAR` / `$(…)`. Since v2.1.1 both hooks also judge scripts handed to a
-shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) as if typed
-directly, and see past `sudo` / `env` / an absolute `git` path. They still
-can't see git run from a script *file*, a variable, an alias, `xargs` /
-`find -exec`, or another language's subprocess call, nor a
-`GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets `core.hooksPath`.
+on `$VAR` / `$(…)`. They can't see git run from a script *file*, a
+variable, an alias, `xargs` / `find -exec`, or another language's subprocess
+call, nor a `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets
+`core.hooksPath`.
 For those the git pre-commit layer is the backstop, and only while `-n`
 isn't used. The hooks keep a cooperating agent on the process; they aren't
 a sandbox.
