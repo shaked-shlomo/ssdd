@@ -54,7 +54,7 @@ export function loadSsddConfig(repo) {
   let text;
   try { text = readFileSync(join(root, PATH), 'utf8'); } catch (e) {
     if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') return null;
-    return { root, cfg: { root }, error: `${PATH} is not valid JSON: ${e.message}` };
+    return { root, cfg: { root }, error: `${PATH} can't be read: ${e.message}` };
   }
   let config;
   try {
