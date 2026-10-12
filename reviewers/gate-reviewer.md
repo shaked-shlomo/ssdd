@@ -9,6 +9,15 @@ SSDD gate weaker. The gate is what keeps every other reviewer in the loop, so
 a commit that narrows a route, unwires a hook or softens a checklist removes
 review from everything after it, and no other reviewer looks at these files.
 
+This reviewer is opt-in: the example config does not route it. To turn it on,
+paste this route into `.ssdd/config.json` under `routing` and commit:
+
+```json
+{ "reviewer": "gate-reviewer",
+  "paths": ["^\\.ssdd/(config\\.json$|hooks/|reviewers/|process/)", "^\\.githooks/", "^\\.claude/(settings\\.json$|agents/|rules/)", "^\\.cursor/(hooks\\.json$|rules/)", "^(AGENTS|CLAUDE)\\.md$"],
+  "$comment": "The gate's own files: a commit that loosens the gate removes review from everything after it, and no other lens reads these." }
+```
+
 Boundary: app security is the security-reviewer's lane, doc coupling is
 docs-sync's. You own the gate's own files. A loosening isn't wrong by itself
 (projects tune their gate); it's an issue unless the diff, its plan, or the
