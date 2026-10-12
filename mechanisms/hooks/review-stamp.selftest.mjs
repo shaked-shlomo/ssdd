@@ -141,34 +141,31 @@ describe('completion stamps', () => {
     assert.equal(stamp().reviewers['alpha-reviewer']['src/b.ts'].model, 'grok-4-7');
   });
 
-  it('unsetting reviewerModels without committing it changes nothing: HEAD\'s list still applies', () => {
+  it('unsetting reviewerModels in the working tree lifts the model check', () => {
     writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
       routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
     }));
-    git('add', '.ssdd/config.json');
     start('u2', 'alpha-reviewer');
     stop('u2', 'alpha-reviewer', 'CLEAN', ['grok-4-7']);
-    assert.equal(stamp().reviewers['alpha-reviewer'], undefined);
-    assert.match(stamp().refused['alpha-reviewer'].reason, /reviewerModels allows opus>=5\.5/);
+    assert.deepEqual(Object.keys(stamp().reviewers['alpha-reviewer']).sort(), ['src/b.ts', 'src/lib/a.ts']);
+    assert.equal(stamp().refused?.['alpha-reviewer'], undefined);
   });
 
-  it('a reviewer routed only by HEAD\'s config still gets completion stamps', () => {
+  it('a reviewer the working-tree config no longer routes gets no completion stamp', () => {
     writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({
       routing: [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }],
     }));
-    git('add', '.ssdd/config.json');
     start('h1', 'beta-reviewer');
     stop('h1', 'beta-reviewer', 'CLEAN');
-    assert.deepEqual(Object.keys(stamp().reviewers['beta-reviewer']), ['src/lib/a.ts']);
+    assert.equal(stamp().reviewers['beta-reviewer'], undefined);
   });
 
-  it('a broken staged config skips the completion stamp with a stderr line', () => {
+  it('a broken config skips the completion stamp with a stderr line', () => {
     writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
-    git('add', '.ssdd/config.json');
     assert.equal(start('b1', 'alpha-reviewer').status, 0);
     const r = stop('b1', 'alpha-reviewer', 'CLEAN');
     assert.equal(r.status, 0);
-    assert.match(r.stderr, /completion stamp skipped: \.ssdd\/config\.json \(staged\) is not valid JSON/);
+    assert.match(r.stderr, /completion stamp skipped: \.ssdd\/config\.json is not valid JSON/);
     assert.equal(stamp().reviewers['alpha-reviewer'], undefined);
   });
 
@@ -273,40 +270,29 @@ describe('stamping: "manual" (default)', () => {
   });
 });
 
-// v2.5: the guard reads HEAD's config AND the staged one, like the gate.
-describe('the guard can\'t be loosened by an uncommitted config edit', () => {
+// The guard reads the working-tree config, like the gate.
+describe('the guard follows the working-tree config', () => {
   const guard = (command) => hook({ tool_input: { command }, cwd: repo }, GUARD);
   const setConfig = (body) => writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify(body));
   const routing = [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }];
 
-  it('HEAD says "hooks": a working-tree or staged "manual" still denies --stamp', () => {
+  it('HEAD says "hooks", the unstaged file says "manual": --stamp is allowed', () => {
     makeRepo({ stamping: 'hooks' });
+    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
     setConfig({ routing, reviewGate: { stamping: 'manual' } });
-    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
-    git('add', '.ssdd/config.json');
-    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
+    assert.equal(guard('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 0);
   });
 
-  it('HEAD blocks -n: turning blockNoVerify off on disk or in the index changes nothing', () => {
+  it('an unstaged blockNoVerify:false takes effect', () => {
     makeRepo();
-    setConfig({ routing, gitGuard: { blockNoVerify: false } });
     assert.equal(guard('git commit -n -m x').status, 2);
-    git('add', '.ssdd/config.json');
-    assert.equal(guard('git commit -n -m x').status, 2);
-  });
-
-  it('once committed in both, the toggle takes effect', () => {
-    makeRepo();
     setConfig({ routing, gitGuard: { blockNoVerify: false } });
-    git('add', '.ssdd/config.json');
-    git('commit', '-qm', 'allow -n');
     assert.equal(guard('git commit -n -m x').status, 0);
   });
 
-  it('a broken staged config leaves every default block on', () => {
+  it('a broken config leaves every default block on', () => {
     makeRepo();
     writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
-    git('add', '.ssdd/config.json');
     assert.equal(guard('git add -A').status, 2);
     assert.equal(guard('git commit --amend').status, 2);
   });

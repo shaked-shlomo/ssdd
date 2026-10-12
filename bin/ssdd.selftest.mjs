@@ -278,15 +278,11 @@ describe('status: is the gate armed?', () => {
     assert.doesNotMatch(r.out, /routed to no reviewer|dormant/);
   });
 
-  it('an uncommitted route removal still counts as routed (HEAD applies); a broken config is named', () => {
+  it('a broken config is named', () => {
     ssdd('install', tgt, '--ref', 'v2.0.0');
-    put(tgt, '.ssdd/config.json', JSON.stringify({ routing: [GATE_ROUTE] }));
-    commitAll(tgt, 'ssdd');
     put(tgt, '.ssdd/config.json', '{ "routing": [');
-    git(tgt, 'add', '.ssdd/config.json');
     const r = ssdd('status', tgt);
-    assert.match(r.out, /WARNING: \.ssdd\/config\.json \(staged\) is not valid JSON/);
-    assert.doesNotMatch(r.out, /routed to no reviewer/);
+    assert.match(r.out, /WARNING: \.ssdd\/config\.json is not valid JSON/);
   });
 
   it('install suggests a prepare script only when the target has a package.json', () => {

@@ -5,7 +5,7 @@
 // harness hook is the only mechanical enforcement point for it.
 //
 // Default blocks (each toggleable in .ssdd/config.json → gitGuard; a toggle is
-// off only when HEAD's config and the staged one both turn it off):
+// off only when the working-tree config turns it off):
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
 //   git commit … --amend                                     (never amend)
@@ -45,10 +45,8 @@ function deny(msg) {
 const full = expandWrappers(cmd); // the command plus any script it hands to a shell
 const probe = skeleton(full);
 
-// HEAD's config AND the staged one (ssdd-config.mjs): a block is off only when
-// both turn it off, and "hooks" stamping in either holds — an unstaged edit
-// switches nothing off. No config, or one that isn't valid JSON, contributes
-// nothing, so the defaults stay on.
+// The working-tree config (ssdd-config.mjs). No config, or one that isn't
+// valid JSON, contributes nothing, so the defaults stay on.
 let config = {};
 try {
   config = loadSsddConfig(resolveHookRepo(payload))?.cfg ?? {};
