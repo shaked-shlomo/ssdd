@@ -5,7 +5,7 @@
 // harness hook is the only mechanical enforcement point for it.
 //
 // Default blocks (each toggleable in .ssdd/config.json → gitGuard; a toggle is
-// off only when HEAD's config and the staged one both turn it off):
+// off only when the working-tree config turns it off):
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
 //   git commit … --amend                                     (never amend)
@@ -22,12 +22,12 @@
 // own command (`;` `&` `|` newline): `git commit -m x && git log -n 3` is not
 // `commit -n`. Quoted strings and heredoc bodies are blanked first, so a message
 // that merely mentions a pattern isn't the pattern. Scripts handed to a shell
-// (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) are checked as if
-// typed directly. Grammar: git-cmd.mjs.
+// (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `echo '…' | sh`) are not unwrapped;
+// the pre-commit layer is the backstop. Grammar: git-cmd.mjs.
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
 import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { cluster, collapseGlobalFlags, expandWrappers, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
+import { cluster, collapseGlobalFlags, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -42,13 +42,10 @@ function deny(msg) {
   finish(2, 'deny', { agentMessage: msg, userMessage: msg });
 }
 
-const full = expandWrappers(cmd); // the command plus any script it hands to a shell
-const probe = skeleton(full);
+const probe = skeleton(cmd);
 
-// HEAD's config AND the staged one (ssdd-config.mjs): a block is off only when
-// both turn it off, and "hooks" stamping in either holds — an unstaged edit
-// switches nothing off. No config, or one that isn't valid JSON, contributes
-// nothing, so the defaults stay on.
+// The working-tree config (ssdd-config.mjs). No config, or one that isn't
+// valid JSON, contributes nothing, so the defaults stay on.
 let config = {};
 try {
   config = loadSsddConfig(resolveHookRepo(payload))?.cfg ?? {};
@@ -75,7 +72,7 @@ if (guard.blockHooksPath !== false) {
   const viaFlag = new RegExp(START + String.raw`-c\s*['"]?core\.hookspath\b`, 'i');
   const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)['"]?\bcore\.hookspath\b`, 'i');
   const viaEnv = /\bGIT_CONFIG_(?:PARAMETERS=[^;&|\n]*core\.hookspath|KEY_\d+=['"]?core\.hookspath\b)/i;
-  const quoted = stripHeredocs(full);
+  const quoted = stripHeredocs(cmd);
   const m = viaConfig.exec(quoted);
   if (viaFlag.test(quoted) || viaEnv.test(quoted) || (m && !/(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
     deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');
@@ -83,7 +80,7 @@ if (guard.blockHooksPath !== false) {
 }
 
 if (config.reviewGate?.stamping === 'hooks') {
-  const quoted = stripHeredocs(full);
+  const quoted = stripHeredocs(cmd);
   if (/review-gate\.mjs\b[^\n;&|]*--stamp\b/.test(quoted) || STAMP_FILES.test(quoted)) {
     deny('Blocked: reviewGate.stamping is "hooks" — a reviewer\'s completion stamps its files. ' +
       'Dispatch the reviewers the gate names instead of stamping or editing the stamp file.');

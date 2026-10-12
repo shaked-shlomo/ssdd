@@ -471,30 +471,11 @@ function skillsDrift(target) {
 }
 
 // ── status: is the gate armed? ───────────────────────────────────────────────
-// The gate's own files and the reviewer config.example.json routes them to.
-// The config is seeded, so a project installed before v2.5 has no such route
-// until someone adds it; status is where that shows. Informational only.
-const GATE_FILES = ['.ssdd/config.json', '.ssdd/hooks', '.ssdd/reviewers', '.ssdd/process', '.githooks',
-  '.claude/settings.json', '.claude/agents', '.claude/rules', '.cursor/hooks.json', '.cursor/rules', 'AGENTS.md', 'CLAUDE.md'];
+// A broken config blocks every commit, and a dormant pre-commit hook never
+// runs. Informational only.
 function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
-  if (loaded) {
-    const rx = (list) => (Array.isArray(list) ? list : []).flatMap((p) => { try { return [new RegExp(p)]; } catch { return []; } });
-    const routes = (loaded.cfg.routing ?? []).map((r) => [rx(r.paths), rx(r.exclude)]);
-    const routed = (f) => routes.some(([inc, exc]) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f)));
-    const unrouted = [];
-    for (const g of GATE_FILES) {
-      const files = existsSync(join(target, g)) && lstatSync(join(target, g)).isDirectory() ? walk(target, g) : existsSync(join(target, g)) ? [g] : [];
-      const miss = files.filter((f) => !routed(f));
-      if (miss.length) unrouted.push(miss.length === 1 && miss[0] === g ? g : `${g}/ (${miss.length} of ${files.length} files)`);
-    }
-    if (unrouted.length) {
-      console.log(`gate files routed to no reviewer (${unrouted.length}) — a commit to them is never reviewed:`);
-      unrouted.forEach((x) => console.log(`  ${x}`));
-      console.log(`  add the gate-reviewer route from ${join(SRC, 'mechanisms/config.example.json')} to .ssdd/config.json`);
-    }
-  }
   const dormant = dormantHook(target);
   if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}`);
 }

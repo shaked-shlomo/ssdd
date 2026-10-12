@@ -7,10 +7,7 @@
     { "reviewer": "resilience-reviewer", "paths": ["^src/(stores|services|hooks|lib)/.+\\.(ts|tsx)$"] },
     { "reviewer": "docs-sync-reviewer", "paths": ["^src/", "^server/", "^package\\.json$"] },
     { "reviewer": "security-reviewer", "paths": ["^server/", "^src/(services|lib)/"],
-      "$comment": "Any route may carry a $comment recording WHY a path is in this lens (e.g. the incident that showed it was missing). The gate ignores it." },
-    { "reviewer": "gate-reviewer",
-      "paths": ["^\\.ssdd/(config\\.json$|hooks/|reviewers/|process/)", "^\\.githooks/", "^\\.claude/(settings\\.json$|agents/|rules/)", "^\\.cursor/(hooks\\.json$|rules/)", "^(AGENTS|CLAUDE)\\.md$"],
-      "$comment": "The gate's own files: a commit that loosens the gate removes review from everything after it, and no other lens reads these. Drop a path only by choice (ssdd.mjs status lists gate files no route covers)." }
+      "$comment": "Any route may carry a $comment recording WHY a path is in this lens (e.g. the incident that showed it was missing). The gate ignores it." }
   ],
 
   "reviewGate": {

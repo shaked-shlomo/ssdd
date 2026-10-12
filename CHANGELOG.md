@@ -10,6 +10,53 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.6.0] — 2026-10-12
+
+Brings the gate back to its threat model: it keeps a cooperating agent on
+the process and isn't a sandbox. A new evasion shape is out of scope unless
+an agent was seen using it in a real project.
+
+### Removed
+- **Shell-wrapper unwrapping**, added in v2.1.1. The harness hooks no longer
+  judge `bash -c '…'`, `eval "…"`, a heredoc fed to a shell or `… | sh` as if
+  typed directly. The pre-commit layer still blocks the commit. Runner
+  prefixes (`sudo`, `env`, an absolute `git` path) are still recognized by
+  git-guard and Cursor's hook.
+- **The HEAD ∪ staged config** (v2.5). The working-tree `.ssdd/config.json`
+  applies, so an edit takes effect at once, in both layers and in git-guard.
+  A broken config is fixed in place, with no commit needed.
+- **`gate-reviewer` routed by default.** The shipped `config.example.json`
+  no longer routes it, and `status` no longer lists unrouted gate files. The
+  reviewer still ships and `install` still links it; its route is the opt-in
+  snippet in `reviewers/gate-reviewer.md`.
+
+### Changed
+- **The review gate's Claude Code hook starts only on git commands**:
+  `"if": "Bash(git *)"` on its PreToolUse(Bash) entry. It still runs for
+  `git -C <worktree> commit`. `/usr/bin/git`, `env …` / `sudo …` runners and
+  shell wrappers now reach only the pre-commit layer. git-guard,
+  convention-lint and the SubagentStart / SubagentStop hooks are unfiltered.
+- README → Known limitations opens with the threat-model rule and says what
+  the harness hooks don't see.
+- Kept: a config that isn't valid JSON still blocks, the dormant-hook note,
+  per-file and completion stamps, `stamping: "hooks"`, `reviewerModels`, and
+  v2.1's refusal of commits the gate can't see.
+
+### Upgrade
+`update` doesn't touch `.claude/settings.json`. Add the `if` line to the
+review gate's PreToolUse(Bash) handler:
+
+```json
+{
+  "type": "command",
+  "if": "Bash(git *)",
+  "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
+}
+```
+
+A repo that pasted the 2.5 `gate-reviewer` route into `.ssdd/config.json`
+may keep it or drop it. No other step.
+
 ## [2.5.0] — 2026-10-09
 
 Closes the four gate weaknesses README → Known limitations still listed.

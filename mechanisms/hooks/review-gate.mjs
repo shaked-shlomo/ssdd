@@ -17,9 +17,8 @@
 // Stamping without actually running the named reviewers defeats the gate and
 // is forbidden by the process (process/SDD.md §4).
 //
-// The routing table is HEAD's .ssdd/config.json AND the staged one, whichever
-// is stricter (ssdd-config.mjs): a commit can't loosen its own review, and an
-// unstaged edit changes nothing. A config that isn't valid JSON blocks.
+// The routing table is the working-tree .ssdd/config.json (ssdd-config.mjs).
+// A config that isn't valid JSON blocks.
 //
 // Modes (same script, no deps, Node >= 18):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
@@ -41,7 +40,7 @@
 // starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
 // `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED. Scripts
 // handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
-// judged in place, as if typed directly.
+// not unwrapped: the pre-commit layer is the backstop for them.
 //
 //   (stdin, SubagentStart / SubagentStop — Claude Code)
 //                                   completion stamps: a routed reviewer's start
@@ -66,28 +65,24 @@ import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { expandWrappers, flatten, gitInvocation, isCommit, skeleton } from './git-cmd.mjs';
+import { gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
 import { ARM_HOOK, dormantHook, loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
 const git = (...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-// The config the commit is judged by: HEAD's and the staged one, strictest of
-// the two (ssdd-config.mjs). null → not an SSDD repo, gate disarmed. A broken
-// staged config comes back with `error` set and every mode fails closed on it.
-function loadConfig() {
-  const r = loadSsddConfig(repo);
-  for (const w of r?.warnings ?? []) process.stderr.write(`[ssdd-review-gate] warning: ${w}\n`);
-  return r;
-}
+// The config the commit is judged by: the working-tree one (ssdd-config.mjs).
+// null → not an SSDD repo, gate disarmed. A broken config comes back with
+// `error` set and every mode fails closed on it.
+const loadConfig = () => loadSsddConfig(repo);
 const brokenMessage = (error) =>
   `[ssdd-review-gate] ${error}\n` +
-  'The gate fails closed on a config it cannot read. Fix the JSON, re-stage it, and retry.\n';
+  'The gate fails closed on a config it cannot read. Fix the JSON and retry.\n';
 // [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
 // of the route's `paths` and neither the route's `exclude` nor the global
 // `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
-// Routes naming the same reviewer (HEAD's and the staged config's) merge.
+// Routes naming the same reviewer merge.
 const rx = (list) => (list ?? []).map((p) => new RegExp(p));
 const routes = (cfg) => {
   const global = rx(cfg?.reviewGate?.exclude);
@@ -379,7 +374,7 @@ function deny(msg, user = 'SSDD review gate: blocked — see the message.') {
 // Quoted strings and heredoc bodies are blanked first, so a commit MESSAGE
 // that mentions "git commit" (or the bypass token) never triggers or
 // authorizes anything.
-const probe = skeleton(expandWrappers(cmd));
+const probe = skeleton(cmd);
 if (!isCommit(probe)) finish(0, 'allow');
 if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
   process.stderr.write('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead in chat.\n');
@@ -387,7 +382,7 @@ if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
 }
 
 // ── commits whose content this hook can't see are refused outright ──────────
-const commands = flatten(cmd); // in execution order, shell-wrapped scripts in place
+const commands = splitCommands(cmd); // in execution order
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
 let staging = null;
 const commitArgs = []; // every commit in the call, not just the first
@@ -604,7 +599,7 @@ function subagentHook(p) {
   // enforced only when the project sets a floor.
   let models = [];
   try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
-  // HEAD's and the staged config's lists both apply: a model must pass each.
+  // The configured list, if any: a model must pass it.
   for (const allowed of cfg.reviewGate?.reviewerModelSets ?? []) {
     const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
     if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (run the session on an allowed model, and don't override the model when dispatching)`);
