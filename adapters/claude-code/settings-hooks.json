@@ -10,6 +10,7 @@
           },
           {
             "type": "command",
+            "if": "Bash(git *)",
             "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
           }
         ]

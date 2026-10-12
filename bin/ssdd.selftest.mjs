@@ -490,3 +490,20 @@ describe('framework files', () => {
     assert.deepEqual(hits, []);
   });
 });
+
+describe('claude-code settings-hooks template', () => {
+  it('only the review gate\'s PreToolUse(Bash) handler is filtered to git commands', () => {
+    const file = join(dirname(SCRIPT), '..', 'adapters', 'claude-code', 'settings-hooks.json');
+    const hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
+    const handlers = [];
+    for (const [event, groups] of Object.entries(hooks)) {
+      for (const g of groups) for (const h of g.hooks) handlers.push({ event, matcher: g.matcher, h });
+    }
+    const filtered = handlers.filter(({ h }) => 'if' in h);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].event, 'PreToolUse');
+    assert.equal(filtered[0].matcher, 'Bash');
+    assert.match(filtered[0].h.command, /review-gate\.mjs"$/);
+    assert.equal(filtered[0].h.if, 'Bash(git *)');
+  });
+});
