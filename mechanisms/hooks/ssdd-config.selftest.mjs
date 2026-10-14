@@ -1,7 +1,7 @@
 // Tests for the shared config loader: the working-tree config, and absent vs broken.
 // Run: node --test mechanisms/hooks/ssdd-config.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -95,12 +95,22 @@ describe('loadSsddConfig', () => {
   });
 
   it('a section of the wrong type is an error', () => {
-    for (const [key, value] of [['reviewGate', 'x'], ['gitGuard', 42], ['routing', {}], ['reviewGate', null], ['gitGuard', []]]) {
+    const cases = [['reviewGate', 'x'], ['gitGuard', 42], ['routing', {}], ['reviewGate', null], ['gitGuard', []],
+      ['routing', ['^src/']], ['routing', [null]]];
+    for (const [key, value] of cases) {
       putConfig({ [key]: value });
       const r = loadSsddConfig(dir);
       assert.match(r.error ?? '', new RegExp(`\\.ssdd/config\\.json: "${key}" must be`), `${key}: ${JSON.stringify(value)}`);
       assert.equal(r.cfg.root, r.root);
     }
+  });
+
+  it('a wrong-type section is dropped; the rest still loads', () => {
+    putConfig({ routing: {}, gitGuard: { extraRules: [{ pattern: 'x' }] } });
+    const r = loadSsddConfig(dir);
+    assert.match(r.error, /"routing" must be/);
+    assert.deepEqual(r.cfg.routing, []);
+    assert.deepEqual(r.cfg.gitGuard.extraRules.map((x) => x.pattern), ['x']);
   });
 
   it('a "root" key does not move the repo root', () => {
@@ -110,9 +120,12 @@ describe('loadSsddConfig', () => {
     assert.equal(r.cfg.root, r.root);
   });
 
-  it('an unreadable config is an error, not absent', { skip: process.getuid?.() === 0 && 'root reads any file' }, () => {
+  it('an unreadable config is an error, not absent', (t) => {
     putConfig({});
-    chmodSync(join(dir, '.ssdd', 'config.json'), 0o000);
+    const file = join(dir, '.ssdd', 'config.json');
+    chmodSync(file, 0o000);
+    // root, Windows and some filesystems read it anyway.
+    try { readFileSync(file); return t.skip('chmod 000 does not block reads here'); } catch { /* unreadable, as wanted */ }
     const r = loadSsddConfig(dir);
     assert.notEqual(r, null);
     assert.match(r.error, /\.ssdd\/config\.json can't be read/);

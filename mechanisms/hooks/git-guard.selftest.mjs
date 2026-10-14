@@ -218,6 +218,16 @@ describe('git-guard', () => {
     });
   }
 
+  it('a wrong-type section elsewhere keeps extraRules on', () => {
+    const file = join(REPO, '.ssdd', 'config.json');
+    writeFileSync(file, JSON.stringify({ routing: {}, gitGuard: GIT_GUARD }));
+    try {
+      assert.strictEqual(guard('git push --force origin main'), 2);
+    } finally {
+      writeFileSync(file, JSON.stringify({ gitGuard: GIT_GUARD }));
+    }
+  });
+
   it('strips a UTF-8 BOM on Cursor stdin', () => {
     assert.strictEqual(cursorGuard('git add -A', { bom: true }), 2);
     assert.strictEqual(cursorGuard('git add src/foo.ts', { bom: true }), 0);
