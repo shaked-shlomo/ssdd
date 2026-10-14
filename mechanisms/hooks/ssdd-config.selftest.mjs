@@ -1,7 +1,7 @@
 // Tests for the shared config loader: the working-tree config, and absent vs broken.
 // Run: node --test mechanisms/hooks/ssdd-config.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -92,5 +92,30 @@ describe('loadSsddConfig', () => {
     assert.match(loadSsddConfig(dir).error, /\.ssdd\/config\.json is not valid JSON/);
     putConfig('[]');
     assert.match(loadSsddConfig(dir).error, /not a JSON object/);
+  });
+
+  it('a section of the wrong type is an error', () => {
+    for (const [key, value] of [['reviewGate', 'x'], ['gitGuard', 42], ['routing', {}], ['reviewGate', null], ['gitGuard', []]]) {
+      putConfig({ [key]: value });
+      const r = loadSsddConfig(dir);
+      assert.match(r.error ?? '', new RegExp(`\\.ssdd/config\\.json: "${key}" must be`), `${key}: ${JSON.stringify(value)}`);
+      assert.equal(r.cfg.root, r.root);
+    }
+  });
+
+  it('a "root" key does not move the repo root', () => {
+    putConfig({ root: '/elsewhere' });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.equal(r.cfg.root, r.root);
+  });
+
+  it('an unreadable config is an error, not absent', { skip: process.getuid?.() === 0 && 'root reads any file' }, () => {
+    putConfig({});
+    chmodSync(join(dir, '.ssdd', 'config.json'), 0o000);
+    const r = loadSsddConfig(dir);
+    assert.notEqual(r, null);
+    assert.match(r.error, /\.ssdd\/config\.json can't be read/);
+    assert.equal(r.cfg.root, r.root);
   });
 });

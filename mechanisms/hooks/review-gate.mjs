@@ -78,7 +78,7 @@ const git = (...args) =>
 const loadConfig = () => loadSsddConfig(repo);
 const brokenMessage = (error) =>
   `[ssdd-review-gate] ${error}\n` +
-  'The gate fails closed on a config it cannot read. Fix the JSON and retry.\n';
+  "The gate fails closed on a config it can't use. Fix .ssdd/config.json and retry.\n";
 // [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
 // of the route's `paths` and neither the route's `exclude` nor the global
 // `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
@@ -487,7 +487,7 @@ const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
 
 const loaded = loadConfig();
 if (!loaded) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
-if (loaded.error) deny(brokenMessage(loaded.error), 'SSDD review gate: .ssdd/config.json is not valid JSON.');
+if (loaded.error) deny(brokenMessage(loaded.error), "SSDD review gate: .ssdd/config.json can't be used.");
 const { cfg } = loaded;
 let verdict;
 try {

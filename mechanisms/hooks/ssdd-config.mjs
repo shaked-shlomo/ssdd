@@ -5,8 +5,8 @@
 // cooperating agent on the process; they are not a sandbox, so a commit that
 // edits its own routing table is not defended against.)
 //
-// Absent → null (not an SSDD repo). Unreadable, not valid JSON, or not a JSON
-// object → `error` set: callers fail closed.
+// Absent → null (not an SSDD repo). Unreadable, not valid JSON, not a JSON
+// object, or a section of the wrong type → `error` set: callers fail closed.
 //
 // The returned cfg keeps the shape callers read:
 //   routing                 each route with reviewGate.exclude baked into its
@@ -22,6 +22,17 @@ import { join, resolve } from 'node:path';
 
 const PATH = '.ssdd/config.json';
 const GUARD_TOGGLES = ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath'];
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// A section that is present must have its type. A string spread as an object
+// would turn into index-keyed characters.
+function malformed(config) {
+  for (const key of ['reviewGate', 'gitGuard']) {
+    if (key in config && !isObject(config[key])) return `"${key}" must be an object`;
+  }
+  if ('routing' in config && !Array.isArray(config.routing)) return '"routing" must be a list';
+  return '';
+}
 
 const gitText = (repo, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 16 * 1024 * 1024 });
@@ -33,8 +44,8 @@ function build(root, config) {
   const models = config.reviewGate?.reviewerModels;
   const gitGuard = { extraRules: Array.isArray(config.gitGuard?.extraRules) ? config.gitGuard.extraRules : [] };
   for (const k of GUARD_TOGGLES) gitGuard[k] = config.gitGuard?.[k] !== false;
+  // root goes last, so a "root" key in the file can't move the repo root.
   return {
-    root,
     ...config,
     routing,
     reviewGate: {
@@ -44,6 +55,7 @@ function build(root, config) {
       reviewerModelSets: Array.isArray(models) && models.length ? [models] : [],
     },
     gitGuard: { ...(config.gitGuard ?? {}), ...gitGuard },
+    root,
   };
 }
 
@@ -59,10 +71,12 @@ export function loadSsddConfig(repo) {
   let config;
   try {
     config = JSON.parse(text);
-    if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('not a JSON object');
+    if (!isObject(config)) throw new Error('not a JSON object');
   } catch (e) {
     return { root, cfg: { root }, error: `${PATH} is not valid JSON: ${e.message}` };
   }
+  const why = malformed(config);
+  if (why) return { root, cfg: { root }, error: `${PATH}: ${why}` };
   return { root, cfg: build(root, config) };
 }
 
