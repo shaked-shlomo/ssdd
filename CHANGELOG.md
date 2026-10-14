@@ -10,6 +10,26 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.6.1] — 2026-10-14
+
+Fixes from the v2.6 review. A manual step only if `.ssdd/config.json` has
+a section of the wrong type (see below): the gate now blocks every commit
+until it's fixed, and `ssdd status` prints the key.
+
+### Fixed
+- **A `"root"` key in `.ssdd/config.json` no longer moves the repo root**
+  the hooks use. The loader sets `root` after the file's own keys.
+- **A section of the wrong type is a broken config.** A `reviewGate` or
+  `gitGuard` that isn't an object (`null` and arrays included), or a
+  `routing` that isn't a list of objects (`{}`, `["^src/"]`, `[null]`), now
+  fails closed with a message naming the key. Before, it loaded: a string
+  was spread into index-keyed characters, and a string route matched
+  nothing. git-guard drops only the bad section and keeps the rest, so its
+  `extraRules` stay on.
+- **The gate's broken-config message fits every case.** It said "Fix the
+  JSON" and "is not valid JSON" even when the file couldn't be read. It now
+  says the config can't be used; the loader's error says why.
+
 ## [2.6.0] — 2026-10-12
 
 Brings the gate back to its threat model: it keeps a cooperating agent on

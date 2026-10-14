@@ -504,6 +504,8 @@ describe('the config a commit is judged by', () => {
     const h = hook(dir, 'git commit -m x');
     assert.strictEqual(h.status, 2);
     assert.match(h.stderr, /not valid JSON/);
+    assert.doesNotMatch(h.stderr, /Fix the JSON/);
+    assert.match(JSON.parse(h.stdout).userMessage, /\.ssdd\/config\.json can't be used/);
     write(dir, 'src/a.ts', 'a\n');
     const s = stamp(dir, 'alpha');
     assert.strictEqual(s.status, 1);

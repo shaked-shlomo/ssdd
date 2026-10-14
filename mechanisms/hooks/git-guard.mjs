@@ -44,8 +44,9 @@ function deny(msg) {
 
 const probe = skeleton(cmd);
 
-// The working-tree config (ssdd-config.mjs). No config, or one that isn't
-// valid JSON, contributes nothing, so the defaults stay on.
+// The working-tree config (ssdd-config.mjs). No config, or one that can't be
+// read or parsed, contributes nothing, so the defaults stay on. A section of
+// the wrong type is dropped; the rest of the config still applies.
 let config = {};
 try {
   config = loadSsddConfig(resolveHookRepo(payload))?.cfg ?? {};
