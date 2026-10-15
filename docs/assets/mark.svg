@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="SSDD">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B2236"/>
+      <stop offset="1" stop-color="#0B0F1A"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="118" height="118" rx="27" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="2"/>
+  <circle cx="60" cy="60" r="35" fill="none" stroke="#94A3B8" stroke-opacity=".35" stroke-width="2.5" stroke-dasharray="4 6" stroke-linecap="round"/>
+  <g fill="none" stroke-width="4" stroke-linecap="round"><path d="M60.00 35.00 L60.00 38.00" stroke="#A78BFA"/><path d="M81.65 72.50 L79.05 71.00" stroke="#60A5FA"/><path d="M38.35 72.50 L40.95 71.00" stroke="#F472B6"/></g>
+  <polygon points="74.72,68.50 60.00,77.00 45.28,68.50 45.28,51.50 60.00,43.00 74.72,51.50" fill="#2EE6B6" stroke="#2EE6B6" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M52.5 60.5 L58 66 L67.5 54.5" fill="none" stroke="#0B0F1A" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="60.00" cy="25.00" r="8" fill="#A78BFA"/><circle cx="60.00" cy="25.00" r="2.6" fill="#0B0F1A"/><circle cx="90.31" cy="77.50" r="8" fill="#60A5FA"/><circle cx="90.31" cy="77.50" r="2.6" fill="#0B0F1A"/><circle cx="29.69" cy="77.50" r="8" fill="#F472B6"/><circle cx="29.69" cy="77.50" r="2.6" fill="#0B0F1A"/>
+</svg>
