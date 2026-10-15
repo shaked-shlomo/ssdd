@@ -43,14 +43,22 @@ interception in agent harnesses.
 ## How it works
 
 ```mermaid
-flowchart LR
-    B[Brainstorm] --> S[Spec] --> P["Plan<br/><i>clarify pass, criteria first</i>"] --> L[Task ledger]
-    L --> I[Implement task]
-    I --> G{{"Review gate<br/><i>routed reviewer agents</i>"}}
-    G -- findings --> I
-    G -- all stamped --> C[Commit]
-    C -- next task --> I
-    C --> F[Final whole-plan review] --> V["Verify<br/><i>against each criterion</i>"] --> Y[Sync docs back]
+flowchart TB
+    subgraph plan [" 1 · Plan "]
+        direction LR
+        B[Brainstorm] --> S[Spec] --> P["Plan<br/><i>clarify pass,<br/>criteria first</i>"] --> L[Task ledger]
+    end
+    subgraph task [" 2 · Per task "]
+        direction LR
+        I[Implement] --> G{{"Review gate<br/><i>routed reviewer agents</i>"}}
+        G -- findings --> I
+        G -- all stamped --> C[Commit]
+    end
+    subgraph close [" 3 · Close "]
+        direction LR
+        F[Whole-plan review] --> V["Verify<br/><i>each criterion</i>"] --> Y[Sync docs back]
+    end
+    plan --> task -- last task done --> close
 ```
 
 Before a plan exists, a **clarify pass** interrogates every assumption;
