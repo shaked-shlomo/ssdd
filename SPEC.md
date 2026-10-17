@@ -1148,3 +1148,860 @@ and the D13 `if` filter tested and included (item 9).
   | `npm test` | skipped | ran |
   | `ls` | skipped | ran |
 - CI on PR #3 (`v2.6-simplify`, `bec338e`): `selftest (18)` pass, `selftest (24)` pass — https://github.com/shaked-shlomo/ssdd/actions/runs/38240168314.
+
+---
+
+# v3 — SSDD knows where the work is
+
+**Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
+Plan 1 in progress · **Branch:** `v3`
+
+Today SSDD enforces one moment, the commit. v3 makes it know the rest:
+- where each plan stands, what's verified and what's next
+- which production actions need a person
+
+It also takes back what the two injected projects showed costs more than
+it saves. Sources: the read-only surveys of prizma and Hatedate (Part 1,
+Clarify 1) and the owner's rulings, all on 2026-10-17. There are five
+parts, each with its own plan:
+
+| Part | What | Plan | Ships as |
+|---|---|---|---|
+| 1 | Work state: where the work is, at session start; the close check; tracked ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md` | 3.0.0, with Part 2 |
+| 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | Plan 2, not written yet | 3.0.0 |
+| 3 | A cheaper gate | Plan 3, not written yet | 3.1.0 |
+| 4 | The production guard and the Supabase pack | Plan 4, not written yet | 3.2.0 |
+| 5 | Trimming | Plan 5, not written yet | 3.3.0 |
+
+Parts 1 and 2 carry acceptance criteria. Parts 3–5 record the evidence,
+decisions and scope; each plan writes its criteria after its own clarify
+pass. Hatedate's adoption is parked in
+`docs/handovers/HANDOVER-hatedate-adoption.md`.
+
+## Part 1 — work state
+
+### Goal
+
+Today SSDD enforces one moment, the commit. Everything else about a plan is
+markdown nothing reads: its status, its acceptance criteria, whether each is
+verified, which task is next. In both injected projects that state goes
+stale, and agents learn where the work is from files outside the repo. v3
+adds one script that reads plans, ledgers and git and says where the work
+is, prints that at the start of every session, and checks a plan before it
+closes.
+
+### Clarify pass
+
+Sources are the read-only survey of prizma and Hatedate (2026-10-17).
+Items marked *checked* were re-read directly; *survey* items are as the
+survey reported them.
+
+1. **What goes wrong today.**
+   - **Status goes stale.** prizma plan 34:3 says "IN PROGRESS (PR #63
+     open)"; #63 merged 09-17 (survey). Hatedate plan 62:3 says "COMPLETE
+     (… PR pending)"; PR #128 merged as `255f7f2` (*checked*). Hatedate
+     plan 22:3 still says IN PROGRESS; it shipped as `68634bb` (survey).
+     Status words multiply: prizma uses DONE, CLOSED, READY TO CLOSE and IN
+     REVIEW, none in the template (survey).
+   - **Criteria checkboxes are never ticked.** prizma plan 41:24-35 has six
+     `- [ ] AC…` lines while its Verification (:53-76) closes all six
+     (*checked*). Hatedate's SHIPPED plans 54, 56 and 60 tick 0/7, 0/10 and
+     1/12 (survey). The Verification section is the real record.
+   - **"Where am I" lives outside the repo.** prizma keeps 12 per-plan
+     `*-state.md` files in Claude's auto-memory (*checked*): machine-local,
+     invisible to Cursor (which co-authored 25 commits), and drifting.
+     Hatedate's CLAUDE.md:26 sends each session to the newest plan and a
+     290 KB REQUIREMENTS file, while the true state sits in a worktree
+     (survey).
+2. **Criterion IDs already exist in practice.** 27 of prizma's 42 plans
+   name criteria `AC1`, `AC2`, … (*checked*, `grep -c "AC[0-9]"`). Its
+   Verification entries take two forms: `- **AC1** — …` (plan 41:55) and
+   `- **AC1 ✅ — …` (plan 40:122). v3 adopts these forms as they are; no
+   new syntax.
+3. **The ledger: SSDD owns it, Superpowers writes into it** (owner ruling,
+   2026-10-17). Superpowers 7.0.0 keeps each plan's ledger at
+   `.superpowers/sdd/<plan-basename>/progress.md` and writes
+   `.superpowers/sdd/.gitignore` = `*` only if none exists. Its
+   `sdd-workspace` script says why: "a repo may commit its own .gitignore
+   here (e.g. to version progress.md ledgers)". So SSDD ships that
+   `.gitignore`, tracking `progress.md` and nothing else. Tested in a
+   scratch repo: `progress.md` and the `.gitignore` show as untracked;
+   task briefs and the `plan-path` marker stay ignored. The ledger stays
+   at Superpowers' path. Chosen over copying it into `.ssdd/ledgers/` at
+   close (an in-flight ledger is lost when its worktree goes, as Hatedate
+   plan 61's nearly was) and over a symlink (fragile across the tools that
+   write it). SSDD's own ledger template stays, for work run without
+   Superpowers.
+4. **A parent ignore wins.** git doesn't descend into an excluded
+   directory, so a root rule like `.superpowers/` keeps the nested
+   `.gitignore` from re-including the ledger (tested: `git check-ignore -v`
+   reports the root rule). The project's `.gitignore` is the project's:
+   v3 names the rule and doesn't edit it. Hatedate has such a rule
+   (`.gitignore:58`, *checked*). Its adoption changes its rules and
+   structure, and is parked (`docs/handovers/HANDOVER-hatedate-adoption.md`).
+5. **The untracked-file block would fire on the ledger.** Superpowers
+   creates `progress.md` at skill start, before Task 1's commit
+   (subagent-driven-development `SKILL.md:148`; `task-done` creates it if
+   absent). Once it's tracked, the pre-commit "untracked files exist"
+   check blocks that first commit on a file the implementer didn't write.
+   v3 exempts `.superpowers/sdd/*/progress.md` from that check, and
+   nothing else. The wider narrowing is Part 3.
+6. **The stale-status rule.** A plan on the default branch whose Status is
+   IN PROGRESS is checked like this:
+   - **Working on it:** some other local branch holds a *different* copy
+     of the plan file *and* has commits touching the plan or its ledger
+     that aren't on the default branch.
+   - **Otherwise** nothing is working on it, so its Status is likely
+     stale.
+   - **DRAFT isn't flagged.** Writing a draft on the default branch before
+     any branch exists is normal. A draft shows its age instead ("DRAFT
+     since 08-10"), dated from the plan file's last commit.
+   - **The default branch** is the remote's as last fetched
+     (`refs/remotes/origin/HEAD`), else local `main`, else `master`. The
+     script never fetches.
+     - Status is read from whichever of the local and remote default
+       branches contains the other. If they've diverged, it's read from
+       the local one.
+     - A commit counts as on the default branch if either one contains
+       it, so a branch merged on GitHub but not yet pulled still counts as
+       merged.
+     - prizma's `origin/HEAD` is `origin/main`. The probe below ran
+       against both.
+   - A merged branch (merge commit) has no commits beyond the default
+     branch, so it doesn't count as working → flagged.
+   - A squash-merged branch holds the same blob → flagged.
+   - A deleted branch → flagged.
+   - A branch still changing the plan → not flagged.
+   - BUILT is a legitimate resting state (operator steps remain) → never
+     flagged.
+   - Known miss: a squash-merged branch whose plan file the default branch
+     edits later reads as still working.
+   - Known miss: a new branch that changes only code, for a plan already
+     merged as IN PROGRESS, reads as nothing working on it. Most branches
+     touch the plan's ledger with each task.
+
+   **A shell probe on prizma's real branches** (read-only, 2026-10-17,
+   plan file only, no ledgers) gave:
+   - **Against `origin/main`, flagged:** 18, 20, 29-studio, 32, 34, 36, 38
+     and 43.
+     - Plan 34 ("PR #63 open", merged 09-17) is flagged.
+     - 20, 32 and 43 are waiting on operator steps or live data. 43's
+       branch is fully merged and its worktree is clean. SSDD's word for
+       that is BUILT, so the flag asks the right question.
+     - 38 is between releases.
+   - **Worked on:** 17.
+   - **Not flagged:** 02 is a DRAFT and shows its age. 08 ("DONE …") and
+     40 ("AC6 FAILED …") fall in the unknown-status group.
+   - **Against local `main`:** 38 and 40 read as worked on, because local
+     `main` was behind `origin/main` by the plan 40 and 43 merges. That's
+     why the base is the remote (above).
+   - **Timing:** the shell loop took 1.8 s. A Node script that spawns git
+     a couple of times per branch should be well under 1 s.
+7. **Session start, per harness.**
+   - **Claude Code:** a `SessionStart` hook; its stdout becomes context.
+     No matcher, so it runs on startup, resume, clear and compact.
+     Compaction matters most: Superpowers calls losing place after
+     compaction "the single most expensive failure observed".
+   - **Cursor:** a `sessionStart` hook exists, but forum reports say its
+     `additional_context` often never reaches the agent
+     ([1](https://forum.cursor.com/t/sessionstart-hook-additional-context-is-never-injected-into-agents-initial-system-context/158452),
+     [2](https://forum.cursor.com/t/agent-ignores-sessionstart-hook-context-even-when-hooks-log-says-it-merged-successfully-windows-3-14-7/167274)).
+     v3 wires it and also adds one line to the always-on
+     `.cursor/rules/ssdd.mdc` telling the agent to run the script.
+   - **Other harnesses:** the same line in `AGENTS.md`.
+8. **Existing plans are migrated** (owner ruling, 2026-10-17). Injecting
+   v3 formats every existing plan with IDs and updates every reference to
+   them (Part 2, Clarify 15). Until a repo has migrated, the status-word check runs
+   only on *staged* plan files, so old DONE / CLOSED plans block nothing.
+   The session view groups unknown words into one line. A plan with no
+   `AC` IDs (one written by hand later) isn't close-checked, and a staged
+   one gets a note saying so.
+9. **Paths.** Hatedate keeps plans in `.claude/plans`. The script reads
+   `paths.plans` and `paths.ledgers` from `.ssdd/config.json`, defaulting to
+   `.ssdd/plans` and `.ssdd/ledgers`. Making templates, skills and SDD.md
+   follow the setting is Part 2.
+10. **What it replaces.** The orientation read: "read the newest plan and
+    REQUIREMENTS", or a per-plan memory file used to find the next task.
+    It doesn't replace memory's operator notes or rulings.
+11. **Version: 3.0.0 (MAJOR)** (owner ruling, 2026-10-17). Under SSDD's
+    semver, MAJOR means injected repos need manual steps, and v3 has two:
+    - run the plan migration once (Part 2)
+    - paste the `SessionStart` entry into `.claude/settings.json`, which is
+      project-owned, so `update` only prints the template diff
+
+    The script also works when run by hand. 3.0.0 is tagged once Parts 1
+    and 2 have both landed; Part 1 alone is not released.
+12. **Linking a Superpowers ledger to its plan** (builder check). The
+    ledger's first line, `# SDD ledger — plan: <path>`, names the plan file
+    Superpowers was given.
+    - **Linking:**
+      - If that file is under `paths.plans`, the ledger belongs to that
+        plan. prizma passes the SSDD plan itself (plan 35:175, survey).
+      - If it names another file (this repo keeps Superpowers plans in
+        `docs/superpowers/plans/`), the ledger belongs to the SSDD plan
+        that file mentions by path.
+      - With neither, the ledger is listed once as unlinked.
+    - **Progress comes from the ledger alone:**
+      - "Tasks 1–3 done" comes from the highest `Task <N>: complete` line.
+      - If the last line is a fix round, it reads "Task 4 in review".
+      - A total ("of 6") appears only when the named plan file has
+        `### Task <N>` headings to count.
+13. **SSDD ledgers do get ticked.** prizma's 27 ledgers have 130
+    `- [x] Task` rows and 8 `- [ ] Task` rows. None of the 8 has a ✓ or a
+    commit hash (*checked*). So "next" is the first `- [ ] Task` row. The
+    template's example row, `- [ ] Task 1 — <name> ✓ (commit …)`, shows a
+    finished task with an empty box; it becomes `- [x]`.
+14. **Ledgers are read from disk, and committed as the plan goes**
+    (builder check). Superpowers appends each `Task <N>: complete` line
+    after that task's commit, so a committed copy always lags one task
+    behind.
+    - **Reading:** for each worktree in `git worktree list`, the script
+      reads that worktree's files on disk, uncommitted edits included. A
+      branch with no worktree is read from git objects.
+    - **Committing:** exempting the ledger from the untracked-file block
+      (Clarify 5) removes the one thing that made anyone commit it. So:
+      - The pre-commit prints a one-line reminder (`git add <ledger>`)
+        when a Superpowers ledger in this worktree is untracked or has
+        unstaged changes.
+      - The close check *blocks* BUILT or SHIPPED while the plan's ledger
+        is trackable but untracked or unstaged.
+      - A ledger git ignores can't be staged, so that case stays a
+        warning naming the rule.
+
+### Design
+
+**One script:** `mechanisms/hooks/work-state.mjs`, installed as
+`.ssdd/hooks/work-state.mjs` like the other hooks. Zero dependencies, runs
+inside the repo without the SSDD checkout, git CLI only. No config → prints
+nothing, exits 0 (not an SSDD repo).
+
+**What it reads:**
+- Plans in `paths.plans` on every local branch and on the default branch
+  (Clarify 6). A branch checked out in a worktree is read from that
+  worktree's files on disk, uncommitted edits included. Any other branch is
+  read from git objects (Clarify 14).
+- From each plan:
+  - **Status:** the first `**Status:**` line, with or without a leading
+    `>`. Its first word(s) must come from DRAFT, IN PROGRESS, BUILT,
+    SHIPPED, SUPERSEDED, ABANDONED; anything else is "unknown".
+  - **Criteria:** lines in `## Acceptance criteria` that name `AC<n>`,
+    with or without a checkbox.
+  - **Verification entries:** lines in `## Verification` that start
+    `- **AC<n>`. An entry whose text has `DEFERRED` plus a reason counts
+    as an entry, and is reported as deferred.
+  - **Open questions:** the count of open questions.
+- **The ledger's progress.**
+  - From Superpowers' `progress.md`, linked to its plan as in Clarify 12:
+    tasks done, a task in review, and the total when it can be counted.
+  - Otherwise from `<paths.ledgers>/<slug>-ledger.md`: the first
+    `- [ ] Task` row is next (Clarify 13).
+- **Whether git tracks the ledger.** If `git check-ignore` says it's
+  ignored, the script names the rule (`.gitignore:58: .superpowers/`).
+
+**What it prints** with `--session-start`. It always exits 0, prints at
+most 12 lines and 1.5 KB, and ends with `+N more: node
+.ssdd/hooks/work-state.mjs` when it cuts:
+
+```
+SSDD · 3 open plans
+  12 onboarding     IN PROGRESS  (worktree step-2)  Tasks 1–3 of 6 done · AC 3/9 verified
+  11 billing-export IN PROGRESS on main, no branch working on it → SHIPPED, BUILT, or still going?
+  07 pricing-page   DRAFT since 08-10 · 2 open questions
+  ! ledger for 12 is ignored by git (.gitignore:58: .superpowers/)
+  ! two plans numbered 29 (main, social-video)
+```
+
+Open means DRAFT, IN PROGRESS or BUILT. BUILT shows its deferred count.
+SHIPPED, SUPERSEDED and ABANDONED aren't listed. Warnings (`!` lines) come
+last; Part 2 adds two onboarding ones.
+
+**Which Status counts.** For a plan on the default branch, the default
+branch's Status decides whether it's listed. Other branches only add
+"worked on" and the worktree they're in. Without this, every shipped plan
+with an old unmerged branch would show up as open again. A plan that
+exists only on a branch is listed with that branch's Status. The bare
+command prints the same view with no cap.
+
+**The close check** (`--staged`, run by the pre-commit hook after
+convention-lint):
+- For each staged plan file:
+  - Its Status must start with a word from the set, or the commit is
+    blocked with the allowed words.
+  - If its Status is BUILT or SHIPPED and it has `AC` IDs, every ID needs
+    a Verification entry. The block names each missing ID.
+  - If it has no IDs, the check prints a note and passes.
+- **The plan's ledger, at close.** If the ledger is trackable but
+  untracked or unstaged, BUILT or SHIPPED is blocked and the block gives
+  the `git add` command. If git ignores the ledger, the check warns and
+  names the rule (Clarify 14).
+- **On every commit,** the check prints a one-line reminder when a
+  Superpowers ledger in this worktree is untracked or has unstaged
+  changes.
+- Same layer and threat model as the review gate.
+
+**Wiring:**
+- **Claude Code:** `adapters/claude-code/settings-hooks.json` gains a
+  `SessionStart` entry: `node "$CLAUDE_PROJECT_DIR/.ssdd/hooks/work-state.mjs"
+  --session-start`.
+- **Cursor:**
+  - `adapters/cursor/hooks.json` gains `sessionStart` (not `failClosed`),
+    printing the view in the field Cursor reads.
+  - `adapters/cursor/rules/ssdd.mdc` gains: "Before starting work, run
+    `node .ssdd/hooks/work-state.mjs`."
+- **Every harness:** the `adapters/generic/AGENTS.md` Workflow section
+  gets the same line.
+- **The ledger's `.gitignore`:** a managed file,
+  `mechanisms/superpowers-sdd.gitignore` → `.superpowers/sdd/.gitignore`:
+
+  ```
+  # SSDD: keep each plan's Superpowers ledger in git; the rest here is scratch.
+  *
+  !.gitignore
+  !*/
+  !*/progress.md
+  ```
+
+  - `install` replaces a file whose content is exactly Superpowers'
+    default `*` and leaves any other.
+  - It's installed whether or not the repo uses Superpowers (it's inert
+    without it).
+  - `status` warns when a parent rule ignores it, like the dormant-hook
+    warning.
+- **`.githooks/pre-commit`:**
+  - The untracked check skips `.superpowers/sdd/*/progress.md`.
+  - A new step 2b runs `work-state.mjs --staged`.
+
+**Templates and docs:**
+- **`plan-template.md`:**
+  - Criteria become `- **AC1** — <criterion>`, with no checkbox.
+  - Verification becomes `- **AC1** — <command> → <real output>` or
+    `- **AC1** — DEFERRED (operator): <what's left>`.
+  - The Status line lists the six words.
+- **`task-ledger-template.md`:** the finished example row becomes
+  `- [x] Task 1 — …` (Clarify 13).
+- **`SDD.md`:** §2 covers IDs, §6 covers entries per ID and the DEFERRED
+  form, and §7 says the close check runs on the Status change. A short
+  "Where the work is" note goes under Handover.
+- **`skills/new-plan/SKILL.md`:** Syncing back points at the close check.
+- **Release files:** a README section and an unreleased 3.0.0 CHANGELOG
+  entry. VERSION and the tag wait for Part 2 (3.0.0 ships Parts 1 and 2).
+
+### Scope
+
+**In:** `work-state.mjs` and its selftest; `ssdd-config.mjs` reads a
+`paths` section (a wrong type is a config error, like the other sections);
+the pre-commit changes; the managed ledger `.gitignore` and install's
+replace rule; `status`'s parent-ignore warning; the three adapters' wiring;
+the template and doc changes above; BACKLOG.
+
+**Out:**
+- Reviews owed on staged files in the view. The gate's block message
+  already says this at commit time.
+- PR lookups through `gh`, and network calls of any kind.
+- Editing Status for the user. The script reports; people fix it.
+- Running or driving plans. Superpowers does that.
+- Hatedate adoption, including removing its `.superpowers/` ignore
+  (`docs/handovers/HANDOVER-hatedate-adoption.md`).
+- Narrowing the untracked-file block beyond the ledger, and preventing
+  plan-number collisions (Part 3). v3 only reports duplicates.
+- The plan migration, `paths` everywhere else, and `/skills-audit`
+  tracking (Part 2).
+- Trimming the handover template and AGENTS.md (Part 5).
+
+### Acceptance criteria
+
+- **AC1 — The view.** In a scratch repo with plans on the default branch,
+  on a second branch and in a linked worktree, the bare command lists each
+  open plan with:
+  - its branch or worktree
+  - its progress
+  - verified and deferred counts
+  - open questions
+
+  Progress is read as follows:
+  - from an uncommitted Superpowers `progress.md` in the linked worktree,
+    read from disk, when one exists
+  - from that ledger whether its first line names the SSDD plan or a
+    Superpowers plan that mentions the SSDD plan's path
+  - otherwise from the SSDD ledger's first `- [ ] Task` row
+
+  A ledger linked to no plan is listed once as unlinked.
+- **AC2 — Stale status.** In scratch repos:
+  - An IN PROGRESS plan is flagged after a merge-commit merge, after a
+    squash merge, and after its branch is deleted.
+  - It isn't flagged while a branch has unmerged commits changing it.
+  - With a remote, a branch merged into `origin/main` but not into local
+    `main` is still flagged.
+  - A DRAFT shows its age and is never flagged. BUILT is never flagged.
+  - SHIPPED, SUPERSEDED and ABANDONED are never listed.
+- **AC3 — On real data.** Run read-only in prizma's checkout:
+  - Plan 34 is flagged.
+  - Every plan the Clarify 6 probe flagged against `origin/main` is
+    flagged, unless the ledger rule now counts it as worked on. Any
+    difference is recorded with the commit that explains it.
+  - 02 shows its age.
+  - Plans whose Status is outside the set (08, 40 and the rest) appear as
+    one grouped line.
+  - Plans that are SHIPPED on the default branch but have old unmerged
+    branches aren't listed.
+  - It finishes in under 1 s (`time`).
+- **AC4 — Session start, Claude Code.** With the template's hooks in a
+  scratch repo on the current Claude Code, a live probe shows the view in
+  context on startup and after `/compact`. A selftest checks
+  `--session-start` exits 0 on a broken config and a corrupt plan, prints
+  ≤ 12 lines and ≤ 1.5 KB with 40 open plans, and prints nothing without a
+  config.
+- **AC5 — Cursor and generic wiring.** A selftest checks Cursor's
+  `sessionStart` entry exists without `failClosed`. It also checks that
+  `ssdd.mdc` and the AGENTS template carry the run-the-script line. Cursor
+  delivering the context isn't required (Clarify 7).
+- **AC6 — The close check.**
+  - A staged plan set to BUILT with one `AC` lacking an entry is blocked by
+    `--pre-commit`, naming the ID. A `DEFERRED` entry passes.
+  - Both entry forms parse (`- **AC1** —`, `- **AC1 ✅ —`).
+  - A staged plan with Status DONE is blocked with the allowed words.
+  - An unstaged plan saying DONE blocks nothing.
+  - A staged BUILT plan with no IDs passes with a note.
+  - A staged plan set to SHIPPED is blocked while its Superpowers ledger is
+    untracked or has unstaged changes, and passes once the ledger is staged.
+    With the ledger ignored by a parent rule, the plan passes with a
+    warning naming the rule.
+- **AC7 — Tracked ledger.**
+  - After `install`, a Superpowers-shaped workspace shows only
+    `progress.md` and the `.gitignore` in `git status`.
+  - `install` replaces a `*`-only `.gitignore` and leaves an edited one.
+  - With `.superpowers/` in the root `.gitignore`, the view and `status`
+    both name that rule.
+  - The pre-commit untracked check ignores
+    `.superpowers/sdd/<plan>/progress.md` and still blocks any other
+    untracked file. A commit made while that ledger is untracked or
+    unstaged prints the one-line `git add` reminder.
+- **AC8 — Paths.** With `paths.plans: ".claude/plans"`, the view and the
+  close check find plans there. A non-object `paths` is a config error in
+  every layer, like the other sections.
+- **AC9 — Duplicate numbers.** Two plans with the same `NN-` prefix on
+  different branches give one warning line.
+- **AC10 — Docs.**
+  - The plan template has no criteria checkboxes and shows both entry
+    forms. The ledger template's finished example row is `- [x]`.
+  - `git grep -n "\- \[ \] <criterion>"` finds nothing outside SPEC.md and
+    CHANGELOG.md.
+  - SDD.md, new-plan, README and the CHANGELOG's unreleased 3.0.0 entry
+    are updated.
+- **AC11 — Update.** A scratch repo installed at v2.7.0 updates to the Part 1 commit
+  (`update --to <sha>`) with no conflicts. Its `.claude/settings.json` is untouched, and `update`
+  prints the `SessionStart` template diff.
+- **AC12 — Existing tests.** The rest pass; CI is green on Node 18 and 24.
+
+## Part 2 — onboarding existing repos
+
+### Goal
+
+A repo that already has plans, or keeps them somewhere else, gets the v3
+format and v3's behavior from its first injection, and SSDD knows which
+onboarding steps are still open.
+
+### Clarify pass
+
+15. **The plan migration.** It runs once per repo, when v3 is injected
+    into a repo that already has plans (`update` to v3, or `install` into
+    a repo like Hatedate later).
+    - **Why an agent does it:** matching a plan's Verification prose to
+      its criteria, and finding references like "criterion 3" or "plan 39's
+      fourth check", takes reading, not regex. So it's a skill,
+      `/migrate-plans`, with a script for the mechanical half.
+    - **Mechanical (script, `work-state.mjs --migrate`):**
+      - Criteria with IDs and checkboxes (`- [ ] AC1 …`, 27 of prizma's 42
+        plans) become `- **AC1** — …`. The numbers are unchanged, so
+        nothing that cites them breaks.
+      - Criteria with no IDs are numbered in order.
+      - It prints, per plan, what it changed and what it left for the
+        agent.
+    - **By the agent:**
+      - Cite each Verification entry's ID.
+      - Normalize the Status word to the six. DONE, COMPLETE and CLOSED
+        become SHIPPED or BUILT, checked against git. This is my call: an
+        unknown word is a format problem too, and leaving it means a
+        grouped line in every session forever.
+      - Update references in ledgers, specs, handovers and other plans to
+        the new IDs.
+    - **Never invent evidence.** A criterion whose plan has no matching
+      evidence gets `- **AC3** — NOT RECORDED (migrated <date>): the plan's
+      Verification didn't close this.` That counts as an entry, so a
+      closed plan passes the close check honestly. Open plans show their
+      not-recorded count.
+    - **Checked before it's written.** A second agent, refute-by-default,
+      checks each plan's mapping against the old text, as in SDD.md §4,
+      "Findings are records".
+    - **Lands as one commit.** It only adds or reformats lines; nothing
+      in a Verification section is deleted.
+    - **Out of reach:** commit messages, and Claude memory outside the
+      repo.
+    - **Until it has run,** the session view shows one line: `! N plans in
+      the old format: run /migrate-plans`.
+16. **`/skills-audit` is an onboarding step that SSDD tracks.**
+    - **What exists today:** `install` already lists it in what's left
+      (`bin/ssdd.mjs:266`), and `status --skills` says "no skill sources
+      recorded" (`:502`).
+    - **What's missing:** nothing records that a run happened. A run that
+      matched no catalog source leaves `.ssdd/skills.json` looking the same
+      as one that never ran. prizma, on v1.0.1, has no `skills.json` at
+      all.
+    - **The fix:**
+      - The skill writes `"audited": "<date>"` at the end of every run,
+        even an empty one.
+      - `update` and `status` print "`/skills-audit` hasn't run here" while
+        it's missing.
+      - The session view carries the same line until then.
+    - **It isn't run automatically.** `update` is a Node script: it can't
+      run an agent, and the audit needs the network and owner approval.
+17. **`paths` everywhere.**
+    - **The gap:** Part 1's script reads `paths.plans` and
+      `paths.ledgers`, but the templates, the skills (`new-plan`, and
+      `migrate-plans`), SDD.md and the AGENTS template still say
+      `.ssdd/plans`.
+    - **The fix:**
+      - They name the setting instead: "the plans folder (`paths.plans`,
+        default `.ssdd/plans`)".
+      - `new-plan`'s numbering command reads the setting.
+      - `paths.specs` joins, since Hatedate keeps specs in 3 folders.
+    - **The test case** is Hatedate's layout (`.claude/plans`), run on a
+      scratch copy only. Hatedate itself stays untouched.
+
+### Design
+
+- **`skills/migrate-plans/SKILL.md`** (new): the Clarify 15 procedure. It
+  runs `work-state.mjs --migrate`, then the agent pass, then the verifier,
+  then one commit. Its description says it runs once, so it doesn't
+  trigger on everyday plan work.
+- **`skills/skills-audit/SKILL.md`:** the last step writes `"audited"`;
+  `mechanisms/skills.example.json`'s `$comment` names the field.
+- **`bin/ssdd.mjs`:** `update` to 3.x prints the two Upgrade steps.
+  `update` and `status` print the `/skills-audit` line while `audited` is
+  missing.
+- **The session view gains two onboarding lines**, each shown until
+  that step is done: `! N plans in the old format: run /migrate-plans`
+  and `! /skills-audit hasn't run here`.
+- **`paths` per Clarify 17,** in `process/`, `skills/` and
+  `adapters/generic/AGENTS.md`.
+
+### Scope
+
+**In:**
+- `/migrate-plans` and `work-state.mjs --migrate`
+- the `audited` record and its reminders
+- `paths` everywhere, plus `paths.specs`
+- the `update` Upgrade lines
+- tagging 3.0.0 with VERSION and CHANGELOG
+
+**Out:**
+- Running the migration in Hatedate. That's parked; see the handover.
+- Running `/skills-audit` automatically (Clarify 16).
+- Rewriting commit messages or Claude memory outside the repo.
+
+### Acceptance criteria
+
+- **AC13 — Migration, mechanical.** On fixture plans, `--migrate`:
+  - turns `- [ ] AC1 …` and `- [x] AC1 …` into `- **AC1** — …` without
+    renumbering
+  - numbers ID-less criteria in order
+  - leaves every Verification line's text in place
+  - prints the agent's to-do list per plan
+
+  Run twice, it changes nothing the second time.
+- **AC14 — Migration, on real data.** On a scratch clone of prizma at
+  `origin/main` (read-only to the real repo), after `/migrate-plans`:
+  - every plan has `AC` IDs and a Status from the six
+  - `git diff --stat` shows no Verification line removed (only `+` lines
+    and reformatted criteria)
+  - every `NOT RECORDED` entry is listed in the commit message
+  - a sample of 5 plans checked by hand matches the old evidence to the
+    right IDs
+  - the session view has no old-format or unknown-status line
+- **AC15 — `/skills-audit` tracking.**
+  - A repo whose `skills.json` has no `audited` gets the reminder from
+    `update`, `status` and the session view.
+  - After a run that matched nothing, `audited` is set and all three go
+    quiet.
+- **AC16 — `paths` everywhere.** With `paths.plans: ".claude/plans"` and
+  `paths.specs` set:
+  - `/new-plan`'s numbering command reads and writes there.
+  - `git grep -n "\.ssdd/plans"` over `process/`, `skills/` and
+    `adapters/` finds only the stated default.
+
+## Part 3 — a cheaper gate
+
+### Goal
+
+Keep every block that catches a real mistake, and stop charging for the
+ones that don't. No release has fixed these yet, and both injected
+projects hit them.
+
+### Evidence
+
+- **Merges of code already reviewed.** 4 of prizma's 8 `SSDD_REVIEW_SKIP`
+  uses were merges like this (`ebbd494`, `60da710`, `5597881`, `1aa4cc6`).
+- **A fix re-reviews too much.**
+  - Stamps are keyed to a file's content, so a comment edit costs a full
+    round on that file.
+  - prizma's ledger 39:60-63 shows agents leaving stale text rather than
+    void a stamp.
+  - In Hatedate (whole-diff stamps), 43% of commits needed 2–4 rounds, and
+    31% of its 391 reviewer runs were repeats.
+- **Agents probe the gate with throwaway commits.** Hatedate has 9 of
+  them, `-m "probe"`, made just to learn what's owed.
+- **Chained staging blocks docs.**
+  - 12 of Hatedate's 14 blocks were docs-only commits or scratch repos.
+  - The 2 real catches were code (a release bump, an audit).
+- **The untracked-file block costs more than it catches.**
+  - prizma: it forced several tasks into one commit (plans 19 and 21).
+  - Hatedate: 7 of its 10 firings were other sessions' work, and the
+    workarounds stashed that work.
+- **A read of `core.hooksPath` is blocked.**
+  - All 6 of Hatedate's firings were reads.
+  - SSDD's git-guard does the same, checked 2026-10-17:
+    `git config core.hooksPath` with no value exits 2, while `--get`
+    passes.
+- **Plan numbers collide across parallel branches.**
+  - prizma: 29 used twice, and one plan renumbered.
+  - Hatedate: 28 used twice, and 61 against 62.
+- **Already fine in SSDD:**
+  - A repo with no `.ssdd/config.json` is a no-op (`review-gate.mjs:489`),
+    so scratch repos pass.
+  - Stamps have been per file since v2.
+
+### Decisions
+
+My calls, except item 7:
+
+1. **A clean merge owes nothing.**
+   - During a merge (`MERGE_HEAD` exists), a staged file whose content
+     equals git's automatic merge of the two sides was reviewed on its
+     way in. Git's merge is computed with `git merge-tree --write-tree`
+     (git ≥ 2.38).
+   - Only files that differ owe reviews: conflict resolutions and edits
+     made during the merge.
+2. **Re-review the change, not the file.** When a file's stamp is for an
+   older blob, the block message gives the reviewer
+   `git diff <stamped blob> <staged blob>` as its input. The stamp still
+   lands on the new blob. It's the same gate, with smaller reviews.
+3. **`review-gate.mjs --check`** prints what the current index owes,
+   without committing.
+4. **Chained staging is allowed when it's visible and unrouted:** every
+   path in the chained `git add` is named explicitly, and none is routed.
+   Anything else is still refused.
+5. **The untracked-file check becomes a warning.** A repo that wants the
+   block sets `preCommit.blockUntracked: true`.
+6. **git-guard treats `git config core.hooksPath` with no value as a
+   read.**
+7. **Plan-number collisions: the owner decides** (still open). Part 1
+   already reports duplicates. The options:
+   - reserve a number by pushing an empty plan file first
+   - assign numbers at merge
+   - keep numbers as they are and rely on the duplicate report
+
+### Scope
+
+**In:**
+- review-gate: the merge rule, the delta message, `--check`, the
+  chained-staging rule
+- git-guard: the `core.hooksPath` read
+- pre-commit: the untracked-file warning, and
+  `preCommit.blockUntracked`
+- SDD.md §4 and the tests
+
+**Out:**
+- The stamp format, which stays as v2 made it.
+- New evasion shapes (the threat-model rule).
+- Hatedate's own gate (parked).
+
+### Open
+
+- Decision 7.
+- Whether git 2.38 is an acceptable minimum. If not, a merge is judged as
+  it is today.
+
+## Part 4 — the production guard and the Supabase pack
+
+### Goal
+
+Production changes go one sanctioned way. In both injected projects that
+way is the integrations that deploy on merge to `main`. Anything else that
+would change production asks a person first, with an accurate reason.
+Reads don't ask. Knowledge specific to a stack lives in a pack, which is
+installed only into repos that use that stack.
+
+### Evidence
+
+- **Hatedate's supabase-guard is the source.** The numbers are in
+  `docs/handovers/HANDOVER-hatedate-adoption.md` §1:
+  - 79 asks from 09-28 to 10-17: 2 real writes and 77 false positives.
+    Today's guard still asks on 68 of the 77.
+  - The owner approved 74 of the 79, with a median wait of 72 s.
+  - Since PR #131, 17 of its 18 false positives asked only because of the
+    command's shape (`| tail`, `2>&1`, `> file`).
+  - Its prompt text says "writes to the PRODUCTION Supabase project" even
+    for reads.
+- **Its covered paths had no misses.** Before it existed, 31 MCP
+  `apply_migration`, 7 `deploy_edge_function`, 8 `storage cp/rm` and at
+  least 2 CLI deploys went straight to production.
+- **It doesn't cover the Management API.** Agents call it with the CLI
+  token from the Keychain; 13 calls, all GETs.
+- **prizma runs the same workflow as an instruction, with no hook:**
+  "Production ships on merge to `main` … Never deploy production from a
+  laptop" (`AGENTS.md:65`).
+- **Both projects use Supabase.** prizma has `supabase/config.toml` and
+  `@supabase/supabase-js` (checked 2026-10-17).
+- **SSDD has no "ask" decision today.** git-guard only denies. BACKLOG's
+  "ask decision for guard rules" item folds into this part. Whether Cursor
+  supports `ask` on `beforeShellExecution` is unverified.
+
+### Owner rulings (2026-10-17)
+
+1. Writes reach production only through migrations on merge to `main`. Any
+   other write is an edge case that needs the owner's explicit approval.
+   The guard is that approval step, not a hard block.
+2. SSDD has a Supabase pack, injected only into repos that use Supabase.
+3. Tests that only read are approved. Releases get no strict guards.
+   Pushing to `main` stays unguarded until Hatedate launches.
+4. Reads of personal data become a rule at launch, not now.
+
+### Design
+
+My calls.
+
+- **`mechanisms/hooks/prod-guard.mjs`** runs on PreToolUse for Bash, and
+  for the MCP tools that packs name.
+  - It decides per command segment (`splitCommands`), never on the whole
+    command's shape. Only the segments that reach production are judged;
+    `grep`, `tail`, `jq` and `> file` pass.
+- **Decisions:** `allow`, or `ask` with a reason that says which case it
+  is: "writes to production outside the merge path" or "can't tell what
+  this does". Never "writes" for a read.
+  - In Cursor, if `beforeShellExecution` doesn't support `ask`, it uses
+    `deny` with the same reason. Verify this first.
+- **Config:** `productionGuard: { writePath: "<one line, shown in
+  reasons>", extraRules: [{ match, decision, reason }] }`.
+  - Packs add rules, and a project can add its own: for example
+    `vercel deploy --prod` for prizma.
+- **Packs** live in `packs/<name>/`. Each holds a `detect.mjs` (run at
+  install time), the classifier the guard loads, MCP tool patterns,
+  helpers, docs and tests. They install as managed files in
+  `.ssdd/packs/<name>/`.
+- **Detection and the lock.**
+  - `install` detects packs and records them in the lock as `packs`. For
+    Supabase it checks for `supabase/config.toml`, or for
+    `@supabase/supabase-js` / `supabase` in the root `package.json`.
+  - `update` installs what the lock lists and never re-detects on its own,
+    so packs can't appear or vanish between updates.
+  - `status` says when a repo now matches a pack it doesn't have.
+  - `--packs a,b` or `--packs none` on `install` or `update` overrides
+    detection.
+- **The Supabase pack:**
+  - **Source:** Hatedate's supabase-guard rules and its `sql-lex` /
+    `sql-readonly` libraries.
+  - **The handover's fixes are applied here, in SSDD.** Hatedate stays
+    untouched and later adopts the pack instead of fixing its own copy.
+  - **What it changes:**
+    - It judges only the database segment of a command.
+    - A `db-read "<sql>"` helper wraps the SQL in `BEGIN READ ONLY …
+      ROLLBACK` and runs the classifier on it. It never asks.
+    - Its reasons are accurate.
+    - `--help` and `db push --dry-run` pass.
+    - Heredocs that are commit messages or PR bodies aren't treated as
+      commands.
+  - **What still asks:**
+    - MCP `apply_migration`, `deploy_edge_function`, and `execute_sql`
+      when it writes
+    - CLI write subcommands
+    - Management API calls that aren't GETs
+  - **A `personalReads` option, off by default:** the tables and columns
+    that should ask before a read. It's for launch (ruling 4).
+- **The replay becomes a test.** The 79 Hatedate asks become a fixture,
+  redacted as in Open below. The pack must ask on exactly these:
+  - the 2 writes
+  - the 2 rollback probes
+  - whatever it can't parse
+
+### Scope
+
+**In:**
+- prod-guard and the pack mechanism (detection, the lock's `packs`, and
+  `install`, `update` and `status`)
+- the Supabase pack, its tests and the replay fixture
+- the adapters' wiring, README and SDD.md
+- retiring BACKLOG's "ask" item
+
+**Out:**
+- Changes in Hatedate.
+- A Vercel pack. A project rule covers prizma for now.
+- Branch protection, and guards on releases (ruling 3).
+
+### Open
+
+- Whether Cursor supports `ask` on `beforeShellExecution`.
+- Whether Hatedate's 07-27 note ("a rejected `apply_migration` still ran")
+  reproduces on today's Supabase MCP. If it does, `ask` can't stop an MCP
+  write, and the pack should `deny` MCP writes and point at the merge path
+  instead.
+- **Redaction:** SSDD is a public repo, and the replay inputs come from
+  private transcripts. Keep only the command shapes, with SQL bodies
+  reduced to their statement kinds. Bringing Hatedate's guard code into
+  SSDD was approved on 2026-10-17 (ruling 2).
+
+## Part 5 — trimming
+
+### Goal
+
+Make SSDD only as big as what it does. Keep what carries facts, commands,
+scripts and gotchas a current model can't work out for itself. Cut what
+tells it how to reason.
+
+### Evidence
+
+- **Unused parts:** prizma never routed `gate-reviewer`, ran the drift
+  audit once (`62a1df6`), and has one lint rule.
+- **`/cleanup` is the most used skill.** 26 prizma commits and 75 Hatedate
+  commits cite it.
+  - Both projects grew their copies to 11.5 KB and 13.3 KB, against the
+    3.5 KB SSDD ships.
+  - Its effort levels, `--fix`, `--comment` and verify pass now duplicate
+    Claude Code's own `/code-review`.
+- **The weight is in always-loaded files, not skills.**
+  - SSDD's 5 skill descriptions come to about 1 KB in total.
+  - Hatedate loads about 54 KB at every session start.
+  - prizma's AGENTS.md is 179 lines; the template is 58.
+- **Prescriptive text can hurt.** `docs/model-era-review.md` D3: skills
+  written for older models are often too prescriptive and can make output
+  worse.
+- **SPEC.md is about 1,700 lines,** with every version in one file. The
+  README's longest section is Known limitations.
+
+### Decisions
+
+My calls.
+
+1. **Split SPEC.md** into one file per version in `docs/specs/`, with
+   SPEC.md as the index.
+2. **Cut the README to one page;** the detail moves to `docs/`.
+3. **Make the rarely used parts optional:** the drift-audit runbook and
+   `/docs-drift-audit` install only with `install --with drift-audit`.
+   `gate-reviewer` is already opt-in. `/skills-audit` stays, since Part 2
+   makes it an onboarding step, but its text is trimmed.
+4. **`/cleanup` becomes thin.** It works out the scope, hands the general
+   review to the harness (`/code-review` in Claude Code), adds the routed
+   SSDD reviewers, merges the findings, and changes nothing until the
+   user approves. Anything the prizma and Hatedate copies added that
+   holds up goes back into SSDD.
+5. **Test every skill and instruction file against the D3 rule.** Decide
+   with the README's new-model re-run and `/doctor prompt-audit` (which
+   needs Claude Code 2.1.283 or later).
+6. **Trim the handover and AGENTS templates.** `new-plan` shrinks once
+   Part 1's script can compute the next plan number.
+
+### Open
+
+- A new-model reminder: record which model generation the instructions
+  were last reviewed for, and have the session view say when the current
+  model is newer. This needs the session-start payload to carry the
+  model, which is unverified.

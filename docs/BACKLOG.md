@@ -1,8 +1,8 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-12 at v2.6.0 (455
-tests pass). v2.6 took the gate back to its threat model; the next work is
-adoption (configurable artifact paths, prizma's lock), not hardening.
+The single list of remaining SSDD work. Updated 2026-10-17 at v2.7.0. The
+next work is v3 (`SPEC.md` → v3): five parts, one plan each, agreed
+2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
 is planned, it gets a `SPEC.md` section first.
 
@@ -11,22 +11,31 @@ they aren't a sandbox. A new evasion shape is out of scope unless an agent
 was seen using it in a real project, and the spec that closes it records
 that incident.
 
-## Next: adoption
+## Next: v3
 
-- **Configurable artifact paths** (`.ssdd/plans`, `specs`, `ledgers`): Hatedate
-  keeps plans in `.claude/plans` (12 files reference it) and rules in
-  `.claude/rules` (47). It can't adopt SSDD fully while these paths are
-  hardcoded. Size M; needs its own spec.
-- **prizma:** installed v1.0.1 by copy, with no lock. It runs
+| # | Part (SPEC.md → v3) | Plan | Ships as |
+|---|---|---|---|
+| 1 | Work state: the session-start view, the close check, tracked Superpowers ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md` (in progress) | 3.0.0, with Part 2 |
+| 2 | Onboarding existing repos: `/migrate-plans`, `paths` everywhere, `/skills-audit` tracked | not written | 3.0.0 |
+| 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads | not written | 3.1.0 |
+| 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |
+| 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test | not written | 3.3.0 |
+
+- **Open owner decision:** how to prevent plan-number collisions (Part 3,
+  decision 7).
+- **Hatedate adoption is parked** (owner, 2026-10-17). The prompt to start
+  it is `docs/handovers/HANDOVER-hatedate-adoption.md`.
+
+Also next:
+
+- **prizma:** installed v1.0.1 by copy, with no lock (its hooks were since
+  rewritten in the repo to about v2.0). It runs
   `node ~/Developer/ssdd/bin/ssdd.mjs adopt <repo> --base v1.0.1` once, then
   `update`. Until then its hooks let `git commit -anm` and `bash -c '…'`
   pass every gate. Its own text cuts (AGENTS.md 178 lines, design-sync →
   skill, the 786-char `bias-semantics-reviewer` description, the
   Superpowers decision) are a prizma plan. See `docs/model-era-review.md`
   → project-side rows.
-- **Hatedate:** partial adoption, mechanisms first: per-file stamps, the
-  gate in `.githooks/pre-commit`, a tracked ledger. Full adoption waits for
-  configurable artifact paths (above).
 - **This machine:** update the Claude Code CLI. It's 2.1.263;
   `/doctor prompt-audit` needs 2.1.283 or later, and 2.1.263 resolves the
   alias `sonnet` to `claude-sonnet-5`.
@@ -37,7 +46,6 @@ that incident.
 |---|---|---|---|
 | **More `/skills-audit` catalog sources:** Supabase and stack-agnostic ones | v2.4 covers RN/Expo and Next.js/React. Supabase is used by both injected projects. | Needs an audit of each source first. The catalog records what an audit read. | M |
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
-| **"ask" decision for guard rules:** pause for approval instead of deny | Hatedate's production-write guard uses Claude Code's `permissionDecision: "ask"`. | Cursor's `ask` behavior on `beforeShellExecution` isn't verified. | S–M |
 
 ## Accepted limitations (no plan)
 

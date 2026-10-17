@@ -15,6 +15,10 @@ keeps the handovers written for past releases.
 
 - [HANDOVER-ssdd-v2.4-skills-catalog.md](HANDOVER-ssdd-v2.4-skills-catalog.md):
   shipped as v2.4.0.
+- [HANDOVER-hatedate-adoption.md](HANDOVER-hatedate-adoption.md): adopting
+  SSDD into Hatedate and fixing its production guard. Parked by the owner
+  on 2026-10-17. It's a prompt to paste into a session in the Hatedate
+  repo, not SSDD work.
 
 ## Backlog
 
