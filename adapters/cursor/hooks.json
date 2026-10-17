@@ -1,6 +1,9 @@
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      { "command": "node .ssdd/hooks/work-state.mjs --session-start=cursor" }
+    ],
     "beforeShellExecution": [
       { "command": "node .ssdd/hooks/git-guard.mjs", "failClosed": true },
       { "command": "node .ssdd/hooks/review-gate.mjs", "failClosed": true }

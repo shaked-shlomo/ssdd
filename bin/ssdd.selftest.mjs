@@ -640,3 +640,26 @@ describe('the Superpowers ledger .gitignore', () => {
     assert.doesNotMatch(ssdd('status', tgt).out, /ignores Superpowers ledgers/);
   });
 });
+
+describe('session-start wiring in the adapter templates', () => {
+  const ADAPTERS = join(dirname(SCRIPT), '..', 'adapters');
+  const LINE = 'Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.';
+
+  it('the Claude Code template has a SessionStart work-state hook without a matcher', () => {
+    const hooks = JSON.parse(readFileSync(join(ADAPTERS, 'claude-code', 'settings-hooks.json'), 'utf8')).hooks;
+    assert.equal(hooks.SessionStart?.length, 1);
+    const [group] = hooks.SessionStart;
+    assert.equal(group.matcher, undefined, 'no matcher: startup, resume, clear and compact');
+    assert.deepEqual(group.hooks, [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.ssdd/hooks/work-state.mjs" --session-start' }]);
+  });
+
+  it('the Cursor template has sessionStart without failClosed', () => {
+    const hooks = JSON.parse(readFileSync(join(ADAPTERS, 'cursor', 'hooks.json'), 'utf8')).hooks;
+    assert.deepEqual(hooks.sessionStart, [{ command: 'node .ssdd/hooks/work-state.mjs --session-start=cursor' }]);
+  });
+
+  it('ssdd.mdc and the AGENTS template carry the run-the-script line', () => {
+    assert.ok(readFileSync(join(ADAPTERS, 'cursor', 'rules', 'ssdd.mdc'), 'utf8').includes(LINE));
+    assert.ok(readFileSync(join(ADAPTERS, 'generic', 'AGENTS.md'), 'utf8').includes(LINE));
+  });
+});

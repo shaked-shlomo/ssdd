@@ -6,6 +6,7 @@ alwaysApply: true
 # SSDD (Cursor)
 
 Read `AGENTS.md` first; for non-trivial work, `.ssdd/process/SDD.md`.
+Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.
 
 When the review gate blocks a commit, its message lists the reviewers and the
 files each one owes. Dispatch them in parallel with the Task tool (checklists

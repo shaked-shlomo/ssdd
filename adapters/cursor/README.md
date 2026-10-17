@@ -7,7 +7,10 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
 
 1. `.cursor/hooks.json` — seeded from [hooks.json](hooks.json): git-guard and
    review-gate on `beforeShellExecution` (`failClosed`), convention-lint on
-   `afterFileEdit`.
+   `afterFileEdit`, and the work-state view on `sessionStart` (as
+   `additional_context`). Forum reports say Cursor often drops that context
+   before it reaches the agent, so `ssdd.mdc` (always applied) also tells the
+   agent to run `node .ssdd/hooks/work-state.mjs` itself.
 2. `.cursor/rules/ssdd.mdc` — always-on glue pointing at `AGENTS.md`. Not a
    second Documentation Map.
 3. Fill `AGENTS.md` (or merge `AGENTS.ssdd.md` into it); `install` already set `core.hooksPath` (else it printed the command).
