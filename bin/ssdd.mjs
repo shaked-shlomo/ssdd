@@ -30,8 +30,14 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARM_HOOK, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
+import { ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
+// Superpowers writes this file as `*` when none exists (create-only); SSDD's
+// version keeps each plan's progress.md ledger in git. Its default is replaced,
+// anything else is the project's.
+const SP_GITIGNORE = '.superpowers/sdd/.gitignore';
+const isSuperpowersDefault = (buf) => buf !== null && buf.toString('utf8').trim() === '*';
 const ADAPTERS = ['claude-code', 'cursor', 'generic'];
 // Source paths that moved between versions: [current prefix, older prefix].
 // Used only to find a pre-lock install's base copy (`adopt`).
@@ -146,6 +152,7 @@ function plan(tree, adapters) {
   for (const f of walk(tree, 'mechanisms/hooks')) if (f.endsWith('.mjs')) managed[`.ssdd/hooks/${basename(f)}`] = f;
   add(managed, '.ssdd/drift-audit.md', 'mechanisms/drift-audit.md');
   add(managed, '.githooks/pre-commit', 'mechanisms/hooks/pre-commit');
+  add(managed, SP_GITIGNORE, 'mechanisms/superpowers-sdd.gitignore');
   for (const f of walk(tree, 'skills')) managed[`.agents/${f}`] = f;
   if (adapters.includes('cursor')) {
     add(managed, '.cursor/hooks.json', 'adapters/cursor/hooks.json');
@@ -289,6 +296,7 @@ function install(target) {
   const p = plan(tree, adapters);
   const clash = Object.entries(p.managed)
     .filter(([t, s]) => existsSync(join(target, t)) && !same(read(join(target, t)), read(join(tree, s))))
+    .filter(([t]) => !(t === SP_GITIGNORE && isSuperpowersDefault(read(join(target, t)))))
     .map(([t]) => t);
   if (clash.length && !opt.force) {
     die(`${clash.length} framework file(s) already exist with different content (e.g. ${clash[0]}).\n` +
@@ -374,6 +382,7 @@ function update(target) {
     }
     if (base === null) { // new upstream (or new to this install)
       if (local === null) { writeFile(abs, up, modeFrom); rows.added.push(t); }
+      else if (t === SP_GITIGNORE && isSuperpowersDefault(local)) { writeFile(abs, up, modeFrom); rows.added.push(`${t} (replaced Superpowers' default)`); }
       else if (!equivalent(local, up, t)) { writeFile(`${abs}.ssdd-new`, up, modeFrom); rows.sidecar.push(`${t}.ssdd-new`); }
       else unchanged++;
       continue;
@@ -517,6 +526,8 @@ function gateWarnings(target) {
   const dormant = dormantHook(target);
   const orUpdate = hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
   if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
+  const ledgerRule = ledgerIgnoreRule(target, '.superpowers/sdd/_/progress.md');
+  if (ledgerRule) console.log(`WARNING: git ignores Superpowers ledgers here (${ledgerRule}) — remove that rule so .superpowers/sdd/*/progress.md is tracked`);
   const foreign = foreignHook(target);
   if (foreign) {
     console.log(`NOTE: core.hooksPath is "${foreign}", so this checkout runs that directory's pre-commit, not its own ` +

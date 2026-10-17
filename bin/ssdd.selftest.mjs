@@ -589,3 +589,54 @@ describe('claude-code settings-hooks template', () => {
     assert.equal(filtered[0].h.if, 'Bash(git *)');
   });
 });
+
+describe('the Superpowers ledger .gitignore', () => {
+  const SHIPPED = readFileSync(join(dirname(SCRIPT), '..', 'mechanisms', 'superpowers-sdd.gitignore'), 'utf8');
+  const T = '.superpowers/sdd/.gitignore';
+  function releaseV3() {
+    put(src, 'mechanisms/superpowers-sdd.gitignore', SHIPPED);
+    put(src, 'VERSION', '3.0.0\n');
+    commitAll(src, 'v3.0.0');
+    git(src, 'tag', 'v3.0.0');
+  }
+
+  it('install writes .superpowers/sdd/.gitignore and replaces a "*"-only one', () => {
+    releaseV3();
+    put(tgt, T, '*\n'); // what Superpowers writes when none exists
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get(T), SHIPPED);
+    assert.equal(JSON.parse(get('.ssdd/ssdd.lock.json')).managed[T].src, 'mechanisms/superpowers-sdd.gitignore');
+  });
+
+  it('install leaves an edited .superpowers/sdd/.gitignore and reports the clash', () => {
+    releaseV3();
+    put(tgt, T, '*\n!keep.md\n');
+    const r = ssdd('install', tgt);
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /already exist with different content \(e\.g\. \.superpowers\/sdd\/\.gitignore\)/);
+    assert.equal(get(T), '*\n!keep.md\n');
+  });
+
+  it("update replaces Superpowers' default instead of a sidecar", () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v2.0.0').code, 0);
+    commitAll(tgt, 'ssdd 2.0.0');
+    releaseV3();
+    put(tgt, T, '*\n');
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get(T), SHIPPED);
+    assert.ok(!existsSync(join(tgt, `${T}.ssdd-new`)));
+    assert.match(r.out, /\.superpowers\/sdd\/\.gitignore \(replaced Superpowers' default\)/);
+  });
+
+  it('status warns when a parent rule ignores the ledgers', () => {
+    releaseV3();
+    assert.equal(ssdd('install', tgt).code, 0);
+    put(tgt, '.gitignore', '.superpowers/\n');
+    const r = ssdd('status', tgt);
+    assert.match(r.out, /WARNING: git ignores Superpowers ledgers here \(\.gitignore:1: \.superpowers\/\) — remove that rule/);
+    put(tgt, '.gitignore', 'node_modules/\n');
+    assert.doesNotMatch(ssdd('status', tgt).out, /ignores Superpowers ledgers/);
+  });
+});
