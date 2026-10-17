@@ -10,6 +10,50 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.0.0] — unreleased
+
+v3 Part 1 (work state). 3.0.0 is tagged once Part 2 (the plan migration)
+lands too; see `SPEC.md` → v3.
+
+### Added
+- **The work-state view** (`.ssdd/hooks/work-state.mjs`). It lists every open
+  plan across the default branch (`origin/HEAD` as last fetched, else `main`),
+  other branches and worktrees: status, next task from its ledger, criteria
+  verified and deferred, open questions. It flags a plan that says IN PROGRESS
+  on the default branch while no branch is working on it, reports plans that
+  share a number, and groups status words outside the six. It never fetches
+  or edits a plan.
+- **Session start.** Claude Code's `SessionStart` hook and Cursor's
+  `sessionStart` run it (`--session-start`: at most 12 lines and 1.5 KB,
+  always exit 0). Cursor's always-applied rule and the AGENTS template also
+  tell the agent to run it, since Cursor may drop hook context.
+- **The close check** (`--staged`, run by the pre-commit hook). A staged plan's
+  Status must be DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED or ABANDONED.
+  BUILT or SHIPPED needs a Verification entry for every `AC` ID (`DEFERRED
+  (operator): …` counts) and the plan's ledger staged. Plans with no IDs are
+  noted and pass.
+- **Tracked Superpowers ledgers.** `install` and `update` ship
+  `.superpowers/sdd/.gitignore`, which keeps each plan's `progress.md` in git
+  and the rest of Superpowers' workspace ignored. Superpowers' own `*`-only
+  file is replaced; an edited one is left. `status` warns when a parent
+  ignore rule (for example `.superpowers/` in the root `.gitignore`) hides the
+  ledgers.
+- **`paths`** in `.ssdd/config.json`: `plans` and `ledgers`, defaulting to
+  `.ssdd/plans` and `.ssdd/ledgers`. The view and the close check read them.
+
+### Changed
+- The pre-commit untracked-file block skips `.superpowers/sdd/*/progress.md`
+  (Superpowers creates it before the first task's commit); the close check
+  reminds to stage it instead.
+- Templates: criteria are `- **AC1** — …` with no checkbox; Verification
+  entries cite the IDs, with a `DEFERRED (operator)` form. The ledger
+  template's finished example row is ticked.
+
+### Upgrade
+- Claude Code: `.claude/settings.json` is project-owned, so add the
+  `SessionStart` entry from `adapters/claude-code/settings-hooks.json`
+  (`update` prints the template diff).
+
 ## [2.7.0] — 2026-10-17
 
 Fixes from user reports, and `install` / `update` now arm the pre-commit

@@ -14,9 +14,12 @@ the operator runs at deploy.>
 
 <One line per task. The format carries: commits, review verdicts, test counts,
 and TRIAGED findings — severity, what was fixed (with commit), what was
-deferred (with a home). Never a bare "done".>
+deferred (with a home). Never a bare "done". Tick a row when its task is done:
+the work-state view reads the first unticked `Task` row as what's next. Work
+run by Superpowers keeps its ledger in `.superpowers/sdd/<plan>/progress.md`
+instead, and git tracks it.>
 
-- [ ] Task 1 — <name> ✓ (commit `<hash>`, spec ✅, quality ✅, <N/N> tests).
+- [x] Task 1 — <name> ✓ (commit `<hash>`, spec ✅, quality ✅, <N/N> tests).
       Fixed Important: <finding> (`<fix-hash>`). MINOR (deferred → final-review):
       <finding + why it can wait>.
 - [ ] Task 2 — …

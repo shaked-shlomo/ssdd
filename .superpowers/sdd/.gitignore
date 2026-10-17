@@ -1,0 +1,5 @@
+# SSDD: keep each plan's Superpowers ledger in git; the rest here is scratch.
+*
+!.gitignore
+!*/
+!*/progress.md

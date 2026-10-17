@@ -20,7 +20,7 @@ plan must contain, and why, is `.ssdd/process/SDD.md` §2.
    convention. Point it out (number it or fold it in); don't add more.
 3. **Write** `.ssdd/plans/NN-<slug>.md` from
    `.ssdd/process/templates/plan-template.md`: run the clarify pass (SDD.md §2),
-   then write the acceptance criteria before any code.
+   then write the acceptance criteria, each with an `AC<n>` ID, before any code.
 4. For a multi-task plan, start the ledger from
    `.ssdd/process/templates/task-ledger-template.md`.
 5. Stage the plan with the work's first commit (the pre-commit hook blocks on
@@ -29,7 +29,9 @@ plan must contain, and why, is `.ssdd/process/SDD.md` §2.
 ## Syncing back
 
 - **Status:** BUILT / SHIPPED (PR #) / SUPERSEDED / ABANDONED, with the date.
-- **Verification:** close each criterion with real command output.
+- **Verification:** one entry per AC ID (`- **AC1** — <command> → <output>`,
+  or `DEFERRED (operator): <what's left>`). The pre-commit close check refuses
+  BUILT or SHIPPED while an ID has no entry or the plan's ledger isn't staged.
 - **Deviations & discoveries:** record what changed and why, and promote the
   gotchas (SDD.md §7).
 - If the plan changed in the harness's plan UI mid-flight, mirror that here

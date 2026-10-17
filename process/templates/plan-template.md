@@ -20,17 +20,23 @@ answered by the user — before implementation starts; while any remain, Status
 stays DRAFT.>
 
 ## Acceptance criteria
-<Testable statements, written BEFORE implementation. Each one must be checkable
-by a command, a test, or a concrete observation.>
-- [ ] <criterion>
+<Testable statements, written BEFORE implementation, each with an ID that the
+Verification section cites. Each one must be checkable by a command, a test,
+or a concrete observation.>
+- **AC1** — <criterion>
+- **AC2** — <criterion>
 
 ## Approach
 <How: key decisions, files/systems touched, sequencing, known risks.>
 
 ## Verification
-<Filled at completion. One entry per acceptance criterion: the command/check
-actually run and its REAL output. Every number is copied from a command run in
-that session — never from memory.>
+<Filled at completion. One entry per AC ID: the command/check actually run and
+its REAL output. Every number is copied from a command run in that session —
+never from memory. A criterion that can't be checked yet (operator-gated) gets
+a DEFERRED entry saying what's left. The pre-commit check refuses BUILT or
+SHIPPED while any ID has no entry.>
+- **AC1** — `<command>` → <real output>
+- **AC2** — DEFERRED (operator): <what's left, and who runs it>
 
 ## Deviations & discoveries
 <What changed vs. the plan and why; gotchas worth promoting to a rule or memory.>

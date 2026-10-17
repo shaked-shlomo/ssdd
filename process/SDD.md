@@ -48,6 +48,7 @@ any remain.
 
 **Acceptance criteria are written now, before implementation.** They define
 "done", and each is checkable by a command, a test, or a concrete observation.
+Each gets an ID (`- **AC1** — …`) that its Verification entry cites later.
 
 Template: [templates/plan-template.md](templates/plan-template.md).
 
@@ -124,16 +125,20 @@ pass are the review rounds; don't start others unless the user asks.
 
 ## 6. Verification
 
-Fill the plan's Verification section: **one entry per acceptance criterion**,
-each closed with the command/check actually run and its **real output pasted
-from this session**. If a criterion can't be verified
-(operator-gated deploy, missing credentials), it stays open and says so
-explicitly ("BUILD-then-DEFER"), with the operator checklist recorded.
+Fill the plan's Verification section: **one entry per AC ID**
+(`- **AC1** — <command> → <output>`), each closed with the command/check
+actually run and its **real output pasted from this session**. If a criterion
+can't be verified (operator-gated deploy, missing credentials), its entry says
+so: `- **AC4** — DEFERRED (operator): <what's left>` ("BUILD-then-DEFER"), with
+the operator checklist recorded.
 
 ## 7. Sync back
 
 - Plan Status → BUILT (verified; only operator-gated criteria remain) /
-  SHIPPED (PR #) / SUPERSEDED (by what) / ABANDONED (why), with date.
+  SHIPPED (PR #) / SUPERSEDED (by what) / ABANDONED (why), with date. The
+  pre-commit check accepts only these words plus DRAFT and IN PROGRESS, and
+  refuses BUILT or SHIPPED while an AC ID has no Verification entry or the
+  plan's ledger isn't staged.
 - Record **Deviations & discoveries**: what changed vs. the plan and why.
 - **Promote gotchas**: anything that cost real time becomes a rule (if it must
   be enforced), a memory entry (if it's cross-session context), or a line in
@@ -153,6 +158,12 @@ self-contained opening prompt, verified against a named commit, that states
 the problem with file:line evidence, what is decided, what is not, and the
 next free spec/plan numbers to check. The receiving session re-verifies before
 citing anything in it.
+
+**Where the work is.** `node .ssdd/hooks/work-state.mjs` lists every open plan
+across the default branch, other branches and worktrees: its status, the next
+task from its ledger, the criteria verified, open questions, and a plan whose
+Status says IN PROGRESS while nothing is working on it. The harness hooks print
+it at session start. Read it before reading plans to find your place.
 
 ## Standing principles (apply at every step)
 

@@ -69,6 +69,16 @@ are per reviewer × per file, so a fix round re-reviews only what changed.
 Gotchas found along the way are promoted to rules or memory so they bite
 once. Full lifecycle: [process/SDD.md](process/SDD.md).
 
+**Where the work is.** `node .ssdd/hooks/work-state.mjs` reads the plans,
+ledgers and git across the default branch, other branches and worktrees, and
+prints every open plan: its status, the next task, the criteria verified, and
+any plan whose Status says IN PROGRESS while nothing is working on it. The
+harness hooks print it when a session starts, so an agent opens knowing its
+place. The pre-commit hook also checks a plan before it closes: BUILT or
+SHIPPED is refused while an `AC` ID has no Verification entry or the plan's
+ledger isn't staged. Superpowers' per-plan ledgers
+(`.superpowers/sdd/<plan>/progress.md`) are tracked in git.
+
 ## What's in the box
 
 | Layer | Path | What it is |
