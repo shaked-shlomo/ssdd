@@ -113,6 +113,25 @@ describe('loadSsddConfig', () => {
     assert.deepEqual(r.cfg.gitGuard.extraRules.map((x) => x.pattern), ['x']);
   });
 
+  it('paths default to .ssdd/plans and .ssdd/ledgers', () => {
+    putConfig({});
+    assert.deepEqual(loadSsddConfig(dir).cfg.paths, { plans: '.ssdd/plans', ledgers: '.ssdd/ledgers' });
+  });
+
+  it('paths are read and normalized', () => {
+    putConfig({ paths: { plans: './.claude/plans/', ledgers: 42 } });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.cfg.paths, { plans: '.claude/plans', ledgers: '.ssdd/ledgers' });
+  });
+
+  it('a non-object paths is a config error', () => {
+    putConfig({ paths: 'x' });
+    const r = loadSsddConfig(dir);
+    assert.match(r.error, /"paths" must be an object/);
+    assert.deepEqual(r.cfg.paths, { plans: '.ssdd/plans', ledgers: '.ssdd/ledgers' });
+  });
+
   it('a "root" key does not move the repo root', () => {
     putConfig({ root: '/elsewhere' });
     const r = loadSsddConfig(dir);

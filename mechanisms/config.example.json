@@ -10,6 +10,12 @@
       "$comment": "Any route may carry a $comment recording WHY a path is in this lens (e.g. the incident that showed it was missing). The gate ignores it." }
   ],
 
+  "paths": {
+    "$comment": "Where plans and ledgers live, repo-relative. Read by the work-state view and the close check (.ssdd/hooks/work-state.mjs). Defaults shown.",
+    "plans": ".ssdd/plans",
+    "ledgers": ".ssdd/ledgers"
+  },
+
   "reviewGate": {
     "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. exclude: regexes removed from EVERY route (e.g. [\"\\\\.test\\\\.tsx?$\"]); a route can also carry its own \"exclude\". stamping: \"manual\" (default; --stamp attests) or \"hooks\" (Claude Code: a reviewer subagent's completion stamps its files and the agent cannot run --stamp). Optional reviewerModels (Claude Code only, unset by default — the harness decides): a completion stamp lands only if every turn of the review ran on an allowed model. Entries: \"<family>\" (any version), \"<family>>=<major>.<minor>\" (that family at or above), or a substring of the model id; e.g. [\"opus>=5.5\", \"sonnet>=5.5\"].",
     "maxRoutedFiles": 10,
