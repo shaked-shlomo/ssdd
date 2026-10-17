@@ -1154,7 +1154,8 @@ and the D13 `if` filter tested and included (item 9).
 # v3 — SSDD knows where the work is
 
 **Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
-Plan 1 in progress · **Branch:** `v3`
+Plan 1 BUILT 2026-10-17 (two checks DEFERRED, see Part 1 → Verification) ·
+**Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
 - where each plan stands, what's verified and what's next
@@ -1592,6 +1593,132 @@ the template and doc changes above; BACKLOG.
   (`update --to <sha>`) with no conflicts. Its `.claude/settings.json` is untouched, and `update`
   prints the `SessionStart` template diff.
 - **AC12 — Existing tests.** The rest pass; CI is green on Node 18 and 24.
+
+### Verification
+
+*Verified 2026-10-17 on branch `v3`. Code at `a7a7a0e`, with Task 9's test
+additions on top. Node 24.15.0. Selftest counts: `work-state` 37,
+`plan-parse` 21, `ssdd-config` 14, `bin/ssdd` 45, all passing.*
+
+- **AC1** — `node --test mechanisms/hooks/work-state.selftest.mjs` → 37
+  pass. Named cases:
+  - "lists open plans across main, a branch and a worktree": the progress
+    comes from an uncommitted `progress.md` read from the worktree's disk.
+  - "SSDD ledger next task".
+  - "a ledger linked through the Superpowers plan that names it":
+    `Task 1 of 3 done · Task 2 in review`.
+  - "unlinked ledger is warned once".
+- **AC2** — the same run. All six cases pass:
+  - "merge commit", "squash merge" and "deleted branch" are each flagged.
+  - "active branch is not flagged".
+  - "merged on the remote but not pulled is flagged": a bare origin, with
+    the merge pushed from a second clone, so local `main` is behind
+    `origin/main`.
+  - "BUILT and DRAFT never flagged; closed plans not listed".
+- **AC3** — read-only in prizma (`main` `441a9e6`, `origin/main`
+  `2712ab0`), `time node ~/Developer/ssdd/mechanisms/hooks/work-state.mjs`
+  → 0.416 s total, exit 0, "SSDD · 12 open plans".
+  - **Flagged:** 18, 20, 29-studio, 32, 34 ("PR #63 open") and 36, 38, 43.
+    That is exactly the Clarify 6 probe set against `origin/main`.
+  - **Worked on:** 17 (branch `console-deploy`).
+  - **02:** "DRAFT since 2026-08-11 · 4 open questions".
+  - **Statuses outside the six:** "9 plans … (DONE ×5, IN REVIEW, READY TO
+    CLOSE, CLOSED, AC6 FAILED)". 08 is one of the DONEs, and 40 is the AC6
+    FAILED.
+  - **Shipped plans with old unmerged branches** (19, 21, 30 and others)
+    aren't listed.
+  - **Real findings it surfaced:**
+    - two plans numbered 42, in worktrees `eval-clustering` and `pr87`
+    - the two 29s on main
+    - prizma's ledger for 42 ignored by `.git/info/exclude:18: .superpowers/`
+- **AC4** — split in two:
+  - **Live, startup:** in a scratch repo installed with
+    `install … claude-code --ref a7a7a0e`, with one plan
+    (`07-probe-zebra`, IN PROGRESS). I ran
+    `claude -p --model sonnet --max-turns 1` (Claude Code 2.1.263), asking
+    with no tools whether a line starting `SSDD ·` was in its context. It
+    answered by quoting `SSDD · 1 open plan` / `07 probe-zebra  IN PROGRESS
+    on main, no branch working on it → …`.
+  - **Selftests:** "capped" (40 plans → ≤ 12 lines, ≤ 1536 bytes, ending
+    `+N more: …`), "broken config and corrupt plan exit 0", "no config
+    prints nothing", "session-start=cursor prints JSON" and "reads the
+    project from CLAUDE_PROJECT_DIR": all pass.
+- **AC4, after `/compact`** — DEFERRED (operator). A headless
+  `claude -p --continue` with `/compact` answers "Not enough messages to
+  compact". To check it: in an interactive Claude Code session in a repo
+  with the template hooks, run `/compact`, then ask what the `SSDD ·` line
+  says. The hook has no matcher, so Claude Code runs it for every
+  `SessionStart` source.
+- **AC5** — `node --test bin/ssdd.selftest.mjs` → 45 pass, including
+  "the Claude Code template has a SessionStart work-state hook without a
+  matcher", "the Cursor template has sessionStart without failClosed" and
+  "ssdd.mdc and the AGENTS template carry the run-the-script line". Whether
+  Cursor delivers the context isn't required (Clarify 7).
+- **AC6** — the work-state run above, "close check (--staged)". All pass:
+  - "BUILT with a missing entry is blocked" (exit 1, names `AC2`)
+  - "a DEFERRED entry passes"
+  - "both entry forms parse"
+  - "Status DONE is blocked with the allowed words"
+  - "an unstaged DONE plan blocks nothing"
+  - "BUILT with no IDs passes with a note"
+  - "SHIPPED with an unstaged Superpowers ledger is blocked, and passes once
+    staged" (it blocks again once the ledger has an unstaged edit)
+- **AC7** — all pass:
+  - **Installer** (`bin/ssdd` run above):
+    - "install writes .superpowers/sdd/.gitignore and replaces a \"*\"-only
+      one"
+    - "install leaves an edited .superpowers/sdd/.gitignore and reports the
+      clash"
+    - "update replaces Superpowers' default instead of a sidecar"
+    - "status warns when a parent rule ignores the ledgers"
+  - **work-state:**
+    - "pre-commit: ledger exempt from the untracked block": the real
+      `pre-commit`; an untracked ledger commits and prints the reminder,
+      and an untracked `notes.txt` still blocks.
+    - "reminds to stage a Superpowers ledger on every run".
+    - "an ignored ledger passes with a warning naming the rule".
+  - **Dogfooded:** this repo's `.superpowers/sdd/.gitignore` is SSDD's
+    version (`a7a7a0e`). `git status -uall .superpowers/` showed only
+    `.gitignore` and this plan's `progress.md`, and the ledger is now
+    committed.
+- **AC8** — all pass:
+  - "paths.plans honored" (the view) and "paths.plans honored by the close
+    check".
+  - `ssdd-config` run above: "paths default…", "paths are read and
+    normalized", "a non-object paths is a config error".
+  - The view prints the config error as a `!` line, and the gate blocks on
+    it as on any section of the wrong type.
+- **AC9** — "duplicate numbers warned" passes. On real data (AC3): two 29s
+  and two 42s.
+- **AC10** — `git grep -n "\- \[ \] <criterion>"` → no matches (exit 1).
+  - The plan template now shows `- **AC1** — <criterion>` and both
+    Verification forms.
+  - The ledger template's finished example row is `- [x] Task 1`.
+  - Updated: SDD.md §2, §6 and §7 plus the "Where the work is" note,
+    `skills/new-plan/SKILL.md`, README, and CHANGELOG `## [3.0.0] —
+    unreleased`.
+- **AC11** — a scratch repo installed at `v2.7.0` (adapters `claude-code`
+  and `cursor`, committed), then `update --to a7a7a0e`:
+  - exit 0, "unchanged: 27, updated (9), added (5)"
+  - the added files include `.ssdd/hooks/work-state.mjs`,
+    `.ssdd/hooks/plan-parse.mjs` and `.superpowers/sdd/.gitignore`
+  - no conflict markers, and `.claude/settings.json` has the same sha256 as
+    before
+  - the printed template diff carries `"SessionStart": [` and the
+    `--session-start` command
+
+  In that installed layout, `node --test .ssdd/hooks/*.selftest.mjs` → 472
+  tests: 471 pass, 1 skipped, 0 fail.
+  - Before the fix, "pre-commit: ledger exempt…" failed there: it read
+    `pre-commit` next to the hooks, and install puts it in `.githooks/`.
+  - It now looks in both places, as the review-gate backstop test does.
+- **AC12** — `node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs`
+  → 541 tests, 0 fail, on Node 24.15.0 (540 before the AC8 close-check test
+  was added).
+- **AC12, Node 18** — DEFERRED (operator). There's no Node 18 on this
+  machine. CI runs both versions on a push, and pushing waits for the
+  owner's go-ahead. I checked by hand for APIs newer than Node 18: there
+  are none (`Array.prototype.at` is 16.6+; no `findLast`, no `globSync`).
 
 ## Part 2 — onboarding existing repos
 

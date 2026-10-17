@@ -2,7 +2,7 @@
 // rule, ledgers, warnings, and the session-start and close-check modes.
 // Run: node --test mechanisms/hooks/work-state.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,9 @@ import assert from 'node:assert/strict';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, 'work-state.mjs');
+// The portable hook: mechanisms/hooks/pre-commit in the source tree,
+// .githooks/pre-commit in an installed repo (.ssdd/hooks/ is two levels down).
+const PRE_COMMIT = [join(HERE, 'pre-commit'), join(HERE, '..', '..', '.githooks', 'pre-commit')].find((p) => existsSync(p));
 
 let base; let dir;
 const env = () => {
@@ -408,6 +411,15 @@ describe('close check (--staged)', () => {
     assert.match(err, /ignored by git \(\.gitignore:1: \.superpowers\/\)/);
   });
 
+  it('paths.plans honored by the close check', () => {
+    put('.ssdd/config.json', JSON.stringify({ paths: { plans: '.claude/plans' } }));
+    put('.claude/plans/62-trims.md', planText({ status: 'SHIPPED', ac: ['AC1'] }));
+    stage('.ssdd/config.json', '.claude/plans/62-trims.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 1);
+    assert.match(err, /\.claude\/plans\/62-trims\.md: AC1 has no Verification entry/);
+  });
+
   it('reminds to stage a Superpowers ledger on every run', () => {
     put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
     const { code, err } = run(['--staged']);
@@ -415,9 +427,9 @@ describe('close check (--staged)', () => {
     assert.match(err, /\[ssdd-work-state\] reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
   });
 
-  it('pre-commit: ledger exempt from the untracked block', () => {
+  it('pre-commit: ledger exempt from the untracked block', { skip: !PRE_COMMIT }, () => {
     mkdirSync(join(dir, '.githooks'));
-    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(join(HERE, 'pre-commit'), 'utf8'));
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
     chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
     mkdirSync(join(dir, '.ssdd', 'hooks'));
     for (const f of readdirSync(HERE)) {
