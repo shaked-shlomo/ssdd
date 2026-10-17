@@ -2,6 +2,8 @@
 // SSDD work state: where each plan stands, read from plans, ledgers and git.
 //
 //   node .ssdd/hooks/work-state.mjs                    the full view
+//   node .ssdd/hooks/work-state.mjs --session-start    capped, for a session-start hook
+//   node .ssdd/hooks/work-state.mjs --session-start=cursor   the same, as Cursor JSON
 //
 // Sources: the default branch (origin/HEAD as last fetched, else main, else
 // master, else the current branch), every other local branch (git objects),
@@ -234,7 +236,7 @@ export function collect(repo) {
   const { def, others } = sources(root, paths, defInfo);
   const all = [def, ...others].filter(Boolean);
   const allPlans = new Set(all.flatMap((s) => [...s.files.keys()].filter((p) => posix.dirname(p) === paths.plans)));
-  const rows = []; const unknown = []; const warnings = [];
+  const rows = []; const unknown = []; const warnings = loaded.error ? [`! ${loaded.error}`] : [];
 
   for (const plan of [...allPlans].sort()) {
     const onDefault = def?.files.has(plan);
@@ -333,8 +335,23 @@ export function render(state, { cap = null } = {}) {
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
+export const SESSION_CAP = Object.freeze({ lines: 12, bytes: 1536 });
+
+// A session-start hook must never fail or flood the session: capped output,
+// exit 0 whatever happens, and no stdin read (the payload isn't needed).
+function sessionStart(repo, cursor) {
+  let text;
+  try { text = render(collect(repo), { cap: SESSION_CAP }); } catch (e) {
+    text = `SSDD · work state unavailable (${String(e?.message ?? e).split('\n')[0].slice(0, 120)})\n`;
+  }
+  if (text) process.stdout.write(cursor ? JSON.stringify({ additional_context: text }) + '\n' : text);
+  return 0;
+}
+
 function main(argv) {
   const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
+  const start = argv.find((a) => a === '--session-start' || a.startsWith('--session-start='));
+  if (start) return sessionStart(repo, start === '--session-start=cursor');
   process.stdout.write(render(collect(repo)));
   return 0;
 }

@@ -282,3 +282,54 @@ describe('stale status', () => {
     assert.match(out, /30 x\s+IN PROGRESS \(branch r2\).*next: Task 2 — b/);
   });
 });
+
+describe('session start', () => {
+  it('capped', () => {
+    for (let i = 1; i <= 40; i++) put(`.ssdd/plans/${String(i).padStart(2, '0')}-plan-with-a-longish-name.md`, planText({ status: 'DRAFT', open: ['q'] }));
+    commitAll('40 drafts');
+    const { code, out } = run(['--session-start']);
+    assert.equal(code, 0);
+    const lines = out.trimEnd().split('\n');
+    assert.ok(lines.length <= 12, `${lines.length} lines`);
+    assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
+    assert.match(lines.at(-1), /^\+\d+ more: node \.ssdd\/hooks\/work-state\.mjs$/);
+    assert.match(lines[0], /^SSDD · 40 open plans/);
+  });
+
+  it('broken config and corrupt plan exit 0', () => {
+    put('.ssdd/plans/01-junk.md', Buffer.from([0, 255, 254, 0, 10, 13, 0]));
+    commitAll('junk');
+    assert.equal(run(['--session-start']).code, 0);
+    put('.ssdd/config.json', '{ not json');
+    const { code, out } = run(['--session-start']);
+    assert.equal(code, 0);
+    assert.match(out, /! \.ssdd\/config\.json is not valid JSON/);
+  });
+
+  it('a missing project directory prints nothing and exits 0', () => {
+    const { code, out } = run(['--session-start'], { extraEnv: { SSDD_PROJECT_DIR: join(base, 'missing-dir') } });
+    assert.equal(code, 0);
+    assert.equal(out, '');
+  });
+
+  it('no config prints nothing', () => {
+    git('rm', '-q', '.ssdd/config.json');
+    commitAll('no config');
+    assert.deepEqual([run(['--session-start']).out, run(['--session-start=cursor']).out], ['', '']);
+  });
+
+  it('session-start=cursor prints JSON', () => {
+    put('.ssdd/plans/01-a.md', planText({ status: 'DRAFT' }));
+    commitAll('a');
+    const { code, out } = run(['--session-start=cursor']);
+    assert.equal(code, 0);
+    assert.match(JSON.parse(out).additional_context, /^SSDD · 1 open plan\b/);
+  });
+
+  it('reads the project from CLAUDE_PROJECT_DIR, not the cwd', () => {
+    put('.ssdd/plans/01-a.md', planText({ status: 'DRAFT' }));
+    commitAll('a');
+    const { out } = run(['--session-start'], { cwd: base, extraEnv: { CLAUDE_PROJECT_DIR: dir } });
+    assert.match(out, /01 a\s+DRAFT/);
+  });
+});
