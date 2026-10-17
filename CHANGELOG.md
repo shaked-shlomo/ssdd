@@ -10,6 +10,45 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.7.0] — 2026-10-17
+
+Fixes from user reports, and `install` / `update` now arm the pre-commit
+hook. No manual steps.
+
+### Fixed
+- **Completion stamps work in the Claude Code desktop app.** There a
+  subagent ends by calling `SubagentHandback`, and its report (with the
+  verdict line) is that call's `message`; `last_assistant_message` is
+  empty, so every review was refused as "ended without a verdict line" and,
+  with `stamping: "hooks"`, routed files couldn't be committed. The
+  `SubagentStop` hook now reads the handback from the subagent transcript
+  and parses it first. A handback followed by a new prompt (a resumed
+  agent) doesn't count; a handback without a verdict is refused even if
+  `last_assistant_message` has one. The CLI path is unchanged.
+- **An absolute `core.hooksPath` in a worktree is no longer called
+  dormant.** Pointed at the main checkout's `.githooks`, every linked
+  worktree runs that copy of `pre-commit`, which still gates the
+  worktree's own diff. `status` and the gate said "dormant"; now only
+  `status` prints a note suggesting the relative form, run once since the
+  setting is shared. A path with no `pre-commit` under it is still dormant.
+
+### Changed
+- **`install` and `update` arm the pre-commit hook.** They set
+  `core.hooksPath` to `.githooks` when it's unset, or when it's an absolute
+  path to a checkout's `.githooks` (so each worktree runs its own copy),
+  and print `armed`. Any other value (`.husky`, `.git/hooks`), or an unset
+  one with a real hook in `.git/hooks` (the `pre-commit` framework,
+  lefthook), is left alone and the manual step stays: setting it would
+  stop those hooks. Only at the top of a work tree that has
+  `.githooks/pre-commit`. git-guard still blocks the agent from writing
+  `core.hooksPath` directly. `status` says when rerunning `update` would fix
+  it. To arm an existing install, rerun `update`.
+
+### Docs
+- `adapters/claude-code/README.md`: desktop-app worktree sessions load
+  agents, skills and hooks from the main checkout (`--project-config-root`),
+  so SSDD must be on its branch for them to run there.
+
 ## [2.6.1] — 2026-10-14
 
 Fixes from the v2.6 review. A manual step only if `.ssdd/config.json` has

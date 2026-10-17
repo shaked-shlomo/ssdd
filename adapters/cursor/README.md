@@ -10,7 +10,7 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
    `afterFileEdit`.
 2. `.cursor/rules/ssdd.mdc` — always-on glue pointing at `AGENTS.md`. Not a
    second Documentation Map.
-3. Fill `AGENTS.md` (or merge `AGENTS.ssdd.md` into it); `git config core.hooksPath .githooks`.
+3. Fill `AGENTS.md` (or merge `AGENTS.ssdd.md` into it); `install` already set `core.hooksPath` (else it printed the command).
 
 ## Gotchas (each cost a session in the source project)
 

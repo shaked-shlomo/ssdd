@@ -83,18 +83,38 @@ export function loadSsddConfig(repo) {
   return { root, cfg, error: `${PATH}: ${bad.map(([key, , type]) => `"${key}" must be ${type}`).join('; ')}` };
 }
 
-// The portable pre-commit layer runs only while core.hooksPath points at the
-// repo's .githooks (git then ignores .git/hooks entirely). Returns why it is
-// dormant ("core.hooksPath is unset"), or '' when it is armed or the repo has
-// no .githooks/pre-commit. git-guard denies writes to core.hooksPath, so the
-// fix is the user's to run.
-export function dormantHook(root) {
-  if (!existsSync(join(root, '.githooks', 'pre-commit'))) return '';
+// The portable pre-commit layer runs only while core.hooksPath points at a
+// directory with a pre-commit (git then ignores .git/hooks entirely).
+// → null when the repo has no .githooks/pre-commit, else
+//   { value, own: it resolves to this checkout's .githooks,
+//     runs: the directory it resolves to has a pre-commit }
+function hooksPath(root) {
+  if (!existsSync(join(root, '.githooks', 'pre-commit'))) return null;
   let value = '';
   try { value = gitText(root, 'config', '--get', 'core.hooksPath').trim(); } catch { /* unset */ }
-  if (!value) return 'core.hooksPath is unset';
+  if (!value) return { value, own: false, runs: false };
   const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
   const abs = resolve(root, value.replace(/^~(?=\/|$)/, homedir()));
-  return real(abs) === real(join(root, '.githooks')) ? '' : `core.hooksPath is "${value}"`;
+  const own = real(abs) === real(join(root, '.githooks'));
+  return { value, own, runs: own || existsSync(join(abs, 'pre-commit')) };
+}
+
+// Why the pre-commit layer is dormant ("core.hooksPath is unset"), or '' when
+// it runs or the repo has no .githooks/pre-commit. git-guard denies writes to
+// core.hooksPath, so the fix is the user's to run.
+export function dormantHook(root) {
+  const h = hooksPath(root);
+  if (!h || h.runs) return '';
+  return h.value ? `core.hooksPath is "${h.value}"` : 'core.hooksPath is unset';
+}
+
+// core.hooksPath when it resolves to another directory's pre-commit, else ''.
+// The usual cause: an absolute path to the main checkout's .githooks, which
+// every linked worktree then runs instead of its own. That shim still runs
+// this checkout's .ssdd/hooks (it resolves the repo root itself), so the gate
+// is on; only a change to this branch's .githooks/pre-commit doesn't apply.
+export function foreignHook(root) {
+  const h = hooksPath(root);
+  return h && h.runs && !h.own ? h.value : '';
 }
 export const ARM_HOOK = 'git config core.hooksPath .githooks';

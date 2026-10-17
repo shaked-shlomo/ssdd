@@ -212,6 +212,58 @@ describe('completion stamps', () => {
     assert.equal(r.reviewers['beta-reviewer']['src/lib/a.ts'].by, undefined);
   });
 
+  // The desktop app's subagents end with a SubagentHandback tool call: the
+  // report is its input.message, and last_assistant_message is empty. Line
+  // shapes follow a live Claude Code desktop transcript: one content block
+  // per assistant line, the handback's tool_result, then an attachment line.
+  describe('a desktop-app handback', () => {
+    const say = (block) => ({ type: 'assistant', message: { model: OPUS, role: 'assistant', content: [block] } });
+    const handback = (message) => say({ type: 'tool_use', id: 'toolu_1', name: 'SubagentHandback', input: { message } });
+    const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text: '{"success":true}' }] }] } };
+    const prompt = (content) => ({ type: 'user', message: { role: 'user', content } });
+    const meta = { type: 'user', isMeta: true, message: { role: 'user', content: '<system-reminder>x</system-reminder>' } };
+    const attachment = { type: 'attachment', attachment: {} };
+    const stopWith = (id, lines, text = '') => {
+      const p = join(base, `t-${id}.jsonl`);
+      writeFileSync(p, [prompt('review the diff'), meta, ...lines].map((l) => JSON.stringify(l)).join('\n') + '\n');
+      return hook({ hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'alpha-reviewer', cwd: repo, last_assistant_message: text, agent_transcript_path: p, stop_hook_active: false });
+    };
+
+    it('stamps when the verdict is only in the final handback', () => {
+      start('d1', 'alpha-reviewer');
+      const r = stopWith('d1', [say({ type: 'thinking', thinking: '' }), handback('Findings…\n\n**2 ISSUE(S)**'), result, meta, attachment]);
+      assert.equal(r.status, 0, r.stderr);
+      const s = stamp().reviewers['alpha-reviewer'];
+      assert.deepEqual(Object.keys(s).sort(), ['src/b.ts', 'src/lib/a.ts']);
+      assert.equal(s['src/b.ts'].verdict, 'ISSUES');
+      assert.equal(s['src/b.ts'].issues, 2);
+      assert.equal(s['src/b.ts'].model, OPUS);
+    });
+
+    for (const [label, content] of [['a string prompt', 'look again'], ['a text-block prompt', [{ type: 'text', text: 'look again' }]]]) {
+      it(`a handback followed by ${label} (a resumed agent) with no verdict after it stamps nothing`, () => {
+        start('d2', 'alpha-reviewer');
+        const r = stopWith('d2', [handback('CLEAN'), result, prompt(content), say({ type: 'text', text: 'Looking.' })], 'Looking.');
+        assert.match(r.stderr, /nothing stamped/);
+        assert.deepEqual(stamp().reviewers, {});
+      });
+    }
+
+    it('a handback without a verdict line stamps nothing, even with a verdict in last_assistant_message', () => {
+      start('d3', 'alpha-reviewer');
+      const r = stopWith('d3', [say({ type: 'text', text: 'CLEAN' }), handback('I looked at things.'), result], 'CLEAN');
+      assert.match(r.stderr, /without a verdict/);
+      assert.deepEqual(stamp().reviewers, {});
+    });
+
+    it('with no handback, the verdict in last_assistant_message still stamps', () => {
+      start('d4', 'alpha-reviewer');
+      const r = stopWith('d4', [say({ type: 'text', text: 'Findings…\nCLEAN' })], 'Findings…\nCLEAN');
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(stamp().reviewers['alpha-reviewer']['src/b.ts'].verdict, 'CLEAN');
+    });
+  });
+
   it('committing files a reviewer flagged, unchanged since, carries a triage note', () => {
     start('t1', 'alpha-reviewer'); stop('t1', 'alpha-reviewer', '1 ISSUE(S)');
     start('t2', 'beta-reviewer'); stop('t2', 'beta-reviewer', 'CLEAN');
