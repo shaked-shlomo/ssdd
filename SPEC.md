@@ -1712,6 +1712,13 @@ Selftest counts after the fix pass: `work-state` 45, `plan-parse` 22,
 
   In that installed layout, `node --test .ssdd/hooks/*.selftest.mjs` → 472
   tests: 471 pass, 1 skipped, 0 fail.
+
+  Re-run on HEAD after the fix pass: a fresh scratch repo installed at
+  `v2.7.0`, then `update --to 7d58232`.
+  - exit 0, "unchanged: 27, updated (9), added (5)", no conflicts
+  - `.claude/settings.json` sha256 unchanged, and the `"SessionStart": [`
+    diff printed
+  - installed layout: 482 tests, 481 pass, 1 skipped, 0 fail
   - Before the fix, "pre-commit: ledger exempt…" failed there: it read
     `pre-commit` next to the hooks, and install puts it in `.githooks/`.
   - It now looks in both places, as the review-gate backstop test does.
@@ -1726,6 +1733,48 @@ Selftest counts after the fix pass: `work-state` 45, `plan-parse` 22,
   machine. CI runs both versions on a push, and pushing waits for the
   owner's go-ahead. I checked by hand for APIs newer than Node 18: there
   are none (`Array.prototype.at` is 16.6+; no `findLast`, no `globSync`).
+
+### Deviations & discoveries
+
+What shipped differs from Clarify 6 and the Design above in these ways.
+Each was ledgered in `.superpowers/sdd/2026-10-17-v3-work-state/progress.md`.
+
+- **The stale rule counts ledgers too.** A source works on a plan when its
+  copy of the plan *or of a ledger linked to it* differs from the default
+  branch's. That includes a Superpowers ledger linked indirectly, through
+  the file it names. The difference must also be its own: uncommitted in a
+  worktree, or commits on neither default ref. A detached worktree is
+  compared with its HEAD. (Clarify 6 said the plan file only; its own
+  known-miss note relied on ledger edits counting.)
+- **Every open plan shows its copy being worked on, not only IN
+  PROGRESS.** A DRAFT on main that a worktree is building shows that
+  worktree's Status and progress. Only IN PROGRESS with nothing on it is
+  flagged.
+- **The close check skips a plan a merge brings in unchanged.** While
+  `MERGE_HEAD` exists, a staged plan whose index blob equals a merge
+  head's blob was judged where it was committed. A plan the resolution
+  edits is still checked. Without this, merging `main` could be blocked by
+  a legacy plan nobody touched (Clarify 8).
+- **The close check judges git's cwd,** never `CLAUDE_PROJECT_DIR` or
+  `SSDD_PROJECT_DIR`. That is v2.1's pre-commit rule: a hook in a linked
+  worktree must read that worktree's index. The view and `--session-start`
+  still read the environment first.
+- **The session-start cap keeps the `!` lines.** Warnings outrank rows,
+  so a broken config or a duplicate number is never cut.
+- **A broken `config.json` prints the view with a `! <error>` line.**
+  It doesn't go silent.
+- **Batched git calls.**
+  - Named files go through one `cat-file --batch`.
+  - Each checkout gets one `check-ignore --stdin -z` and one
+    `status -z`.
+  - On a fixture with 30 ledgers, 4 branches and 3 worktrees, the view
+    went from 154 git calls to at most 40, and the close check to at most
+    12.
+- **The pre-commit hook lists untracked files with
+  `core.quotePath=false`,** so a ledger with a non-ASCII name is exempt
+  too.
+- **The plan template's Verification examples are inline text,** not
+  list items, so a fresh plan has no entries.
 
 ## Part 2 — onboarding existing repos
 

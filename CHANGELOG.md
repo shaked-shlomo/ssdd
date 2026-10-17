@@ -31,7 +31,9 @@ lands too; see `SPEC.md` → v3.
   Status must be DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED or ABANDONED.
   BUILT or SHIPPED needs a Verification entry for every `AC` ID (`DEFERRED
   (operator): …` counts) and the plan's ledger staged. Plans with no IDs are
-  noted and pass.
+  noted and pass. A plan a merge brings in unchanged is skipped, since it was
+  judged where it was committed. The check runs on the repo git runs the hook
+  in.
 - **Tracked Superpowers ledgers.** `install` and `update` ship
   `.superpowers/sdd/.gitignore`, which keeps each plan's `progress.md` in git
   and the rest of Superpowers' workspace ignored. Superpowers' own `*`-only
