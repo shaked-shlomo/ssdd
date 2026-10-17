@@ -90,7 +90,10 @@ describe('parseSsddLedger', () => {
     assert.match(l.next, /^Task 7 — word/);
     assert.doesNotMatch(l.next, /\s$/);
   });
-  it('nothing left', () => {
+  it('markdown emphasis is dropped from next', () => {
+    assert.equal(parseSsddLedger('- [ ] Task 5 — **Rewritten for Vercel.** The `ECR` part\n').next, 'Task 5 — Rewritten for Vercel. The ECR part');
+  });
+    it('nothing left', () => {
     assert.deepEqual(parseSsddLedger('- [x] Task 1 — a\n'), { done: 1, total: 1, next: null });
   });
 });

@@ -77,7 +77,7 @@ export function parseSsddLedger(text) {
     if (!m) continue;
     total++;
     if (m[1] !== ' ') done++;
-    else if (next === null) next = cut(m[2], 60);
+    else if (next === null) next = cut(m[2].replace(/\*\*|`/g, ''), 60);
   }
   return { done, total, next };
 }
