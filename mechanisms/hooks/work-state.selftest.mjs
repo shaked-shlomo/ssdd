@@ -2,7 +2,7 @@
 // rule, ledgers, warnings, and the session-start and close-check modes.
 // Run: node --test mechanisms/hooks/work-state.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -331,5 +331,112 @@ describe('session start', () => {
     commitAll('a');
     const { out } = run(['--session-start'], { cwd: base, extraEnv: { CLAUDE_PROJECT_DIR: dir } });
     assert.match(out, /01 a\s+DRAFT/);
+  });
+});
+
+describe('close check (--staged)', () => {
+  const stage = (...p) => git('add', '--', ...p);
+  const shipLedger = '.superpowers/sdd/12-x/progress.md';
+
+  it('BUILT with a missing entry is blocked', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'BUILT', ac: ['AC1', 'AC2'], done: ['AC1'] }));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 1);
+    assert.match(err, /\[ssdd-work-state\] \.ssdd\/plans\/12-x\.md: AC2 has no Verification entry/);
+  });
+
+  it('a DEFERRED entry passes', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'BUILT', ac: ['AC1', 'AC2'], done: ['AC1'], deferred: ['AC2'] }));
+    stage('.ssdd/plans/12-x.md');
+    assert.equal(run(['--staged']).code, 0);
+  });
+
+  it('both entry forms parse', () => {
+    put('.ssdd/plans/12-x.md', ['**Status:** SHIPPED (PR #1)', '## Acceptance criteria', '- **AC1** — a', '- [ ] AC2 b',
+      '## Verification', '- **AC1** — `cmd` → ok', '- **AC2 ✅ — measured', ''].join('\n'));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 0, err);
+  });
+
+  it('Status DONE is blocked with the allowed words', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'DONE — 2026-10-01' }));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 1);
+    assert.match(err, /Status "DONE — 2026-10-01" isn't one of DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED, ABANDONED/);
+  });
+
+  it('an unstaged DONE plan blocks nothing', () => {
+    put('.ssdd/plans/01-old.md', planText({ status: 'DONE' }));
+    commitAll('legacy');
+    put('README.md', 'y\n');
+    stage('README.md');
+    assert.equal(run(['--staged']).code, 0);
+  });
+
+  it('BUILT with no IDs passes with a note', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'BUILT' }));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 0);
+    assert.match(err, /no AC IDs — close check skipped/);
+  });
+
+  it('SHIPPED with an unstaged Superpowers ledger is blocked, and passes once staged', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'SHIPPED', ac: ['AC1'], done: ['AC1'] }));
+    put(shipLedger, progress('.ssdd/plans/12-x.md', ['Task 1: complete (x)']));
+    stage('.ssdd/plans/12-x.md');
+    const first = run(['--staged']);
+    assert.equal(first.code, 1);
+    assert.match(first.err, /ledger \.superpowers\/sdd\/12-x\/progress\.md isn't staged: git add \.superpowers\/sdd\/12-x\/progress\.md/);
+    stage(shipLedger);
+    assert.equal(run(['--staged']).code, 0);
+    put(shipLedger, progress('.ssdd/plans/12-x.md', ['Task 1: complete (x)', 'Task 2: complete (y)']));
+    assert.equal(run(['--staged']).code, 1, 'an unstaged edit to a tracked ledger blocks too');
+  });
+
+  it('an ignored ledger passes with a warning naming the rule', () => {
+    put('.gitignore', '.superpowers/\n');
+    commitAll('ignore');
+    put('.ssdd/plans/12-x.md', planText({ status: 'SHIPPED', ac: ['AC1'], done: ['AC1'] }));
+    put(shipLedger, progress('.ssdd/plans/12-x.md', ['Task 1: complete (x)']));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 0, err);
+    assert.match(err, /ignored by git \(\.gitignore:1: \.superpowers\/\)/);
+  });
+
+  it('reminds to stage a Superpowers ledger on every run', () => {
+    put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 0);
+    assert.match(err, /\[ssdd-work-state\] reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
+  });
+
+  it('pre-commit: ledger exempt from the untracked block', () => {
+    mkdirSync(join(dir, '.githooks'));
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(join(HERE, 'pre-commit'), 'utf8'));
+    chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
+    mkdirSync(join(dir, '.ssdd', 'hooks'));
+    for (const f of readdirSync(HERE)) {
+      if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(HERE, f), join(dir, '.ssdd', 'hooks', f));
+    }
+    writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
+    git('config', 'core.hooksPath', '.githooks');
+    put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
+    put('README.md', 'z\n');
+    stage('README.md');
+    const ok = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-qm', 'x'], { cwd: dir, encoding: 'utf8', env: env() });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
+    put('notes.txt', 'stray\n');
+    put('README.md', 'w\n');
+    stage('README.md');
+    const blocked = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-qm', 'y'], { cwd: dir, encoding: 'utf8', env: env() });
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stderr, /untracked files exist[\s\S]*notes\.txt/);
+    assert.doesNotMatch(blocked.stderr, /• \.superpowers/);
   });
 });

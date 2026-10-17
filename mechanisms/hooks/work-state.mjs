@@ -4,6 +4,7 @@
 //   node .ssdd/hooks/work-state.mjs                    the full view
 //   node .ssdd/hooks/work-state.mjs --session-start    capped, for a session-start hook
 //   node .ssdd/hooks/work-state.mjs --session-start=cursor   the same, as Cursor JSON
+//   node .ssdd/hooks/work-state.mjs --staged           the close check (pre-commit)
 //
 // Sources: the default branch (origin/HEAD as last fetched, else main, else
 // master, else the current branch), every other local branch (git objects),
@@ -348,10 +349,63 @@ function sessionStart(repo, cursor) {
   return 0;
 }
 
+// ── the close check ──────────────────────────────────────────────────────────
+// Run by the pre-commit hook. A staged plan's Status must be one of the six; a
+// plan marked BUILT or SHIPPED needs a Verification entry per AC ID and its
+// ledger staged. Every run reminds to stage a Superpowers ledger that git
+// would track. Exit 1 blocks the commit.
+const ALLOWED = 'DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED, ABANDONED';
+const isTracked = (root, p) => git(root, ['ls-files', '--error-unmatch', '--', p]).status === 0;
+const isUnstaged = (root, p) => git(root, ['diff', '--quiet', '--', p]).status === 1;
+
+function stagedCheck(repo) {
+  const loaded = loadSsddConfig(repo);
+  if (!loaded) return 0;
+  const { root } = loaded;
+  const paths = loaded.cfg.paths ?? DEFAULT_PATHS;
+  const say = (m) => process.stderr.write(`[ssdd-work-state] ${m}\n`);
+  const z = gitOut(root, 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--', paths.plans) ?? '';
+  const staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
+  const src = { dir: root, files: diskFiles(root, paths) };
+  const allPlans = new Set([...staged, ...[...src.files.keys()].filter((p) => posix.dirname(p) === paths.plans)]);
+  let blocked = false;
+  const handled = new Set();
+  for (const plan of staged) {
+    const p = parsePlan(gitOut(root, 'show', `:${plan}`) ?? '');
+    if (!p.status.word) {
+      blocked = true;
+      say(`${plan}: Status "${(p.status.raw ?? '').slice(0, 30)}" isn't one of ${ALLOWED}`);
+      continue;
+    }
+    if (p.status.word !== 'BUILT' && p.status.word !== 'SHIPPED') continue;
+    if (!p.criteria.length) say(`${plan}: no AC IDs — close check skipped`);
+    const missing = p.criteria.filter((id) => !p.entries.has(id));
+    if (missing.length) {
+      blocked = true;
+      say(`${plan}: ${missing.join(', ')} ${missing.length === 1 ? 'has' : 'have'} no Verification entry ` +
+        '(an entry may be "DEFERRED (operator): <reason>")');
+    }
+    const ledgers = [superpowersLedger(root, src, plan, allPlans)?.path, ledgerPaths(paths, plan)[0]]
+      .filter((l) => l && src.files.has(l));
+    for (const l of ledgers) {
+      handled.add(l);
+      const rule = ledgerIgnoreRule(root, l);
+      if (rule) say(`${plan}: its ledger ${l} is ignored by git (${rule}), so it can't be committed`);
+      else if (!isTracked(root, l) || isUnstaged(root, l)) { blocked = true; say(`${plan}: ledger ${l} isn't staged: git add ${l}`); }
+    }
+  }
+  for (const l of src.files.keys()) {
+    if (!l.startsWith(`${SP_DIR}/`) || handled.has(l) || ledgerIgnoreRule(root, l)) continue;
+    if (!isTracked(root, l) || isUnstaged(root, l)) say(`reminder: git add ${l}`);
+  }
+  return blocked ? 1 : 0;
+}
+
 function main(argv) {
   const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
   const start = argv.find((a) => a === '--session-start' || a.startsWith('--session-start='));
   if (start) return sessionStart(repo, start === '--session-start=cursor');
+  if (argv.includes('--staged')) return stagedCheck(repo);
   process.stdout.write(render(collect(repo)));
   return 0;
 }
