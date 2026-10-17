@@ -121,8 +121,9 @@ left. Then fill in the per-project half:
    `.ssdd/skills.json`. It never installs anything unasked.
 5. **Arm the hook**: `install` and `update` set `core.hooksPath` to
    `.githooks` when it's unset or an absolute path to a checkout's
-   `.githooks`; any other value is left alone, and they print the command
-   to run instead. The setting is per clone, so with a `package.json`, a
+   `.githooks`. Any other value, or a real hook already in `.git/hooks`, is
+   left alone (setting it would stop those hooks), and they print the
+   command to run instead. The setting is per clone, so with a `package.json`, a
    `"prepare"` script running `git config core.hooksPath .githooks` arms
    the hook on every fresh clone.
 

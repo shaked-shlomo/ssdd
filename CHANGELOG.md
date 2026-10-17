@@ -36,8 +36,10 @@ hook. No manual steps.
 - **`install` and `update` arm the pre-commit hook.** They set
   `core.hooksPath` to `.githooks` when it's unset, or when it's an absolute
   path to a checkout's `.githooks` (so each worktree runs its own copy),
-  and print `armed`. Any other value (`.husky`, `.git/hooks`) is left alone
-  and the manual step stays. Only at the top of a work tree that has
+  and print `armed`. Any other value (`.husky`, `.git/hooks`), or an unset
+  one with a real hook in `.git/hooks` (the `pre-commit` framework,
+  lefthook), is left alone and the manual step stays: setting it would
+  stop those hooks. Only at the top of a work tree that has
   `.githooks/pre-commit`. git-guard still blocks the agent from writing
   `core.hooksPath` directly. `status` says when rerunning `update` would fix
   it. To arm an existing install, rerun `update`.

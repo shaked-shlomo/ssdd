@@ -223,7 +223,8 @@ function lockFrom(version, ref, commit, adapters, p, tree) {
 // Arm the portable pre-commit layer: set core.hooksPath to .githooks when it
 // is unset, or when it is an absolute path to a checkout's .githooks (shared
 // by every worktree, so each would run that one copy). A value that belongs
-// to something else (.husky, .git/hooks) is left for the user. Only at the top
+// to something else (.husky, .git/hooks), or an unset one with real hooks in
+// .git/hooks, is left for the user. Only at the top
 // of a work tree that has .githooks/pre-commit. → true when it is armed.
 // → { value, state: 'armed' | 'armable' | 'other' }, or null when the target
 // isn't the top of a work tree with .githooks/pre-commit.
@@ -233,7 +234,14 @@ function hookSetting(target) {
   const top = tryGit(target, 'rev-parse', '--show-toplevel');
   if (!top || real(top) !== real(target) || !existsSync(join(target, '.githooks', 'pre-commit'))) return null;
   const value = tryGit(target, 'config', '--get', 'core.hooksPath') ?? '';
-  if (!value) return { value, state: 'armable' };
+  if (!value) {
+    // Unset, but a hook in .git/hooks (pre-commit framework, lefthook, a
+    // hand-written one) would stop running once hooksPath is set.
+    const dir = tryGit(target, 'rev-parse', '--git-path', 'hooks');
+    let own = [];
+    try { own = readdirSync(resolve(target, dir ?? '.git/hooks')).filter((f) => !f.endsWith('.sample')); } catch { /* none */ }
+    return { value, state: own.length ? 'other' : 'armable' };
+  }
   const path = value.replace(/^~(?=\/|$)/, homedir());
   if (!isAbsolute(path)) return { value, state: real(resolve(target, path)) === real(join(target, '.githooks')) ? 'armed' : 'other' };
   const trees = (tryGit(target, 'worktree', 'list', '--porcelain') ?? '').split('\n')

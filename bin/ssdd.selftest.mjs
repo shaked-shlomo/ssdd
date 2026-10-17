@@ -336,6 +336,15 @@ describe('install and update arm the pre-commit hook', () => {
     assert.match(r.out, /\d+\. git -C .* config core\.hooksPath \.githooks/);
   });
 
+  it('install leaves an unset hooksPath alone when .git/hooks has a real hook (pre-commit framework, lefthook)', () => {
+    put(tgt, '.git/hooks/pre-commit', '#!/bin/sh\nexit 0\n', '755');
+    const r = ssdd('install', tgt, '--ref', 'v2.0.0');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(hooksPath(tgt), '');
+    assert.doesNotMatch(r.out, /armed/);
+    assert.match(r.out, /\d+\. git -C .* config core\.hooksPath \.githooks/);
+  });
+
   it('update rewrites an absolute path to a checkout\'s .githooks as .githooks, from a worktree too', () => {
     ssdd('install', tgt, '--ref', 'v1.1.0');
     commitAll(tgt, 'ssdd');
