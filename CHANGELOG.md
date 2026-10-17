@@ -10,9 +10,10 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [2.6.2] — 2026-10-17
+## [2.7.0] — 2026-10-17
 
-Fixes from user reports. No manual steps.
+Fixes from user reports, and `install` / `update` now arm the pre-commit
+hook. No manual steps.
 
 ### Fixed
 - **Completion stamps work in the Claude Code desktop app.** There a
@@ -30,6 +31,16 @@ Fixes from user reports. No manual steps.
   worktree's own diff. `status` and the gate said "dormant"; now only
   `status` prints a note suggesting the relative form, run once since the
   setting is shared. A path with no `pre-commit` under it is still dormant.
+
+### Changed
+- **`install` and `update` arm the pre-commit hook.** They set
+  `core.hooksPath` to `.githooks` when it's unset, or when it's an absolute
+  path to a checkout's `.githooks` (so each worktree runs its own copy),
+  and print `armed`. Any other value (`.husky`, `.git/hooks`) is left alone
+  and the manual step stays. Only at the top of a work tree that has
+  `.githooks/pre-commit`. git-guard still blocks the agent from writing
+  `core.hooksPath` directly. `status` says when rerunning `update` would fix
+  it. To arm an existing install, rerun `update`.
 
 ### Docs
 - `adapters/claude-code/README.md`: desktop-app worktree sessions load

@@ -256,9 +256,10 @@ describe('status: is the gate armed?', () => {
   it('names a dormant hook and lists no gate files; exit code unchanged', () => {
     ssdd('install', tgt, '--ref', 'v2.0.0');
     commitAll(tgt, 'ssdd');
+    git(tgt, 'config', '--unset', 'core.hooksPath');
     const r = ssdd('status', tgt);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is unset\)/);
+    assert.match(r.out, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is unset\) — run: .*\(or rerun: update/);
     assert.doesNotMatch(r.out, /routed to no reviewer/);
   });
 
@@ -280,11 +281,13 @@ describe('status: is the gate armed?', () => {
     let r = ssdd('status', wt);
     assert.equal(r.code, 0, r.out);
     assert.doesNotMatch(r.out, /dormant/);
-    assert.match(r.out, /NOTE: core\.hooksPath is ".*\/app\/\.githooks", so this checkout runs that directory's pre-commit[\s\S]*The gate still runs[\s\S]*config core\.hooksPath \.githooks/);
+    assert.match(r.out, /NOTE: core\.hooksPath is ".*\/app\/\.githooks", so this checkout runs that directory's pre-commit[\s\S]*The gate still runs[\s\S]*config core\.hooksPath \.githooks \(or rerun: update '.*\/wt'\)/);
     assert.doesNotMatch(ssdd('status', tgt).out, /dormant|NOTE: core\.hooksPath/);
     // An absolute path with no pre-commit under it is still dormant.
     git(tgt, 'config', 'core.hooksPath', join(root, 'nowhere'));
-    assert.match(ssdd('status', wt).out, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is ".*nowhere"\)/);
+    const nowhere = ssdd('status', wt).out;
+    assert.match(nowhere, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is ".*nowhere"\)/);
+    assert.doesNotMatch(nowhere, /or rerun: update/);
     // The relative form, set once from either checkout, fits both.
     git(wt, 'config', 'core.hooksPath', '.githooks');
     for (const d of [wt, tgt]) assert.doesNotMatch(ssdd('status', d).out, /dormant|NOTE: core\.hooksPath/);
@@ -308,6 +311,57 @@ describe('status: is the gate armed?', () => {
     commitAll(tgt, 'init');
     r = ssdd('install', tgt, '--ref', 'v2.0.0');
     assert.match(r.out, /Optional: add "prepare": "git config core\.hooksPath \.githooks" to package\.json scripts/);
+  });
+});
+
+describe('install and update arm the pre-commit hook', () => {
+  const hooksPath = (d) => { try { return git(d, 'config', '--get', 'core.hooksPath'); } catch { return ''; } };
+
+  it('install sets core.hooksPath to .githooks and drops the manual step', () => {
+    const r = ssdd('install', tgt, '--ref', 'v2.0.0');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(hooksPath(tgt), '.githooks');
+    assert.match(r.out, /armed\s+core\.hooksPath = \.githooks/);
+    assert.doesNotMatch(r.out, /\d+\. git -C .* config core\.hooksPath/);
+    commitAll(tgt, 'ssdd');
+    assert.doesNotMatch(ssdd('status', tgt).out, /dormant|NOTE: core\.hooksPath/);
+  });
+
+  it('install leaves a hooksPath that belongs to something else, and keeps the manual step', () => {
+    git(tgt, 'config', 'core.hooksPath', '.husky');
+    const r = ssdd('install', tgt, '--ref', 'v2.0.0');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(hooksPath(tgt), '.husky');
+    assert.doesNotMatch(r.out, /armed/);
+    assert.match(r.out, /\d+\. git -C .* config core\.hooksPath \.githooks/);
+  });
+
+  it('update rewrites an absolute path to a checkout\'s .githooks as .githooks, from a worktree too', () => {
+    ssdd('install', tgt, '--ref', 'v1.1.0');
+    commitAll(tgt, 'ssdd');
+    const wt = join(root, 'wt');
+    git(tgt, 'worktree', 'add', '-q', wt, '-b', 'feature');
+    git(tgt, 'config', 'core.hooksPath', join(tgt, '.githooks'));
+    const r = ssdd('update', wt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(hooksPath(tgt), '.githooks');
+    assert.match(r.out, /armed\s+core\.hooksPath = \.githooks \(was ".*\/app\/\.githooks"\)/);
+  });
+
+  it('a target that is not the top of its work tree is not armed', () => {
+    const sub = join(tgt, 'sub');
+    mkdirSync(sub);
+    const r = ssdd('install', sub, '--ref', 'v2.0.0');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(hooksPath(tgt), '');
+  });
+
+  it('a target that is not a git repo installs without arming', () => {
+    const plain = join(root, 'plain');
+    mkdirSync(plain);
+    const r = ssdd('install', plain, '--ref', 'v2.0.0');
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /armed/);
   });
 });
 

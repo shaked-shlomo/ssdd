@@ -24,10 +24,10 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
-  readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
+  readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARM_HOOK, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 
@@ -220,9 +220,38 @@ function lockFrom(version, ref, commit, adapters, p, tree) {
   return { ssdd: version, ref, commit, adapters, updatedAt: new Date().toISOString(), managed, seeded };
 }
 
-function nextSteps(target, adapters) {
+// Arm the portable pre-commit layer: set core.hooksPath to .githooks when it
+// is unset, or when it is an absolute path to a checkout's .githooks (shared
+// by every worktree, so each would run that one copy). A value that belongs
+// to something else (.husky, .git/hooks) is left for the user. Only at the top
+// of a work tree that has .githooks/pre-commit. → true when it is armed.
+// → { value, state: 'armed' | 'armable' | 'other' }, or null when the target
+// isn't the top of a work tree with .githooks/pre-commit.
+function hookSetting(target) {
+  if (tryGit(target, 'rev-parse', '--is-inside-work-tree') !== 'true') return null;
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  const top = tryGit(target, 'rev-parse', '--show-toplevel');
+  if (!top || real(top) !== real(target) || !existsSync(join(target, '.githooks', 'pre-commit'))) return null;
+  const value = tryGit(target, 'config', '--get', 'core.hooksPath') ?? '';
+  if (!value) return { value, state: 'armable' };
+  const path = value.replace(/^~(?=\/|$)/, homedir());
+  if (!isAbsolute(path)) return { value, state: real(resolve(target, path)) === real(join(target, '.githooks')) ? 'armed' : 'other' };
+  const trees = (tryGit(target, 'worktree', 'list', '--porcelain') ?? '').split('\n')
+    .filter((l) => l.startsWith('worktree ')).map((l) => real(join(l.slice('worktree '.length), '.githooks')));
+  return { value, state: trees.includes(real(path)) ? 'armable' : 'other' };
+}
+function armHook(target, log) {
+  const h = hookSetting(target);
+  if (h?.state !== 'armable') return h?.state === 'armed';
+  const { value } = h;
+  git(target, 'config', 'core.hooksPath', '.githooks');
+  log(`armed     core.hooksPath = .githooks${value ? ` (was "${value}")` : ''}`);
+  return true;
+}
+
+function nextSteps(target, adapters, armed) {
   const steps = [
-    `git -C '${target}' config core.hooksPath .githooks`,
+    ...(armed ? [] : [`git -C '${target}' config core.hooksPath .githooks`]),
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
     'Fill the Documentation Map and Harnesses rows in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
     'Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md',
@@ -267,7 +296,7 @@ function install(target) {
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
-  nextSteps(target, adapters);
+  nextSteps(target, adapters, armHook(target, log));
 }
 
 // ── update ───────────────────────────────────────────────────────────────────
@@ -367,6 +396,7 @@ function update(target) {
   }
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, p, newTree));
+  armHook(target, log);
 
   const label = { updated: 'updated', added: 'added', merged: 'merged (project edits kept)', kept: 'kept (project-only edit)',
     removed: 'removed', conflict: 'CONFLICT — resolve markers', sidecar: 'NEW VERSION BESIDE YOURS — reconcile, then delete', skipped: 'skipped' };
@@ -477,12 +507,13 @@ function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
   const dormant = dormantHook(target);
-  if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}`);
+  const orUpdate = hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
+  if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
   const foreign = foreignHook(target);
   if (foreign) {
     console.log(`NOTE: core.hooksPath is "${foreign}", so this checkout runs that directory's pre-commit, not its own ` +
       `(a linked worktree runs the main checkout's copy). The gate still runs. To have each checkout use its own, ` +
-      `run once (the setting is shared by every worktree): git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}`);
+      `run once (the setting is shared by every worktree): git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
   }
 }
 

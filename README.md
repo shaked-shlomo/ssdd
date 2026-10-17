@@ -119,9 +119,12 @@ left. Then fill in the per-project half:
    against a small catalog (RN/Expo, Next.js/React), audits each source at a
    pinned sha against your rules, and records every verdict in
    `.ssdd/skills.json`. It never installs anything unasked.
-5. **Arm the hook**: `git config core.hooksPath .githooks`. With a
-   `package.json`, a `"prepare"` script running it arms the hook on every
-   fresh clone.
+5. **Arm the hook**: `install` and `update` set `core.hooksPath` to
+   `.githooks` when it's unset or an absolute path to a checkout's
+   `.githooks`; any other value is left alone, and they print the command
+   to run instead. The setting is per clone, so with a `package.json`, a
+   `"prepare"` script running `git config core.hooksPath .githooks` arms
+   the hook on every fresh clone.
 
 Domain skills and rules (migration workflows, version policies, design-system
 rules, platform conventions) stay per project: SSDD gives them a home and the
@@ -193,13 +196,14 @@ an agent was seen using it in a real project.
   reports it too. Absent still means "not an SSDD repo". The working-tree
   config is the one that applies, so a broken one is fixed in place.
 - A dormant pre-commit hook (`core.hooksPath` not `.githooks`, the fresh-clone
-  state) is named by `status` and by the harness gate on every commit. The
-  user runs `git config core.hooksPath .githooks`; git-guard denies the agent
-  any write to it. Once set, git ignores `.git/hooks` entirely. The setting
-  is shared by every worktree, so keep it relative: an absolute path to the
-  main checkout's `.githooks` makes each worktree run that copy of the
-  shim (the gate still runs, on the worktree's own `.ssdd/hooks`); `status`
-  notes it.
+  state) is named by `status` and by the harness gate on every commit.
+  `install` / `update` arm it when it's unset; otherwise the user runs
+  `git config core.hooksPath .githooks`. git-guard still denies the agent
+  any direct write to it. Once set, git ignores `.git/hooks` entirely. The
+  setting is shared by every worktree, so it stays relative: an absolute
+  path to the main checkout's `.githooks` makes each worktree run that copy
+  of the shim (the gate still runs, on the worktree's own `.ssdd/hooks`);
+  `status` notes it and `update` rewrites it.
 - In Claude Code the review gate runs only on commands that start with `git`
   (`"if": "Bash(git *)"`). `/usr/bin/git`, `env …` / `sudo …` runners and
   shell wrappers (`bash -c`, `eval`, `… | sh`, a heredoc fed to a shell)
