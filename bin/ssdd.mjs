@@ -29,7 +29,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ARM_HOOK, dormantHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
+import { ARM_HOOK, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
 const ADAPTERS = ['claude-code', 'cursor', 'generic'];
@@ -478,6 +478,12 @@ function gateWarnings(target) {
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
   const dormant = dormantHook(target);
   if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}`);
+  const foreign = foreignHook(target);
+  if (foreign) {
+    console.log(`NOTE: core.hooksPath is "${foreign}", so this checkout runs that directory's pre-commit, not its own ` +
+      `(a linked worktree runs the main checkout's copy). The gate still runs. To have each checkout use its own, ` +
+      `run once (the setting is shared by every worktree): git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}`);
+  }
 }
 
 // ── status ───────────────────────────────────────────────────────────────────

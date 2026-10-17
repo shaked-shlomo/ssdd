@@ -271,6 +271,25 @@ describe('status: is the gate armed?', () => {
     assert.doesNotMatch(r.out, /routed to no reviewer|dormant/);
   });
 
+  it('a worktree on an absolute path to the main checkout\'s .githooks is noted, not called dormant', () => {
+    ssdd('install', tgt, '--ref', 'v2.0.0');
+    commitAll(tgt, 'ssdd');
+    const wt = join(root, 'wt');
+    git(tgt, 'worktree', 'add', '-q', wt, '-b', 'feature');
+    git(tgt, 'config', 'core.hooksPath', join(tgt, '.githooks'));
+    let r = ssdd('status', wt);
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /dormant/);
+    assert.match(r.out, /NOTE: core\.hooksPath is ".*\/app\/\.githooks", so this checkout runs that directory's pre-commit[\s\S]*The gate still runs[\s\S]*config core\.hooksPath \.githooks/);
+    assert.doesNotMatch(ssdd('status', tgt).out, /dormant|NOTE: core\.hooksPath/);
+    // An absolute path with no pre-commit under it is still dormant.
+    git(tgt, 'config', 'core.hooksPath', join(root, 'nowhere'));
+    assert.match(ssdd('status', wt).out, /WARNING: the pre-commit hook is dormant \(core\.hooksPath is ".*nowhere"\)/);
+    // The relative form, set once from either checkout, fits both.
+    git(wt, 'config', 'core.hooksPath', '.githooks');
+    for (const d of [wt, tgt]) assert.doesNotMatch(ssdd('status', d).out, /dormant|NOTE: core\.hooksPath/);
+  });
+
   it('a broken config is named', () => {
     ssdd('install', tgt, '--ref', 'v2.0.0');
     put(tgt, '.ssdd/config.json', '{ "routing": [');

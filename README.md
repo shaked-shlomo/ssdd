@@ -195,7 +195,11 @@ an agent was seen using it in a real project.
 - A dormant pre-commit hook (`core.hooksPath` not `.githooks`, the fresh-clone
   state) is named by `status` and by the harness gate on every commit. The
   user runs `git config core.hooksPath .githooks`; git-guard denies the agent
-  any write to it. Once set, git ignores `.git/hooks` entirely.
+  any write to it. Once set, git ignores `.git/hooks` entirely. The setting
+  is shared by every worktree, so keep it relative: an absolute path to the
+  main checkout's `.githooks` makes each worktree run that copy of the
+  shim (the gate still runs, on the worktree's own `.ssdd/hooks`); `status`
+  notes it.
 - In Claude Code the review gate runs only on commands that start with `git`
   (`"if": "Bash(git *)"`). `/usr/bin/git`, `env …` / `sudo …` runners and
   shell wrappers (`bash -c`, `eval`, `… | sh`, a heredoc fed to a shell)

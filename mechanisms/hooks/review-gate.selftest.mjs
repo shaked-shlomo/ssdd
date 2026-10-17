@@ -6,7 +6,7 @@
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -563,6 +563,19 @@ describe('dormant pre-commit hook', () => {
     const r = hook(dir, 'git commit -m x');
     assert.strictEqual(r.status, 2);
     assert.doesNotMatch(r.stderr, /dormant/);
+  });
+
+  it('an absolute path to another directory\'s pre-commit (a worktree on the main checkout\'s) is not dormant', () => {
+    armable(dir);
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-main-')));
+    try {
+      armable(other);
+      write(dir, 'src/a.ts', 'a\n');
+      git(dir, 'config', 'core.hooksPath', join(other, '.githooks'));
+      const r = hook(dir, 'git commit -m x');
+      assert.strictEqual(r.status, 2);
+      assert.doesNotMatch(r.stderr, /dormant/);
+    } finally { rmSync(other, { recursive: true, force: true }); }
   });
 
   it('a repo without .githooks/pre-commit gets no note', () => {

@@ -552,14 +552,29 @@ function modelAllowed(id, entry) {
   return m.version[0] > maj || (m.version[0] === maj && m.version[1] >= min);
 }
 
-// Models the reviewer's turns actually ran on, from its transcript.
-function transcriptModels(path) {
+// One pass over the reviewer's transcript → { models, handback }.
+// models: what its turns actually ran on.
+// handback: the report of a final SubagentHandback call (the desktop app ends
+// subagents with one; last_assistant_message is then empty). It counts only
+// as the last content block written: a later user prompt (a resumed agent)
+// clears it. A user line carrying a tool_result, and meta lines (system
+// reminders), don't.
+function readTranscript(path) {
   const models = new Set();
+  let last;
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     if (!line.trim()) continue;
-    try { const m = JSON.parse(line)?.message?.model; if (m && m !== '<synthetic>') models.add(m); } catch { /* skip */ }
+    let j;
+    try { j = JSON.parse(line); } catch { continue; }
+    const m = j?.message?.model;
+    if (m && m !== '<synthetic>') models.add(m);
+    const content = j?.message?.content;
+    if (j?.type === 'assistant' && Array.isArray(content) && content.length) last = content[content.length - 1];
+    else if (j?.type === 'user' && !j.isMeta && !(Array.isArray(content) && content.some((b) => b?.type === 'tool_result'))) last = undefined;
   }
-  return [...models];
+  const handback = last?.type === 'tool_use' && last.name === 'SubagentHandback' && typeof last.input?.message === 'string'
+    ? last.input.message : undefined;
+  return { models: [...models], handback };
 }
 
 function subagentHook(p) {
@@ -593,12 +608,14 @@ function subagentHook(p) {
     updateStamp((stamp) => { (stamp.refused ??= {})[type] = { at: new Date().toISOString(), reason: m }; });
   };
   const say = (m) => process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
-  const v = parseVerdict(p.last_assistant_message);
-  if (!v) return refuse('its last review ended without a verdict line (or with NO DIFF) — nothing stamped');
   // Which model(s) ran the review is always recorded (best effort); it is
-  // enforced only when the project sets a floor.
+  // enforced only when the project sets a floor. A handback is the
+  // reviewer's final word, so it takes precedence.
   let models = [];
-  try { models = transcriptModels(p.agent_transcript_path); } catch { /* unreadable */ }
+  let handback;
+  try { ({ models, handback } = readTranscript(p.agent_transcript_path)); } catch { /* unreadable */ }
+  const v = parseVerdict(handback ?? p.last_assistant_message);
+  if (!v) return refuse('its last review ended without a verdict line (or with NO DIFF) — nothing stamped');
   // The configured list, if any: a model must pass it.
   for (const allowed of cfg.reviewGate?.reviewerModelSets ?? []) {
     const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));

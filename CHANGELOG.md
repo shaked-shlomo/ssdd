@@ -10,6 +10,32 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [2.6.2] — 2026-10-17
+
+Fixes from user reports. No manual steps.
+
+### Fixed
+- **Completion stamps work in the Claude Code desktop app.** There a
+  subagent ends by calling `SubagentHandback`, and its report (with the
+  verdict line) is that call's `message`; `last_assistant_message` is
+  empty, so every review was refused as "ended without a verdict line" and,
+  with `stamping: "hooks"`, routed files couldn't be committed. The
+  `SubagentStop` hook now reads the handback from the subagent transcript
+  and parses it first. A handback followed by a new prompt (a resumed
+  agent) doesn't count; a handback without a verdict is refused even if
+  `last_assistant_message` has one. The CLI path is unchanged.
+- **An absolute `core.hooksPath` in a worktree is no longer called
+  dormant.** Pointed at the main checkout's `.githooks`, every linked
+  worktree runs that copy of `pre-commit`, which still gates the
+  worktree's own diff. `status` and the gate said "dormant"; now only
+  `status` prints a note suggesting the relative form, run once since the
+  setting is shared. A path with no `pre-commit` under it is still dormant.
+
+### Docs
+- `adapters/claude-code/README.md`: desktop-app worktree sessions load
+  agents, skills and hooks from the main checkout (`--project-config-root`),
+  so SSDD must be on its branch for them to run there.
+
 ## [2.6.1] — 2026-10-14
 
 Fixes from the v2.6 review. A manual step only if `.ssdd/config.json` has
