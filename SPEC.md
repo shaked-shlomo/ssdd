@@ -1597,8 +1597,9 @@ the template and doc changes above; BACKLOG.
 ### Verification
 
 *Verified 2026-10-17 on branch `v3`. Code at `a7a7a0e`, with Task 9's test
-additions on top. Node 24.15.0. Selftest counts: `work-state` 37,
-`plan-parse` 21, `ssdd-config` 14, `bin/ssdd` 45, all passing.*
+additions on top, then re-run after the final review's fix pass. Node 24.15.0.
+Selftest counts after the fix pass: `work-state` 45, `plan-parse` 22,
+`ssdd-config` 14, `bin/ssdd` 45, all passing.*
 
 - **AC1** — `node --test mechanisms/hooks/work-state.selftest.mjs` → 37
   pass. Named cases:
@@ -1617,7 +1618,9 @@ additions on top. Node 24.15.0. Selftest counts: `work-state` 37,
   - "BUILT and DRAFT never flagged; closed plans not listed".
 - **AC3** — read-only in prizma (`main` `441a9e6`, `origin/main`
   `2712ab0`), `time node ~/Developer/ssdd/mechanisms/hooks/work-state.mjs`
-  → 0.416 s total, exit 0, "SSDD · 12 open plans".
+  → 0.416 s total, exit 0, "SSDD · 12 open plans". After the fix pass it's
+  0.584 s with the same output: every open plan, not only IN PROGRESS, is now
+  checked for a copy being worked on.
   - **Flagged:** 18, 20, 29-studio, 32, 34 ("PR #63 open") and 36, 38, 43.
     That is exactly the Clarify 6 probe set against `origin/main`.
   - **Worked on:** 17 (branch `console-deploy`).
@@ -1713,8 +1716,12 @@ additions on top. Node 24.15.0. Selftest counts: `work-state` 37,
     `pre-commit` next to the hooks, and install puts it in `.githooks/`.
   - It now looks in both places, as the review-gate backstop test does.
 - **AC12** — `node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs`
-  → 541 tests, 0 fail, on Node 24.15.0 (540 before the AC8 close-check test
-  was added).
+  → 550 tests, 0 fail, on Node 24.15.0, after the fix pass (541 before it).
+  - The fix pass added one test per finding: merges, cwd, non-ASCII ledger,
+    DRAFT in a worktree, indirect ledger, template, git-call bound, detached
+    worktree, and warnings under the cap.
+  - On prizma, `--session-start` keeps its three `!` lines within 12 lines
+    and 1,173 bytes.
 - **AC12, Node 18** — DEFERRED (operator). There's no Node 18 on this
   machine. CI runs both versions on a push, and pushing waits for the
   owner's go-ahead. I checked by hand for APIs newer than Node 18: there

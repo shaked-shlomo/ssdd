@@ -14,6 +14,10 @@
 // A plan on the default branch takes its Status from there; other copies only
 // say who is working on it. IN PROGRESS on the default branch with nothing
 // working on it is flagged as likely stale (SPEC.md → v3 → Part 1, Clarify 6).
+//
+// Git calls stay constant per ref and per worktree: one ls-tree per ref, one
+// cat-file --batch for every blob and every file a ledger names, one
+// check-ignore per worktree; only the stale rule adds a log per busy copy.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
@@ -33,8 +37,10 @@ function git(cwd, args, input) {
 const gitOut = (cwd, ...args) => { const r = git(cwd, args); return r.status === 0 ? r.stdout : null; };
 const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 const isPlanName = (name) => /^\d/.test(name) && name.endsWith('.md');
+const isLedger = (p) => p.startsWith(`${SP_DIR}/`);
 const planNum = (path) => /^(\d+[^-]*)/.exec(basename(path))?.[1] ?? basename(path, '.md');
 const planSlug = (path) => basename(path, '.md').replace(/^\d+[^-]*-?/, '') || basename(path, '.md');
+const ssddLedger = (paths, plan) => `${paths.ledgers}/${basename(plan, '.md')}-ledger.md`;
 
 // ── git refs ─────────────────────────────────────────────────────────────────
 const refExists = (root, ref) => git(root, ['rev-parse', '-q', '--verify', `${ref}^{commit}`]).status === 0;
@@ -52,73 +58,94 @@ function defaultBranch(root) {
   return { name, local, remote: rem, read, not: [local, rem].filter(Boolean) };
 }
 
-// `git worktree list --porcelain` → [{ dir, branch: 'refs/heads/x' | null }],
-// skipping worktrees whose directory is gone.
+// `git worktree list --porcelain` → [{ dir, branch, head }], skipping
+// worktrees whose directory is gone.
 function worktrees(root) {
   const out = [];
   let cur = null;
   for (const line of (gitOut(root, 'worktree', 'list', '--porcelain') ?? '').split('\n')) {
-    if (line.startsWith('worktree ')) { cur = { dir: line.slice(9), branch: null }; out.push(cur); }
+    if (line.startsWith('worktree ')) { cur = { dir: line.slice(9), branch: null, head: null }; out.push(cur); }
+    else if (cur && line.startsWith('HEAD ')) cur.head = /^[0-9a-f]{7,}$/.test(line.slice(5)) && !/^0+$/.test(line.slice(5)) ? line.slice(5) : null;
     else if (cur && line.startsWith('branch ')) cur.branch = line.slice(7);
   }
   return out.filter((w) => existsSync(w.dir));
 }
 
+// One `git cat-file --batch` for many object names (a sha, `<ref>:<path>`,
+// `:<path>`) → their texts in input order, null where missing.
+function catBatch(root, names) {
+  if (!names.length) return [];
+  const r = git(root, ['cat-file', '--batch'], Buffer.from(names.join('\n') + '\n'));
+  const out = [];
+  if (r.status !== 0) return names.map(() => null);
+  const buf = r.stdout;
+  let i = 0;
+  while (i < buf.length && out.length < names.length) {
+    const nl = buf.indexOf(10, i);
+    if (nl < 0) break;
+    const head = buf.slice(i, nl).toString('utf8');
+    i = nl + 1;
+    const m = /^[0-9a-f]+ \S+ (\d+)$/.exec(head);
+    if (!m) { out.push(null); continue; }
+    const n = Number(m[1]);
+    out.push(buf.slice(i, i + n).toString('utf8'));
+    i += n + 1;
+  }
+  while (out.length < names.length) out.push(null);
+  return out;
+}
+
+// `git ls-tree -r -z` (or `ls-files -s -z`) records → Map<path, sha>.
+function shaMap(text) {
+  const map = new Map();
+  for (const rec of (text ?? '').split('\0')) {
+    const tab = rec.indexOf('\t');
+    if (tab < 0) continue;
+    const meta = rec.slice(0, tab).split(' ');
+    if (meta[1] === 'blob' || /^\d+$/.test(meta[2] ?? '')) map.set(rec.slice(tab + 1), meta[1] === 'blob' ? meta[2] : meta[1]);
+  }
+  return map;
+}
+
+// "<source>:<line>: <pattern>" per path git ignores in dir, one call for all.
+function ignoreRules(dir, rels) {
+  const out = new Map(rels.map((p) => [p, null]));
+  if (!rels.length) return out;
+  const r = git(dir, ['check-ignore', '--no-index', '-v', '-n', '-z', '--stdin'], Buffer.from(rels.join('\0') + '\0'));
+  if (r.status !== 0 && r.status !== 1) return out;
+  const f = r.stdout.toString('utf8').split('\0');
+  for (let i = 0; i + 3 < f.length; i += 4) {
+    const [src, line, pattern, path] = f.slice(i, i + 4);
+    // A linked worktree reports the shared .git/info/exclude by its absolute path.
+    if (pattern && !pattern.startsWith('!')) out.set(path, `${src.replace(/^.*\/(?=\.git\/)/, '')}:${line}: ${pattern}`);
+  }
+  return out;
+}
+export const ledgerIgnoreRule = (dir, relPath) => ignoreRules(dir, [relPath]).get(relPath);
+
 // ── sources: one place a copy of the repo's files can be read ────────────────
-// { label, ref?, dir?, branch?, files: Map<path, text> } — files holds plans,
-// ledgers and Superpowers progress files only.
+// { label, ref? | dir?, commit, files: Map<path, text>, named: Map<path, text>,
+//   committed? (a worktree's branch or HEAD copy), links (set by collect) }.
+// files holds plans, SSDD ledgers and Superpowers progress files only.
 function wanted(paths, rel) {
   if (posix.dirname(rel) === paths.plans) return isPlanName(posix.basename(rel));
   if (posix.dirname(rel) === paths.ledgers) return rel.endsWith('-ledger.md');
   return /^\.superpowers\/sdd\/[^/]+\/progress\.md$/.test(rel);
 }
 
-function readBlobs(root, shas) {
-  const out = new Map();
-  if (!shas.length) return out;
-  const r = git(root, ['cat-file', '--batch'], Buffer.from(shas.join('\n') + '\n'));
-  if (r.status !== 0) return out;
-  const buf = r.stdout;
-  let i = 0;
-  while (i < buf.length) {
-    const nl = buf.indexOf(10, i);
-    if (nl < 0) break;
-    const [sha, type, size] = buf.slice(i, nl).toString('utf8').split(' ');
-    i = nl + 1;
-    if (type === 'missing' || size === undefined) continue;
-    const n = Number(size);
-    out.set(sha, buf.slice(i, i + n).toString('utf8'));
-    i += n + 1;
-  }
-  return out;
-}
-
-function refFiles(root, ref, paths) {
-  const r = gitOut(root, 'ls-tree', '-r', '-z', '--full-tree', ref, '--', paths.plans, paths.ledgers, SP_DIR);
-  const entries = [];
-  for (const rec of (r ?? '').split('\0')) {
-    const tab = rec.indexOf('\t');
-    if (tab < 0) continue;
-    const [, type, sha] = rec.slice(0, tab).split(' ');
-    const path = rec.slice(tab + 1);
-    if (type === 'blob' && wanted(paths, path)) entries.push({ path, sha });
-  }
-  return entries;
-}
-
 function diskFiles(dir, paths) {
   const files = new Map();
-  const readDir = (rel, keep) => {
+  const readDir = (rel) => {
     let names = [];
     try { names = readdirSync(join(dir, rel)); } catch { return; }
     for (const n of names) {
       const p = `${rel}/${n}`;
-      if (!keep(p)) continue;
+      if (!wanted(paths, p)) continue;
       try { files.set(p, readFileSync(join(dir, p), 'utf8')); } catch { /* unreadable: skip */ }
     }
   };
-  readDir(paths.plans, (p) => wanted(paths, p));
-  readDir(paths.ledgers, (p) => wanted(paths, p));
+  readDir(paths.plans);
+  readDir(paths.ledgers);
   let sp = [];
   try { sp = readdirSync(join(dir, SP_DIR)); } catch { /* none */ }
   for (const d of sp) {
@@ -128,65 +155,80 @@ function diskFiles(dir, paths) {
   return files;
 }
 
+const normPlanRef = (s, dir) => {
+  let p = String(s ?? '').trim().replace(/^\.\//, '');
+  if (dir && p.startsWith('/')) { const d = real(dir); const r = real(p); if (r.startsWith(d + '/')) p = r.slice(d.length + 1); }
+  return p;
+};
+// The repo-relative files a source's Superpowers ledgers name, when they
+// aren't already among its files.
+const namedPaths = (src) => [...new Set([...src.files].filter(([p]) => isLedger(p))
+  .map(([, text]) => normPlanRef(parseProgress(text).plan, src.dir))
+  .filter((p) => p && !p.startsWith('/') && !src.files.has(p)))];
+
 function sources(root, paths, def) {
   const here = real(root);
   const wts = worktrees(root).sort((a, b) => (real(a.dir) === here ? -1 : real(b.dir) === here ? 1 : 0));
   const inWorktree = new Set(wts.map((w) => w.branch).filter(Boolean));
   const branches = (gitOut(root, 'for-each-ref', '--format=%(refname)', 'refs/heads') ?? '')
     .split('\n').filter(Boolean).filter((b) => b !== def.local && !inWorktree.has(b));
-  const refs = [...new Set([def.read, ...def.not, ...wts.map((w) => w.branch), ...branches].filter(Boolean))];
-  const listed = new Map(refs.map((ref) => [ref, refFiles(root, ref, paths)]));
-  const blobs = readBlobs(root, [...new Set([...listed.values()].flat().map((e) => e.sha))]);
-  const files = (ref) => new Map((listed.get(ref) ?? []).map((e) => [e.path, blobs.get(e.sha) ?? '']));
-  const out = { def: def.read ? { label: def.name, ref: def.read, files: files(def.read) } : null, others: [] };
+  const refs = [...new Set([def.read, ...def.not, ...wts.map((w) => w.branch ?? w.head), ...branches].filter(Boolean))];
+  const listed = new Map(refs.map((ref) => [ref, shaMap(gitOut(root, 'ls-tree', '-r', '-z', '--full-tree', ref, '--',
+    paths.plans, paths.ledgers, SP_DIR))]));
+  for (const [ref, m] of listed) for (const p of [...m.keys()]) if (!wanted(paths, p)) listed.get(ref).delete(p);
+  const shas = [...new Set([...listed.values()].flatMap((m) => [...m.values()]))];
+  const texts = new Map(shas.map((s, i) => [s, null])); catBatch(root, shas).forEach((t, i) => texts.set(shas[i], t ?? ''));
+  const files = (ref) => new Map([...(listed.get(ref) ?? [])].map(([p, s]) => [p, texts.get(s) ?? '']));
   const short = (ref) => ref.replace(/^refs\/heads\//, '');
+  const out = { def: def.read ? { label: def.name, ref: def.read, commit: def.read, files: files(def.read) } : null, others: [] };
   for (const w of wts) {
-    const isHere = real(w.dir) === here;
-    const label = isHere ? 'this checkout' : `worktree ${basename(w.dir)}${w.branch ? '' : ' (detached)'}`;
-    out.others.push({ label, dir: w.dir, branch: w.branch, files: diskFiles(w.dir, paths), committed: w.branch ? files(w.branch) : new Map() });
+    const label = real(w.dir) === here ? 'this checkout' : `worktree ${basename(w.dir)}${w.branch ? '' : ' (detached)'}`;
+    const commit = w.branch ?? w.head;
+    out.others.push({ label, dir: w.dir, commit, files: diskFiles(w.dir, paths), committed: commit ? files(commit) : new Map() });
   }
-  for (const b of branches) out.others.push({ label: `branch ${short(b)}`, ref: b, branch: b, files: files(b) });
+  for (const b of branches) out.others.push({ label: `branch ${short(b)}`, ref: b, commit: b, files: files(b) });
+
+  // The files Superpowers ledgers name: one batch for every ref source, disk for worktrees.
+  const all = [out.def, ...out.others].filter(Boolean);
+  const asks = all.filter((s) => s.ref).flatMap((s) => namedPaths(s).map((p) => [s, p]));
+  const got = catBatch(root, asks.map(([s, p]) => `${s.ref}:${p}`));
+  for (const s of all) s.named = new Map();
+  asks.forEach(([s, p], i) => { if (got[i] !== null) s.named.set(p, got[i]); });
+  for (const s of all.filter((x) => x.dir)) {
+    for (const p of namedPaths(s)) { try { s.named.set(p, readFileSync(join(s.dir, p), 'utf8')); } catch { /* none */ } }
+  }
   return out;
 }
 
 // ── ledgers ──────────────────────────────────────────────────────────────────
-const normPlanRef = (s, dir) => {
-  let p = String(s ?? '').trim().replace(/^\.\//, '');
-  if (dir && p.startsWith('/')) { const d = real(dir); const r = real(p); if (r.startsWith(d + '/')) p = r.slice(d.length + 1); }
-  return p;
-};
-
-// Which SSDD plan a Superpowers ledger in `src` belongs to: the plan its first
-// line names, or the SSDD plan that the file it names mentions by path.
-// → { plan, info, named (that file's text) } | null.
-function ledgerPlan(root, src, path, allPlans) {
-  const info = parseProgress(src.files.get(path));
-  const named = normPlanRef(info.plan, src.dir);
-  if (!named) return null;
-  if (allPlans.has(named)) return { plan: named, info, named: src.files.get(named) ?? '' };
-  const text = namedFile(root, src, named) ?? '';
-  const plan = [...allPlans].find((p) => text.includes(p) || text.includes(basename(p)));
-  return plan ? { plan, info, named: text } : null;
-}
-function superpowersLedger(root, src, plan, allPlans) {
-  for (const path of src.files.keys()) {
-    if (!path.startsWith(`${SP_DIR}/`)) continue;
-    const link = ledgerPlan(root, src, path, allPlans);
-    if (link?.plan === plan) return { path, ...link };
+// Which SSDD plan each Superpowers ledger in `src` belongs to: the plan its
+// first line names, or the SSDD plan that the file it names mentions by path.
+// → Map<ledgerPath, { plan, info, named (that file's text) } | null>.
+function linkLedgers(src, allPlans) {
+  const links = new Map();
+  for (const [path, text] of src.files) {
+    if (!isLedger(path)) continue;
+    const info = parseProgress(text);
+    const named = normPlanRef(info.plan, src.dir);
+    let link = null;
+    if (named && allPlans.has(named)) link = { plan: named, info, named: src.files.get(named) ?? '' };
+    else if (named) {
+      const t = src.named.get(named) ?? '';
+      const plan = [...allPlans].find((p) => t.includes(p) || t.includes(basename(p)));
+      if (plan) link = { plan, info, named: t };
+    }
+    links.set(path, link);
   }
-  return null;
+  return links;
 }
-function namedFile(root, src, path) {
-  if (src.dir) { try { return readFileSync(join(src.dir, path), 'utf8'); } catch { return null; } }
-  return src.ref ? gitOut(root, 'show', `${src.ref}:${path}`) : null;
-}
-function ledgerPaths(paths, plan) {
-  const slug = basename(plan, '.md');
-  return [`${paths.ledgers}/${slug}-ledger.md`, `${SP_DIR}/${slug}/progress.md`];
+const linkedLedgers = (src, plan) => [...(src?.links ?? [])].filter(([, l]) => l?.plan === plan).map(([p]) => p);
+function superpowersLedger(src, plan) {
+  const path = linkedLedgers(src, plan)[0];
+  return path ? { path, ...src.links.get(path) } : null;
 }
 
-function progressText(root, src, plan, paths, allPlans) {
-  const sp = superpowersLedger(root, src, plan, allPlans);
+function progressText(src, plan, paths) {
+  const sp = superpowersLedger(src, plan);
   if (sp) {
     const { done, inReview } = sp.info;
     const total = countPlanTasks(sp.named);
@@ -195,18 +237,10 @@ function progressText(root, src, plan, paths, allPlans) {
     if (inReview) parts.push(`Task ${inReview} in review`);
     return parts.join(' · ');
   }
-  const ssdd = src.files.get(ledgerPaths(paths, plan)[0]);
+  const ssdd = src.files.get(ssddLedger(paths, plan));
   if (!ssdd) return '';
   const l = parseSsddLedger(ssdd);
   return l.next ? `next: ${l.next}` : (l.total && l.done === l.total ? 'all tasks done' : '');
-}
-
-// "<source>:<line>: <pattern>" when git ignores relPath in dir, else null.
-export function ledgerIgnoreRule(dir, relPath) {
-  if (git(dir, ['check-ignore', '-q', '--no-index', relPath]).status !== 0) return null;
-  const m = /^(.*?):(\d+):(.*?)\t/.exec(gitOut(dir, 'check-ignore', '-v', '--no-index', relPath) ?? '');
-  // A linked worktree reports the shared .git/info/exclude by its absolute path.
-  return m ? `${m[1].replace(/^.*\/(?=\.git\/)/, '')}:${m[2]}: ${m[3]}` : 'a git ignore rule';
 }
 
 // The leading upper-case words of an unknown Status ("IN REVIEW (PR #9)" →
@@ -218,13 +252,16 @@ function statusToken(raw) {
 }
 
 // ── the state ────────────────────────────────────────────────────────────────
+// A source works on a plan when its copy of the plan or of a ledger linked to
+// it differs from the default branch's, and that difference is its own:
+// uncommitted in a worktree, or commits on neither default ref.
 function working(root, def, notRefs, src, plan, paths) {
-  const watched = [plan, ...ledgerPaths(paths, plan)];
+  const watched = [...new Set([plan, ssddLedger(paths, plan), ...linkedLedgers(def, plan), ...linkedLedgers(src, plan)])];
   const differs = (a, b) => watched.some((p) => (a.get(p) ?? null) !== (b.get(p) ?? null));
   if (!differs(src.files, def.files)) return false;
   if (src.dir && differs(src.files, src.committed)) return true;
-  if (!src.branch) return false;
-  const r = gitOut(root, 'log', '--format=%h', '-1', src.branch, '--not', ...notRefs, '--', ...watched);
+  if (!src.commit) return false;
+  const r = gitOut(root, 'log', '--format=%h', '-1', src.commit, '--not', ...notRefs, '--', ...watched);
   return Boolean(r && r.trim());
 }
 
@@ -237,6 +274,7 @@ export function collect(repo) {
   const { def, others } = sources(root, paths, defInfo);
   const all = [def, ...others].filter(Boolean);
   const allPlans = new Set(all.flatMap((s) => [...s.files.keys()].filter((p) => posix.dirname(p) === paths.plans)));
+  for (const s of all) s.links = linkLedgers(s, allPlans);
   const rows = []; const unknown = []; const warnings = loaded.error ? [`! ${loaded.error}`] : [];
 
   for (const plan of [...allPlans].sort()) {
@@ -246,18 +284,19 @@ export function collect(repo) {
     const word = parsed.status.word;
     if (!word) { unknown.push(statusToken(parsed.status.raw)); continue; }
     if (!OPEN_WORDS.has(word)) continue;
-    let shown = home; let flagged = false;
-    if (onDefault && word === 'IN PROGRESS') {
-      const busy = others.find((s) => s.files.has(plan) || ledgerPaths(paths, plan).some((p) => s.files.has(p)) ? working(root, def, defInfo.not, s, plan, paths) : false);
-      if (busy) shown = busy; else flagged = true;
-    }
+    // The default branch's Status decides the listing; a source working on the
+    // plan supplies what's shown. Only IN PROGRESS with nobody on it is flagged.
+    const busy = onDefault ? others.find((s) => working(root, def, defInfo.not, s, plan, paths)) : null;
+    const shown = busy ?? home;
     const p = shown.files.has(plan) ? parsePlan(shown.files.get(plan)) : parsed;
+    const status = (busy && p.status.word) || word;
     const entries = p.criteria.filter((id) => p.entries.has(id));
     let since = '';
-    if (word === 'DRAFT' && home.ref) since = (gitOut(root, 'log', '-1', '--format=%cs', home.ref, '--', plan) ?? '').trim();
+    if (!busy && word === 'DRAFT' && home.ref) since = (gitOut(root, 'log', '-1', '--format=%cs', home.ref, '--', plan) ?? '').trim();
     rows.push({
-      path: plan, num: planNum(plan), slug: planSlug(plan), where: shown.label, status: word, statusRaw: parsed.status.raw,
-      onDefault: Boolean(onDefault), flagged, since, progress: progressText(root, shown, plan, paths, allPlans),
+      path: plan, num: planNum(plan), slug: planSlug(plan), where: shown.label, status, statusRaw: parsed.status.raw,
+      onDefault: Boolean(onDefault) && !busy, flagged: onDefault && word === 'IN PROGRESS' && !busy, since,
+      progress: progressText(shown, plan, paths),
       verified: entries.filter((id) => !p.entries.get(id).deferred).length, total: p.criteria.length,
       deferred: entries.filter((id) => p.entries.get(id).deferred).length, openQuestions: p.openQuestions,
     });
@@ -266,11 +305,10 @@ export function collect(repo) {
   // Ledgers: unlinked ones, and ones git ignores in a worktree.
   const unlinked = new Set(); const ignored = new Set();
   for (const s of all) {
-    for (const path of s.files.keys()) {
-      if (!path.startsWith(`${SP_DIR}/`)) continue;
-      const link = ledgerPlan(root, s, path, allPlans);
+    const rules = s.dir ? ignoreRules(s.dir, [...s.links.keys()]) : new Map();
+    for (const [path, link] of s.links) {
       if (!link) unlinked.add(path.split('/')[2]);
-      const rule = s.dir ? ledgerIgnoreRule(s.dir, path) : null;
+      const rule = rules.get(path);
       if (rule) ignored.add(`! ledger for ${link ? planNum(link.plan) : path.split('/')[2]} is ignored by git (${rule})`);
     }
   }
@@ -311,7 +349,7 @@ function rowLine(r, defaultRef) {
 
 export function render(state, { cap = null } = {}) {
   if (!state) return '';
-  const rows = [...state.plans].sort((a, b) => (ORDER[a.status] - ORDER[b.status]) ||
+  const rows = [...state.plans].sort((a, b) => ((ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3)) ||
     a.num.localeCompare(b.num, undefined, { numeric: true }));
   const header = `SSDD · ${rows.length ? plural(rows.length, 'open plan') : 'no open plans'}`;
   const body = rows.map((r) => `  ${rowLine(r, state.defaultRef)}`);
@@ -321,15 +359,20 @@ export function render(state, { cap = null } = {}) {
     const words = [...counts].sort((a, b) => b[1] - a[1]).map(([w, n]) => (n > 1 ? `${w} ×${n}` : w)).join(', ');
     body.push(`  ${plural(state.unknown.length, 'plan')} with a status outside the six (${words})`);
   }
-  body.push(...state.warnings.map((w) => `  ${w}`));
-  let lines = [header, ...body];
+  const notes = state.warnings.map((w) => `  ${w}`);
+  let lines = [header, ...body, ...notes];
   if (cap) {
     const size = (ls) => Buffer.byteLength(ls.join('\n') + '\n');
     if (lines.length > cap.lines || size(lines) > cap.bytes) {
+      // Warnings outrank rows: keep up to all but one of the free lines for them.
       const footer = (n) => `+${n} more: node .ssdd/hooks/work-state.mjs`;
-      let keep = body.slice(0, cap.lines - 2);
-      while (keep.length && size([header, ...keep, footer(body.length - keep.length)]) > cap.bytes) keep = keep.slice(0, -1);
-      lines = [header, ...keep, footer(body.length - keep.length)];
+      const room = cap.lines - 2;
+      let keepNotes = notes.slice(0, Math.max(0, room - 1));
+      let keepBody = body.slice(0, room - keepNotes.length);
+      const build = () => [header, ...keepBody, ...keepNotes, footer(body.length + notes.length - keepBody.length - keepNotes.length)];
+      while (size(build()) > cap.bytes && keepBody.length) keepBody = keepBody.slice(0, -1);
+      while (size(build()) > cap.bytes && keepNotes.length) keepNotes = keepNotes.slice(0, -1);
+      lines = build();
     }
   }
   return lines.join('\n') + '\n';
@@ -350,13 +393,28 @@ function sessionStart(repo, cursor) {
 }
 
 // ── the close check ──────────────────────────────────────────────────────────
-// Run by the pre-commit hook. A staged plan's Status must be one of the six; a
-// plan marked BUILT or SHIPPED needs a Verification entry per AC ID and its
-// ledger staged. Every run reminds to stage a Superpowers ledger that git
-// would track. Exit 1 blocks the commit.
+// Run by the pre-commit hook, on the repo git runs it in. A staged plan's
+// Status must be one of the six; a plan marked BUILT or SHIPPED needs a
+// Verification entry per AC ID and its ledger staged. A plan a merge brings in
+// unchanged was judged where it was committed, so it's skipped. Every run
+// reminds to stage a Superpowers ledger that git would track. Exit 1 blocks.
 const ALLOWED = 'DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED, ABANDONED';
-const isTracked = (root, p) => git(root, ['ls-files', '--error-unmatch', '--', p]).status === 0;
-const isUnstaged = (root, p) => git(root, ['diff', '--quiet', '--', p]).status === 1;
+
+// `git status --porcelain -z` → Set of paths that are untracked or have
+// unstaged changes.
+function needsAdd(root, pathspecs) {
+  const out = new Set();
+  const r = gitOut(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspecs) ?? '';
+  const recs = r.split('\0');
+  for (let i = 0; i < recs.length; i++) {
+    const rec = recs[i];
+    if (rec.length < 4) continue;
+    const xy = rec.slice(0, 2);
+    if (xy[0] === 'R' || xy[0] === 'C') i++; // the source path follows a rename
+    if (xy === '??' || xy[1] !== ' ') out.add(rec.slice(3));
+  }
+  return out;
+}
 
 function stagedCheck(repo) {
   const loaded = loadSsddConfig(repo);
@@ -365,19 +423,33 @@ function stagedCheck(repo) {
   const paths = loaded.cfg.paths ?? DEFAULT_PATHS;
   const say = (m) => process.stderr.write(`[ssdd-work-state] ${m}\n`);
   const z = gitOut(root, 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--', paths.plans) ?? '';
-  const staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
-  const src = { dir: root, files: diskFiles(root, paths) };
+  let staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
+  const mergeFile = (gitOut(root, 'rev-parse', '--git-path', 'MERGE_HEAD') ?? '').trim();
+  let heads = [];
+  try { heads = readFileSync(resolve(root, mergeFile), 'utf8').split('\n').filter((l) => /^[0-9a-f]{7,}$/.test(l)); } catch { /* not merging */ }
+  if (staged.length && heads.length) {
+    const index = shaMap(gitOut(root, 'ls-files', '-s', '-z', '--', ...staged));
+    const fromMerge = heads.map((h) => shaMap(gitOut(root, 'ls-tree', '-r', '-z', h, '--', ...staged)));
+    staged = staged.filter((p) => !fromMerge.some((m) => m.get(p) && m.get(p) === index.get(p)));
+  }
+  const src = { dir: root, files: diskFiles(root, paths), named: new Map() };
+  for (const p of namedPaths(src)) { try { src.named.set(p, readFileSync(join(root, p), 'utf8')); } catch { /* none */ } }
   const allPlans = new Set([...staged, ...[...src.files.keys()].filter((p) => posix.dirname(p) === paths.plans)]);
+  src.links = linkLedgers(src, allPlans);
+  const ledgersOnDisk = [...src.files.keys()].filter((p) => isLedger(p) || posix.dirname(p) === paths.ledgers);
+  const rules = ignoreRules(root, ledgersOnDisk);
+  const pending = needsAdd(root, [SP_DIR, paths.ledgers]);
+  const texts = catBatch(root, staged.map((p) => `:${p}`));
   let blocked = false;
   const handled = new Set();
-  for (const plan of staged) {
-    const p = parsePlan(gitOut(root, 'show', `:${plan}`) ?? '');
+  staged.forEach((plan, i) => {
+    const p = parsePlan(texts[i] ?? '');
     if (!p.status.word) {
       blocked = true;
       say(`${plan}: Status "${(p.status.raw ?? '').slice(0, 30)}" isn't one of ${ALLOWED}`);
-      continue;
+      return;
     }
-    if (p.status.word !== 'BUILT' && p.status.word !== 'SHIPPED') continue;
+    if (p.status.word !== 'BUILT' && p.status.word !== 'SHIPPED') return;
     if (!p.criteria.length) say(`${plan}: no AC IDs — close check skipped`);
     const missing = p.criteria.filter((id) => !p.entries.has(id));
     if (missing.length) {
@@ -385,27 +457,25 @@ function stagedCheck(repo) {
       say(`${plan}: ${missing.join(', ')} ${missing.length === 1 ? 'has' : 'have'} no Verification entry ` +
         '(an entry may be "DEFERRED (operator): <reason>")');
     }
-    const ledgers = [superpowersLedger(root, src, plan, allPlans)?.path, ledgerPaths(paths, plan)[0]]
-      .filter((l) => l && src.files.has(l));
-    for (const l of ledgers) {
+    for (const l of [superpowersLedger(src, plan)?.path, ssddLedger(paths, plan)].filter((x) => x && src.files.has(x))) {
       handled.add(l);
-      const rule = ledgerIgnoreRule(root, l);
-      if (rule) say(`${plan}: its ledger ${l} is ignored by git (${rule}), so it can't be committed`);
-      else if (!isTracked(root, l) || isUnstaged(root, l)) { blocked = true; say(`${plan}: ledger ${l} isn't staged: git add ${l}`); }
+      if (rules.get(l)) say(`${plan}: its ledger ${l} is ignored by git (${rules.get(l)}), so it can't be committed`);
+      else if (pending.has(l)) { blocked = true; say(`${plan}: ledger ${l} isn't staged: git add ${l}`); }
     }
-  }
+  });
   for (const l of src.files.keys()) {
-    if (!l.startsWith(`${SP_DIR}/`) || handled.has(l) || ledgerIgnoreRule(root, l)) continue;
-    if (!isTracked(root, l) || isUnstaged(root, l)) say(`reminder: git add ${l}`);
+    if (isLedger(l) && !handled.has(l) && !rules.get(l) && pending.has(l)) say(`reminder: git add ${l}`);
   }
   return blocked ? 1 : 0;
 }
 
 function main(argv) {
-  const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
   const start = argv.find((a) => a === '--session-start' || a.startsWith('--session-start='));
+  // The close check judges the repo git runs the hook in (its cwd), never an
+  // environment variable: a hook in a linked worktree must read that index.
+  if (argv.includes('--staged')) return stagedCheck(process.cwd());
+  const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
   if (start) return sessionStart(repo, start === '--session-start=cursor');
-  if (argv.includes('--staged')) return stagedCheck(repo);
   process.stdout.write(render(collect(repo)));
   return 0;
 }

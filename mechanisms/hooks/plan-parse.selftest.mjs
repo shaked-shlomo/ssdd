@@ -1,5 +1,8 @@
 // Tests for plan-parse: status words, criteria, Verification entries, ledgers.
 // Run: node --test mechanisms/hooks/plan-parse.selftest.mjs
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -7,6 +10,10 @@ import {
 } from './plan-parse.mjs';
 
 const plan = (parts) => parts.join('\n') + '\n';
+// The plan template: process/templates in the source tree, .ssdd/process/templates installed.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const TEMPLATE = [join(HERE, '..', '..', 'process', 'templates', 'plan-template.md'),
+  join(HERE, '..', 'process', 'templates', 'plan-template.md')].find((f) => existsSync(f));
 
 describe('parseStatus', () => {
   it('template line', () => {
@@ -61,6 +68,12 @@ describe('parsePlan', () => {
     ]));
     assert.equal(p.openQuestions, 1);
   });
+  it("the plan template's example lines are not Verification entries", { skip: !TEMPLATE }, () => {
+    const t = parsePlan(readFileSync(TEMPLATE, 'utf8'));
+    assert.equal(t.entries.size, 0, [...t.entries.keys()].join(','));
+    assert.deepEqual(t.criteria, ['AC1', 'AC2']);
+  });
+
   it('CRLF and BOM', () => {
     const lf = plan(['**Status:** BUILT — 2026-10-17', '## Acceptance criteria', '- **AC1** — a', '## Open questions', '1. q?',
       '## Verification', '- **AC1** — DEFERRED (operator): x']);

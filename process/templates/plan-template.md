@@ -34,9 +34,9 @@ or a concrete observation.>
 its REAL output. Every number is copied from a command run in that session —
 never from memory. A criterion that can't be checked yet (operator-gated) gets
 a DEFERRED entry saying what's left. The pre-commit check refuses BUILT or
-SHIPPED while any ID has no entry.>
-- **AC1** — `<command>` → <real output>
-- **AC2** — DEFERRED (operator): <what's left, and who runs it>
+SHIPPED while any ID has no entry. The two forms, one list item per ID:
+  `- **AC1** — <command> → <real output>`
+  `- **AC2** — DEFERRED (operator): <what's left, and who runs it>`>
 
 ## Deviations & discoveries
 <What changed vs. the plan and why; gotchas worth promoting to a rule or memory.>

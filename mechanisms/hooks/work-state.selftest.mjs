@@ -52,6 +52,18 @@ function planText({ status = 'DRAFT', ac = [], done = [], deferred = [], open = 
     '## Verification', ...done.map((id) => `- **${id}** — \`cmd\` → ok`), ...deferred.map((id) => `- **${id}** — DEFERRED (operator): later`), '',
   ].join('\n');
 }
+// Counts the git processes a run spawns, through a PATH shim in front of git.
+function countGit(args, opts = {}) {
+  const shim = join(base, 'shim');
+  const log = join(base, 'git-calls.log');
+  mkdirSync(shim, { recursive: true });
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  writeFileSync(join(shim, 'git'), `#!/bin/sh\necho x >> "${log}"\nexec "${realGit}" "$@"\n`);
+  chmodSync(join(shim, 'git'), 0o755);
+  rmSync(log, { force: true });
+  const r = run(args, { ...opts, extraEnv: { PATH: `${shim}:${process.env.PATH}` } });
+  return { ...r, calls: existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0 };
+}
 const progress = (planPath, lines) => [`# SDD ledger — plan: ${planPath}`, '', ...lines, ''].join('\n');
 
 beforeEach(() => {
@@ -90,6 +102,43 @@ describe('view', () => {
     assert.match(out, /^SSDD · 2 open plans/m);
     assert.match(out, /12 onboarding\s+IN PROGRESS \(worktree step-2\).*Tasks 1–2 done.*AC 1\/3 verified/);
     assert.match(out, /07 pricing\s+DRAFT since \d{4}-\d{2}-\d{2} · 1 open question\b/);
+  });
+
+  it('a DRAFT on main worked on in a worktree shows that work, from either checkout', () => {
+    put('.ssdd/plans/12-onboarding.md', planText({ status: 'DRAFT', ac: ['AC1', 'AC2'], open: ['q'] }));
+    commitAll('draft');
+    const wt = join(base, 'step-2');
+    git('worktree', 'add', '-q', '-b', 'b', wt);
+    put('.ssdd/plans/12-onboarding.md', planText({ status: 'IN PROGRESS', ac: ['AC1', 'AC2'], done: ['AC1'] }), wt);
+    put('.superpowers/sdd/12-onboarding/progress.md',
+      progress('.ssdd/plans/12-onboarding.md', ['Task 1: complete (a)', 'Task 2: complete (b)', 'Task 3: complete (c)']), wt);
+    for (const cwd of [dir, wt]) {
+      const { out } = run([], { cwd });
+      assert.match(out, /12 onboarding\s+IN PROGRESS \((worktree step-2|this checkout)\) · Tasks 1–3 done · AC 1\/2 verified/, out);
+    }
+  });
+
+  it('git calls stay bounded with many tracked ledgers', () => {
+    for (let i = 1; i <= 20; i++) {
+      const n = String(i).padStart(2, '0');
+      put(`.ssdd/plans/${n}-p.md`, planText({ status: 'SHIPPED' }));
+      put(`.superpowers/sdd/${n}-p/progress.md`, progress(`.ssdd/plans/${n}-p.md`, ['Task 1: complete (x)']));
+    }
+    for (let i = 21; i <= 30; i++) {
+      put(`.ssdd/plans/${i}-q.md`, planText({ status: 'SHIPPED' }));
+      put(`docs/superpowers/plans/${i}-q.md`, `SSDD plan: .ssdd/plans/${i}-q.md\n`);
+      put(`.superpowers/sdd/sp-${i}/progress.md`, progress(`docs/superpowers/plans/${i}-q.md`, ['Task 1: complete (x)']));
+    }
+    commitAll('many');
+    for (const b of ['b1', 'b2', 'b3', 'b4']) git('branch', b);
+    git('worktree', 'add', '-q', '-b', 'w1', join(base, 'w1'));
+    git('worktree', 'add', '-q', '-b', 'w2', join(base, 'w2'));
+    const view = countGit([]);
+    assert.equal(view.code, 0, view.err);
+    assert.ok(view.calls <= 40, `${view.calls} git calls for the view`);
+    const staged = countGit(['--staged']);
+    assert.equal(staged.code, 0, staged.err);
+    assert.ok(staged.calls <= 12, `${staged.calls} git calls for the close check`);
   });
 
   it('SSDD ledger next task', () => {
@@ -260,6 +309,31 @@ describe('stale status', () => {
     assert.match(run().out, /11 billing\s+IN PROGRESS on main, no branch working on it/);
   });
 
+  it('a branch advancing only an indirectly linked ledger counts as working', () => {
+    put('.ssdd/plans/14-guard.md', planText({ status: 'IN PROGRESS' }));
+    put('docs/superpowers/plans/2026-10-17-guard.md', 'SSDD plan: .ssdd/plans/14-guard.md\n\n### Task 1: a\n### Task 2: b\n');
+    put('.superpowers/sdd/2026-10-17-guard/progress.md', progress('docs/superpowers/plans/2026-10-17-guard.md', ['Task 1: complete (x)']));
+    commitAll('guard');
+    git('switch', '-q', '-c', 'g');
+    put('.superpowers/sdd/2026-10-17-guard/progress.md',
+      progress('docs/superpowers/plans/2026-10-17-guard.md', ['Task 1: complete (x)', 'Task 2: complete (y)']));
+    commitAll('task 2');
+    git('switch', '-q', 'main');
+    const { out } = run();
+    assert.match(out, /14 guard\s+IN PROGRESS \(branch g\) · Tasks 1–2 of 2 done/);
+    assert.doesNotMatch(out, /no branch working on it/);
+  });
+
+  it("a clean detached worktree at an old commit doesn't count as working", () => {
+    put('.ssdd/plans/11-billing.md', planText({ status: 'IN PROGRESS' }));
+    commitAll('a');
+    const old = git('rev-parse', 'HEAD');
+    put('.ssdd/plans/11-billing.md', planText({ status: 'IN PROGRESS', ac: ['AC1'], done: ['AC1'] }));
+    commitAll('b');
+    git('worktree', 'add', '-q', '--detach', join(base, 'review'), old);
+    assert.match(run().out, /11 billing\s+IN PROGRESS on main, no branch working on it/);
+  });
+
   it('BUILT and DRAFT never flagged; closed plans not listed', () => {
     put('.ssdd/plans/20-built.md', planText({ status: 'BUILT (operator steps remain)' }));
     put('.ssdd/plans/21-draft.md', planText({ status: 'DRAFT' }));
@@ -297,6 +371,16 @@ describe('session start', () => {
     assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
     assert.match(lines.at(-1), /^\+\d+ more: node \.ssdd\/hooks\/work-state\.mjs$/);
     assert.match(lines[0], /^SSDD · 40 open plans/);
+  });
+
+  it('warnings survive the cap', () => {
+    for (let i = 1; i <= 15; i++) put(`.ssdd/plans/${String(i).padStart(2, '0')}-p.md`, planText({ status: 'DRAFT' }));
+    put('.ssdd/plans/03-dup.md', planText({ status: 'DRAFT' }));
+    commitAll('many');
+    const { out } = run(['--session-start']);
+    assert.ok(out.trimEnd().split('\n').length <= 12, out);
+    assert.match(out, /! plans numbered 03: 03-dup\.md \(main\), 03-p\.md \(main\)/);
+    assert.match(out, /\+\d+ more: node \.ssdd\/hooks\/work-state\.mjs\n$/);
   });
 
   it('broken config and corrupt plan exit 0', () => {
@@ -420,6 +504,38 @@ describe('close check (--staged)', () => {
     assert.match(err, /\.claude\/plans\/62-trims\.md: AC1 has no Verification entry/);
   });
 
+  it('a merge bringing plans from main is not blocked by them', () => {
+    put('.ssdd/plans/01-old.md', planText({ status: 'DONE — legacy' }));
+    put('.ssdd/plans/02-built.md', planText({ status: 'BUILT', ac: ['AC1'] }));
+    commitAll('legacy');
+    git('switch', '-q', '-c', 'f');
+    put('feature.txt', 'f\n');
+    commitAll('feature');
+    git('switch', '-q', 'main');
+    put('.ssdd/plans/01-old.md', planText({ status: 'DONE — legacy', open: ['typo fixed'] }));
+    put('.ssdd/plans/02-built.md', planText({ status: 'BUILT', ac: ['AC1'], open: ['x'] }));
+    put('.ssdd/plans/03-new.md', planText({ status: 'CLOSED' }));
+    commitAll('main edits');
+    git('switch', '-q', 'f');
+    git('-c', 'commit.gpgsign=false', 'merge', '-q', '--no-commit', '--no-ff', 'main');
+    const clean = run(['--staged']);
+    assert.equal(clean.code, 0, clean.err);
+    put('.ssdd/plans/03-new.md', planText({ status: 'CLOSED again' }));
+    stage('.ssdd/plans/03-new.md');
+    const edited = run(['--staged']);
+    assert.equal(edited.code, 1, 'a plan the merge resolution edits is still checked');
+    assert.match(edited.err, /03-new\.md: Status "CLOSED again"/);
+  });
+
+  it('judges the repo at the cwd, not SSDD_PROJECT_DIR or CLAUDE_PROJECT_DIR', () => {
+    put('.ssdd/plans/12-x.md', planText({ status: 'BUILT', ac: ['AC1'] }));
+    stage('.ssdd/plans/12-x.md');
+    const other = join(base, 'other');
+    initRepo(other);
+    const r = run(['--staged'], { extraEnv: { SSDD_PROJECT_DIR: other, CLAUDE_PROJECT_DIR: other } });
+    assert.equal(r.code, 1, r.err);
+  });
+
   it('reminds to stage a Superpowers ledger on every run', () => {
     put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
     const { code, err } = run(['--staged']);
@@ -427,7 +543,7 @@ describe('close check (--staged)', () => {
     assert.match(err, /\[ssdd-work-state\] reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
   });
 
-  it('pre-commit: ledger exempt from the untracked block', { skip: !PRE_COMMIT }, () => {
+  function armPreCommit() {
     mkdirSync(join(dir, '.githooks'));
     writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
     chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
@@ -437,6 +553,21 @@ describe('close check (--staged)', () => {
     }
     writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
     git('config', 'core.hooksPath', '.githooks');
+  }
+  const commit = (msg) => spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-qm', msg], { cwd: dir, encoding: 'utf8', env: env() });
+
+  it('pre-commit: a ledger with a non-ASCII name is exempt too', { skip: !PRE_COMMIT }, () => {
+    armPreCommit();
+    put('.superpowers/sdd/07-עמוד מחיר/progress.md', progress('.ssdd/plans/07-עמוד מחיר.md', ['Task 1: complete (x)']));
+    put('README.md', 'z\n');
+    stage('README.md');
+    const ok = commit('x');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/07-עמוד מחיר\/progress\.md/);
+  });
+
+  it('pre-commit: ledger exempt from the untracked block', { skip: !PRE_COMMIT }, () => {
+    armPreCommit();
     put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
     put('README.md', 'z\n');
     stage('README.md');
