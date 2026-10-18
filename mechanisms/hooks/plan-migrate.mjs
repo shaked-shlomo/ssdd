@@ -136,9 +136,10 @@ export function todoFor(text, { ticked = [] } = {}) {
   lines.forEach((line, i) => {
     if (where[i].fence || !where[i].section?.startsWith('verification')) return;
     const m = head.exec(line);
-    // A line the check can't read is left to do while an ID it names has no
-    // entry; a kept range line with one entry per ID after it is fine.
-    if (m && (!entry.test(line) || /[–/,&-]/.test(m[1])) && idsIn(m[1]).some((id) => !p.entries.has(id))) unparsed.push(m[1]);
+    // A line the check can't read is left to do while a criterion it names has
+    // no entry; a kept range line with one entry per ID after it is fine.
+    const owed = (id) => p.criteria.includes(id) && !p.entries.has(id);
+    if (m && (!entry.test(line) || /[–/,&-]/.test(m[1])) && idsIn(m[1]).some(owed)) unparsed.push(m[1]);
   });
   if (unparsed.length) todo.push(`Verification lines cite IDs the close check can't read: ${unparsed.join(', ')} (write - **AC1** — …, one ID per line)`);
   return todo;

@@ -140,6 +140,11 @@ describe('todoFor', () => {
     const half = todoFor(plan(crit, ['- AC1–AC2 ✅ `cmd` → ok', '- **AC1** — see "`cmd` → ok" above.', '- **AC3** — ok']));
     assert.ok(half.some((x) => x.startsWith('Verification lines') && x.includes('AC1–AC2')), half.join(' | '));
   });
+  it('a range line needs entries only for the plan\'s own criteria', () => {
+    const t = todoFor(plan(['- **AC12** — a', '- **AC13** — b'], ['- [ ] **AC12b, AC13** release 2.',
+      '- **AC12** — DEFERRED (operator): release 2.', '- **AC13** — DEFERRED (operator): release 2.']));
+    assert.deepEqual(t, []);
+  });
   it('a clean closed plan has nothing to do', () => {
     assert.deepEqual(todoFor(plan(['- **AC1** — a'], ['- **AC1** — `cmd` → ok'])), []);
   });
