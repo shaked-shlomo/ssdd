@@ -336,7 +336,42 @@ describe('catalog', () => {
   });
 });
 
+describe('record', () => {
+  const LEDGER = '.ssdd/skills.json';
+  const ledger = () => JSON.parse(readFileSync(join(repo, LEDGER), 'utf8'));
+  it('creates the ledger and sets audited', () => {
+    const r = audit('record');
+    assert.equal(r.code, 0, r.out);
+    const l = ledger();
+    assert.equal(l.version, 1);
+    assert.deepEqual(l.sources, {});
+    assert.match(l.audited, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(r.out, new RegExp(`recorded: audited ${l.audited} in \\.ssdd/skills\\.json`));
+    assert.ok(readFileSync(join(repo, LEDGER), 'utf8').endsWith('}\n'));
+  });
+  it('keeps sources and overwrites an older date', () => {
+    put(repo, LEDGER, { version: 1, sources: { 'a/b': { sha: 'abc1234' } }, audited: '2020-01-01', note: 'x' });
+    assert.equal(audit('record').code, 0);
+    const l = ledger();
+    assert.deepEqual(l.sources, { 'a/b': { sha: 'abc1234' } });
+    assert.equal(l.note, 'x');
+    assert.notEqual(l.audited, '2020-01-01');
+  });
+  it('refuses an unreadable ledger', () => {
+    put(repo, LEDGER, '{ not json');
+    const r = audit('record');
+    assert.equal(r.code, 1);
+    assert.equal(readFileSync(join(repo, LEDGER), 'utf8'), '{ not json');
+  });
+});
+
 describe('SKILL.md', () => {
+  it('the last step records the run, even an empty one', () => {
+    const text = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+    assert.match(text, /skills-audit\.mjs record/);
+    assert.match(text, /even (one|a run) that (matched|found) nothing/);
+  });
+
   it('frontmatter has name and a plain description of at most 300 chars with no ": "', () => {
     const text = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8');
     const fm = text.match(/^---\n([\s\S]*?)\n---\n/)[1];

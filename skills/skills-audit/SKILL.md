@@ -9,7 +9,7 @@ Upstream best-practice skills are written for someone else's repo. Every
 source audited so far ships rules a hook or reviewer here would block, so
 none installs wholesale. This skill finds candidates, reads them at a pinned
 sha, and proposes a verdict per skill. It changes nothing until the user
-approves. The lifecycle it serves is in `.ssdd/process/SDD.md`.
+approves, except recording that it ran (step 7). The lifecycle it serves is in `.ssdd/process/SDD.md`.
 
 ## 1. Candidates (read-only)
 
@@ -141,3 +141,18 @@ stopping at step 4's question, so its suggestions join the proposal.
   3, then add them to the proposal.
 - **Otherwise:** say it exists and how to enable it,
   `/plugin install claude-code-setup@claude-plugins-official`.
+
+## 7. Record the run
+
+End every run with:
+
+```bash
+node .agents/skills/skills-audit/skills-audit.mjs record
+```
+
+That includes a run that found no candidates in step 1, and one where the
+user approved nothing: even one that matched nothing is a run. It sets
+`"audited"` to today in `.ssdd/skills.json` (creating the ledger if it's
+missing). Until it's set, `ssdd.mjs update`, `status` and the session-start
+view say `/skills-audit hasn't run here`. Commit the ledger with the rest of
+the run's changes.

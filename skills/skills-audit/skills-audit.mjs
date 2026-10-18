@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// /skills-audit helper (zero deps, read-only; run from the repo root).
+// /skills-audit helper (zero deps; read-only except `record`; run from the repo root).
 //   node .agents/skills/skills-audit/skills-audit.mjs [--offline] [--json]
 //       stack signals, catalog candidates, recorded vs upstream sha, name clashes
 //   node .agents/skills/skills-audit/skills-audit.mjs collisions <dir> [--json]
 //       lint-rule hits in a checked-out source's code samples; the house-rule files to read
+//   node .agents/skills/skills-audit/skills-audit.mjs record
+//       sets "audited" to today in .ssdd/skills.json (every run ends with it)
 // --catalog <file> and SSDD_HOME (default: the home dir) exist for tests.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -217,8 +219,32 @@ function printCollisions(r) {
   for (const f of r.houseRules) console.log(`  ${f}`);
 }
 
+// The run happened: `audited` is what `ssdd.mjs status`, `update` and the
+// work-state view check. Creates the ledger when it's missing; keeps the rest.
+function record() {
+  const p = join(root, '.ssdd/skills.json');
+  let ledger = { version: 1, sources: {} };
+  if (existsSync(p)) {
+    try {
+      ledger = JSON.parse(readFileSync(p, 'utf8'));
+      if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) throw new Error('not a JSON object');
+    } catch (e) {
+      console.error(`skills-audit: unreadable .ssdd/skills.json (${e.message}); fix it, then record again`);
+      process.exit(1);
+    }
+  }
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  ledger.audited = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(ledger, null, 2) + '\n');
+  console.log(`recorded: audited ${ledger.audited} in .ssdd/skills.json`);
+}
+
 const mode = args[0];
-if (mode === 'collisions') {
+if (mode === 'record') {
+  record();
+} else if (mode === 'collisions') {
   if (!args[1]) { console.error('usage: skills-audit.mjs collisions <dir> [--json]'); process.exit(2); }
   if (!existsSync(args[1]) || !statSync(args[1]).isDirectory()) { console.error('usage: skills-audit.mjs collisions <dir> [--json]  (<dir> must be an existing directory)'); process.exit(2); }
   const r = collisions(args[1]);
