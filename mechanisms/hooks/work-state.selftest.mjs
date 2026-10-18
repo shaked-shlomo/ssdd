@@ -44,12 +44,14 @@ function run(args = [], { cwd = dir, extraEnv = {} } = {}) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 // A plan in SSDD's format. status: the Status line text; ac: criteria IDs;
-// done: IDs with a Verification entry; deferred: IDs whose entry is DEFERRED.
-function planText({ status = 'DRAFT', ac = [], done = [], deferred = [], open = [] } = {}) {
+// done: IDs with a Verification entry; deferred: IDs whose entry is DEFERRED;
+// notRecorded: IDs whose entry is the migration's NOT RECORDED form.
+function planText({ status = 'DRAFT', ac = [], done = [], deferred = [], notRecorded = [], open = [] } = {}) {
   return [
     '# Plan', '', `**Status:** ${status}`, '', '## Open questions', ...open.map((q, i) => `${i + 1}. ${q}`), '',
     '## Acceptance criteria', ...ac.map((id) => `- **${id}** — criterion ${id}`), '',
-    '## Verification', ...done.map((id) => `- **${id}** — \`cmd\` → ok`), ...deferred.map((id) => `- **${id}** — DEFERRED (operator): later`), '',
+    '## Verification', ...done.map((id) => `- **${id}** — \`cmd\` → ok`), ...deferred.map((id) => `- **${id}** — DEFERRED (operator): later`),
+    ...notRecorded.map((id) => `- **${id}** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this.`), '',
   ].join('\n');
 }
 // Counts the git processes a run spawns, through a PATH shim in front of git.
@@ -88,6 +90,18 @@ function inProgressOnBranch(branch = 'b') {
 }
 
 describe('view', () => {
+  it('open plans show their not-recorded count', () => {
+    put('.ssdd/plans/05-legacy.md', planText({ status: 'IN PROGRESS', ac: ['AC1', 'AC2', 'AC3'], done: ['AC1'], notRecorded: ['AC2'] }));
+    commitAll('legacy');
+    git('branch', 'b5');
+    git('switch', '-q', 'b5');
+    put('.ssdd/plans/05-legacy.md', planText({ status: 'IN PROGRESS', ac: ['AC1', 'AC2', 'AC3'], done: ['AC1'], notRecorded: ['AC2'], open: ['q'] }));
+    commitAll('work');
+    git('switch', '-q', 'main');
+    const { out } = run();
+    assert.match(out, /05 legacy\s+IN PROGRESS.*AC 1\/3 verified · 1 not recorded/, out);
+  });
+
   it('lists open plans across main, a branch and a worktree', () => {
     put('.ssdd/plans/07-pricing.md', planText({ status: 'DRAFT', open: ['Which bucket?'] }));
     commitAll('draft');

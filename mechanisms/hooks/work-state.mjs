@@ -297,8 +297,9 @@ export function collect(repo) {
       path: plan, num: planNum(plan), slug: planSlug(plan), where: shown.label, status, statusRaw: parsed.status.raw,
       onDefault: Boolean(onDefault) && !busy, flagged: onDefault && word === 'IN PROGRESS' && !busy, since,
       progress: progressText(shown, plan, paths),
-      verified: entries.filter((id) => !p.entries.get(id).deferred).length, total: p.criteria.length,
-      deferred: entries.filter((id) => p.entries.get(id).deferred).length, openQuestions: p.openQuestions,
+      verified: entries.filter((id) => !p.entries.get(id).deferred && !p.entries.get(id).notRecorded).length, total: p.criteria.length,
+      deferred: entries.filter((id) => p.entries.get(id).deferred).length,
+      notRecorded: entries.filter((id) => p.entries.get(id).notRecorded).length, openQuestions: p.openQuestions,
     });
   }
 
@@ -340,6 +341,7 @@ function rowLine(r, defaultRef) {
   if (r.progress) details.push(r.progress);
   if (r.total) details.push(`AC ${r.verified}/${r.total} verified`);
   if (r.deferred) details.push(`${r.deferred} deferred`);
+  if (r.notRecorded) details.push(`${r.notRecorded} not recorded`);
   if (r.openQuestions) details.push(plural(r.openQuestions, 'open question'));
   let status = r.status;
   if (r.status === 'DRAFT' && r.since) status = `DRAFT since ${r.since}`;

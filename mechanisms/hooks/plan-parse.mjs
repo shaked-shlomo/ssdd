@@ -8,7 +8,8 @@
 //
 // Accepts the forms the injected projects already write: criteria as
 // `- [ ] AC1 …` (prizma) or `- **AC1** — …`, entries as `- **AC1** — …` or
-// `- **AC1 ✅ — …`. CRLF and a leading BOM parse the same as LF.
+// `- **AC1 ✅ — …`. An ID may carry a letter (`AC8b`); a checkbox may be
+// `[ ]`, `[x]`, `[~]` or `[-]`. CRLF and a leading BOM parse the same as LF.
 
 // Matched in this order, so IN PROGRESS wins over a later word in the line.
 export const STATUS_WORDS = ['IN PROGRESS', 'DRAFT', 'BUILT', 'SHIPPED', 'SUPERSEDED', 'ABANDONED'];
@@ -39,8 +40,11 @@ function sections(text) {
 }
 const linesOf = (secs, prefix) => secs.filter((s) => s.name.startsWith(prefix)).flatMap((s) => s.lines);
 
-const CRITERION = /^\s*[-*]\s+(?:\[[ xX]\]\s+)?(?:\*\*)?(AC\d+)\b/;
-const ENTRY = /^\s*[-*]\s+\*\*(AC\d+)\b/;
+// Regex sources shared with plan-migrate.mjs.
+export const AC_ID = 'AC\\d+[a-z]?';
+export const CHECKBOX = '\\[[ xX~-]\\]';
+const CRITERION = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?(?:\\*\\*)?(${AC_ID})\\b`);
+const ENTRY = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?\\*\\*(${AC_ID})\\b`);
 const ITEM = /^\s*(?:[-*]|\d+[.)])\s+(.*\S)/;
 
 export function parsePlan(text) {
@@ -53,7 +57,7 @@ export function parsePlan(text) {
   const entries = new Map();
   for (const line of linesOf(secs, 'verification')) {
     const m = ENTRY.exec(line);
-    if (m && !entries.has(m[1])) entries.set(m[1], { deferred: /\bDEFERRED\b/.test(line) });
+    if (m && !entries.has(m[1])) entries.set(m[1], { deferred: /\bDEFERRED\b/.test(line), notRecorded: /\bNOT RECORDED\b/.test(line) });
   }
   let openQuestions = 0;
   for (const line of linesOf(secs, 'open questions')) {

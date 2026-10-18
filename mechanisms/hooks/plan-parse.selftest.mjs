@@ -89,6 +89,22 @@ describe('parsePlan', () => {
   it('duplicate IDs are listed once', () => {
     assert.deepEqual(parsePlan(plan(['## Acceptance criteria', '- **AC1** — a', '- **AC1** — again'])).criteria, ['AC1']);
   });
+  it('suffix IDs and every checkbox parse', () => {
+    const p = parsePlan(plan([
+      '## Acceptance criteria', '- [~] **AC10 — x.** y', '- [x] AC6b — z', '- [-] AC2 q',
+      '## Verification', '- [ ] **AC8b** — ok',
+    ]));
+    assert.deepEqual(p.criteria, ['AC10', 'AC6b', 'AC2']);
+    assert.ok(p.entries.has('AC8b'));
+  });
+  it('NOT RECORDED is an entry, flagged', () => {
+    const p = parsePlan(plan(['## Acceptance criteria', '- **AC3** — c', '## Verification',
+      "- **AC3** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this."]));
+    assert.deepEqual(p.entries.get('AC3'), { deferred: false, notRecorded: true });
+  });
+  it('AC1 is not AC10', () => {
+    assert.deepEqual(parsePlan(plan(['## Acceptance criteria', '- **AC10** — x'])).criteria, ['AC10']);
+  });
 });
 
 describe('parseSsddLedger', () => {
