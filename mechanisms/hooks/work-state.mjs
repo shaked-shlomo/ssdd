@@ -5,11 +5,14 @@
 //   node .ssdd/hooks/work-state.mjs --session-start    capped, for a session-start hook
 //   node .ssdd/hooks/work-state.mjs --session-start=cursor   the same, as Cursor JSON
 //   node .ssdd/hooks/work-state.mjs --staged           the close check (pre-commit)
+//   node .ssdd/hooks/work-state.mjs --migrate          rewrite this checkout's plans for v3
+//   node .ssdd/hooks/work-state.mjs --migrate-check <ref>   what the migration lost or left
 //
 // Sources: the default branch (origin/HEAD as last fetched, else main, else
 // master, else the current branch), every other local branch (git objects),
 // and every worktree (its files on disk, uncommitted edits included). Never
-// fetches, never edits a plan. No .ssdd/config.json → prints nothing.
+// fetches, and edits plans only under --migrate. No .ssdd/config.json → the
+// view prints nothing.
 //
 // A plan on the default branch takes its Status from there; other copies only
 // say who is working on it. IN PROGRESS on the default branch with nothing
@@ -19,11 +22,12 @@
 // cat-file --batch for every blob and every file a ledger names, one
 // check-ignore per worktree; only the stale rule adds a log per busy copy.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_PATHS, loadSsddConfig } from './ssdd-config.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
+import { idRange, lostText, migratePlan, todoFor } from './plan-migrate.mjs';
 
 const SP_DIR = '.superpowers/sdd';
 const MAX_BUFFER = 256 * 1024 * 1024;
@@ -423,7 +427,6 @@ function stagedCheck(repo) {
   if (!loaded) return 0;
   const { root } = loaded;
   const paths = loaded.cfg.paths ?? DEFAULT_PATHS;
-  const say = (m) => process.stderr.write(`[ssdd-work-state] ${m}\n`);
   const z = gitOut(root, 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--', paths.plans) ?? '';
   let staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
   const mergeFile = (gitOut(root, 'rev-parse', '--git-path', 'MERGE_HEAD') ?? '').trim();
@@ -471,11 +474,78 @@ function stagedCheck(repo) {
   return blocked ? 1 : 0;
 }
 
+// ── the migration ────────────────────────────────────────────────────────────
+// `--migrate` rewrites this checkout's plans for v3 (SPEC.md → v3 → Part 2,
+// Clarify 15) and prints what each still needs from the agent pass.
+// `--migrate-check <ref>` is that pass's floor: every line removed since <ref>
+// survives as text, and nothing is left to do. Exit 2: no config, a config
+// error, or a bad ref.
+const say = (m) => process.stderr.write(`[ssdd-work-state] ${m}\n`);
+function migrationRepo(repo) {
+  const loaded = loadSsddConfig(repo);
+  if (!loaded) { say('no .ssdd/config.json here: not an SSDD repo'); return null; }
+  if (loaded.error) { say(`${loaded.error} — fix it first`); return null; }
+  return { root: loaded.root, paths: loaded.cfg.paths ?? DEFAULT_PATHS };
+}
+const plansIn = (files, paths) => [...files.keys()].filter((p) => posix.dirname(p) === paths.plans).sort();
+
+function migrate(repo) {
+  const r = migrationRepo(repo);
+  if (!r) return 2;
+  const files = diskFiles(r.root, r.paths);
+  const plans = plansIn(files, r.paths);
+  const out = [`SSDD migrate · ${r.paths.plans} · ${plural(plans.length, 'plan')}`];
+  let changed = 0;
+  for (const p of plans) {
+    const m = migratePlan(files.get(p));
+    if (m.changed) { writeFileSync(join(r.root, p), m.text); changed++; }
+    out.push(`  ${basename(p)}: ${m.changed ? m.changes.join('; ') : 'unchanged'}`, ...m.todo.map((t) => `    to do: ${t}`));
+  }
+  out.push(`${changed} changed, ${plans.length - changed} unchanged. Next: the agent pass in /migrate-plans.`);
+  process.stdout.write(out.join('\n') + '\n');
+  return 0;
+}
+
+function migrateCheck(repo, ref) {
+  if (!ref || ref.startsWith('-')) { say('usage: --migrate-check <ref>'); return 2; }
+  const r = migrationRepo(repo);
+  if (!r) return 2;
+  if (!refExists(r.root, ref)) { say(`unknown ref "${ref}"`); return 2; }
+  const listed = shaMap(gitOut(r.root, 'ls-tree', '-r', '-z', '--full-tree', ref, '--', r.paths.plans));
+  const old = [...listed.keys()].filter((p) => posix.dirname(p) === r.paths.plans && isPlanName(posix.basename(p)));
+  const before = new Map(catBatch(r.root, old.map((p) => listed.get(p))).map((t, i) => [old[i], t ?? '']));
+  const disk = diskFiles(r.root, r.paths);
+  const out = [`SSDD migrate-check · ${r.paths.plans} against ${ref}`];
+  let problems = 0;
+  for (const p of [...new Set([...old, ...plansIn(disk, r.paths)])].sort()) {
+    const now = disk.get(p);
+    const lines = [];
+    if (now === undefined) { lines.push('    deleted'); problems++; } else {
+      const was = before.get(p);
+      const lost = was === undefined ? [] : lostText(was, now);
+      const todo = todoFor(now, { ticked: was === undefined ? [] : migratePlan(was).ticked });
+      if (migratePlan(now).changed) todo.push('criteria still in the old format: run --migrate');
+      lines.push(...lost.map((l) => `    lost: ${l.trim()}`), ...todo.map((t) => `    to do: ${t}`));
+      problems += lost.length + todo.length;
+      const nr = [...parsePlan(now).entries].filter(([, e]) => e.notRecorded).map(([id]) => id);
+      if (nr.length) lines.push(`    not recorded: ${idRange(nr)}`);
+    }
+    if (lines.length) out.push(`  ${basename(p)}`, ...lines);
+  }
+  out.push(problems ? `migrate-check: ${plural(problems, 'problem')}` : 'migrate-check: ok');
+  process.stdout.write(out.join('\n') + '\n');
+  return problems ? 1 : 0;
+}
+
 function main(argv) {
   const start = argv.find((a) => a === '--session-start' || a.startsWith('--session-start='));
-  // The close check judges the repo git runs the hook in (its cwd), never an
-  // environment variable: a hook in a linked worktree must read that index.
+  // The close check and the migration act on the repo git runs in (the cwd),
+  // never an environment variable: a hook in a linked worktree must read that
+  // index, and a rewrite must land in the checkout it was run in.
   if (argv.includes('--staged')) return stagedCheck(process.cwd());
+  if (argv.includes('--migrate')) return migrate(process.cwd());
+  const check = argv.indexOf('--migrate-check');
+  if (check >= 0) return migrateCheck(process.cwd(), argv[check + 1]);
   const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
   if (start) return sessionStart(repo, start === '--session-start=cursor');
   process.stdout.write(render(collect(repo)));

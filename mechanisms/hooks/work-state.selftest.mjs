@@ -597,3 +597,128 @@ describe('close check (--staged)', () => {
     assert.doesNotMatch(blocked.stderr, /• \.superpowers/);
   });
 });
+
+// A pre-v3 plan: Status line, checkbox criteria, Verification lines as given.
+const oldPlan = (status, criteria, verification = []) =>
+  ['# Plan', '', `**Status:** ${status}`, '', '## Acceptance criteria', ...criteria, '', '## Verification', ...verification, ''].join('\n');
+const read = (rel, root = dir) => readFileSync(join(root, rel), 'utf8');
+
+describe('migrate', () => {
+  function fixtures(folder = '.ssdd/plans') {
+    put(`${folder}/01-a.md`, oldPlan('IN PROGRESS', ['- [x] **AC1 — t.** r', '- [ ] **AC2 — u.** s']));
+    put(`${folder}/02-b.md`, oldPlan('DRAFT', ['- [ ] x', '- [ ] y']));
+    put(`${folder}/03-c.md`, planText({ status: 'SHIPPED', ac: ['AC1'], done: ['AC1'] }));
+    commitAll('old plans');
+  }
+
+  it('rewrites fixture plans and prints the to-do', () => {
+    fixtures();
+    const { code, out } = run(['--migrate']);
+    assert.equal(code, 0, out);
+    assert.match(out, /^SSDD migrate · \.ssdd\/plans · 3 plans$/m);
+    assert.match(out, /^ {2}01-a\.md: AC1–AC2: checkbox dropped$/m);
+    assert.match(out, /^ {4}to do: no Verification entry: AC1$/m);
+    assert.match(out, /^ {2}02-b\.md: numbered AC1–AC2$/m);
+    assert.match(out, /^ {2}03-c\.md: unchanged$/m);
+    assert.match(out, /^2 changed, 1 unchanged\. Next: the agent pass in \/migrate-plans\.$/m);
+    assert.match(read('.ssdd/plans/01-a.md'), /^- \*\*AC1\*\* — \*\*t\.\*\* r$/m);
+    assert.match(read('.ssdd/plans/02-b.md'), /^- \*\*AC2\*\* — y$/m);
+  });
+
+  it('run twice: byte-equal', () => {
+    fixtures();
+    run(['--migrate']);
+    const names = readdirSync(join(dir, '.ssdd/plans'));
+    const once = names.map((n) => read(`.ssdd/plans/${n}`));
+    const { code, out } = run(['--migrate']);
+    assert.equal(code, 0);
+    assert.match(out, /^0 changed, 3 unchanged\./m);
+    assert.deepEqual(names.map((n) => read(`.ssdd/plans/${n}`)), once);
+  });
+
+  it('paths.plans honored', () => {
+    put('.ssdd/config.json', '{"paths":{"plans":".claude/plans"}}\n');
+    fixtures('.claude/plans');
+    const { out } = run(['--migrate']);
+    assert.match(out, /^SSDD migrate · \.claude\/plans · 3 plans$/m);
+    assert.match(read('.claude/plans/02-b.md'), /^- \*\*AC1\*\* — x$/m);
+  });
+
+  it('acts on the cwd, refuses without config', () => {
+    fixtures();
+    const other = join(base, 'other');
+    initRepo(other);
+    put('.ssdd/config.json', '{}\n', other);
+    put('.ssdd/plans/01-z.md', oldPlan('DRAFT', ['- [ ] z']), other);
+    commitAll('other', other);
+    run(['--migrate'], { extraEnv: { CLAUDE_PROJECT_DIR: other, SSDD_PROJECT_DIR: other } });
+    assert.match(read('.ssdd/plans/02-b.md'), /\*\*AC1\*\*/);
+    assert.equal(read('.ssdd/plans/01-z.md', other), oldPlan('DRAFT', ['- [ ] z']));
+
+    put('.ssdd/plans/04-d.md', oldPlan('DRAFT', ['- [ ] d']));
+    put('.ssdd/config.json', '{ not json');
+    const broken = run(['--migrate']);
+    assert.equal(broken.code, 2);
+    assert.match(broken.err, /\.ssdd\/config\.json is not valid JSON/);
+    assert.equal(read('.ssdd/plans/04-d.md'), oldPlan('DRAFT', ['- [ ] d']));
+    rmSync(join(dir, '.ssdd/config.json'));
+    assert.equal(run(['--migrate']).code, 2);
+  });
+});
+
+describe('migrate-check', () => {
+  it('a pure reformat passes', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('SHIPPED (PR #1)', ['- [x] AC1 a', '- [x] AC2 b'], ['- AC1 ✅ — `cmd` → ok', '- **AC2** — ok']));
+    commitAll('old');
+    run(['--migrate']);
+    put('.ssdd/plans/01-a.md', read('.ssdd/plans/01-a.md').replace('- AC1 ✅ — ', '- **AC1** ✅ — '));
+    const { code, out } = run(['--migrate-check', 'HEAD']);
+    assert.equal(code, 0, out);
+    assert.match(out, /^migrate-check: ok$/m);
+  });
+
+  it('a deleted Verification line fails', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('SHIPPED (PR #1)', ['- [x] AC1 a', '- [x] AC2 b'], ['- **AC1** — `cmd` → 12 pass', '- **AC2** — ok']));
+    commitAll('old');
+    run(['--migrate']);
+    put('.ssdd/plans/01-a.md', read('.ssdd/plans/01-a.md').replace('- **AC1** — `cmd` → 12 pass\n', ''));
+    const { code, out } = run(['--migrate-check', 'HEAD']);
+    assert.equal(code, 1);
+    assert.match(out, /^ {4}lost: - \*\*AC1\*\* — `cmd` → 12 pass$/m);
+    assert.match(out, /^migrate-check: \d+ problems?$/m);
+  });
+
+  it('ticked at base, no entry', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('IN PROGRESS', ['- [ ] AC1 a', '- [x] AC2 b']));
+    commitAll('old');
+    run(['--migrate']);
+    const { code, out } = run(['--migrate-check', 'HEAD']);
+    assert.equal(code, 1);
+    assert.match(out, /^ {2}01-a\.md$/m);
+    assert.match(out, /^ {4}to do: no Verification entry: AC2$/m);
+  });
+
+  it('lists NOT RECORDED entries', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('IN PROGRESS', ['- [ ] AC1 a', '- [ ] AC2 b', '- [x] AC3 c']));
+    commitAll('old');
+    run(['--migrate']);
+    put('.ssdd/plans/01-a.md', read('.ssdd/plans/01-a.md') +
+      "- **AC3** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this.\n");
+    const { code, out } = run(['--migrate-check', 'HEAD']);
+    assert.equal(code, 0, out);
+    assert.match(out, /^ {4}not recorded: AC3$/m);
+  });
+
+  it('an unmigrated plan is a problem', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('DRAFT', ['- [ ] a']));
+    commitAll('old');
+    const { code, out } = run(['--migrate-check', 'HEAD']);
+    assert.equal(code, 1);
+    assert.match(out, /to do: criteria still in the old format: run --migrate/);
+  });
+
+  it('bad ref exits 2', () => {
+    assert.equal(run(['--migrate-check', 'no-such-ref']).code, 2);
+    assert.equal(run(['--migrate-check']).code, 2);
+  });
+});
