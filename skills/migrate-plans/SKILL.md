@@ -35,8 +35,11 @@ and what is left, and it is the only record of which criteria were ticked
 ## 3. The agent pass, plan by plan
 
 For many plans, fan out: one agent per batch of about six, each given this
-section, its plans' report lines and today's date. Its sources are the
-plan's own text, and git for Status. Nothing else.
+section, its plans' report lines and today's date. They share one working
+tree, so each writes only its own plans' files, edit by edit: never a copy,
+restore or checkout of the folder. Do the References paragraph after them,
+in one agent, since it edits other files. Sources are the plan's own text,
+and git for Status. Nothing else.
 
 **Status.** A Status already from the six stays. Otherwise find the plan's
 merge in git (`git log --oneline <default> -- <plan>`, the commits and PRs
