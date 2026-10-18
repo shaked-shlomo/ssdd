@@ -8,8 +8,11 @@
 //
 // Accepts the forms the injected projects already write: criteria as
 // `- [ ] AC1 …` (prizma) or `- **AC1** — …`, entries as `- **AC1** — …` or
-// `- **AC1 ✅ — …`. An ID may carry a letter (`AC8b`); a checkbox may be
-// `[ ]`, `[x]`, `[~]` or `[-]`. CRLF and a leading BOM parse the same as LF.
+// `- **AC1 ✅ — …`. An ID may carry a letter (`AC8b`). A criterion may carry
+// any checkbox (`[ ]`, `[x]`, `[~]`, `[-]`); an entry only a ticked one (`[x]`,
+// `[~]`). Criteria are the top-level items of the criteria section, and a line
+// in a code fence belongs to no section. CRLF and a leading BOM parse the same
+// as LF.
 
 // Matched in this order, so IN PROGRESS wins over a later word in the line.
 export const STATUS_WORDS = ['IN PROGRESS', 'DRAFT', 'BUILT', 'SHIPPED', 'SUPERSEDED', 'ABANDONED'];

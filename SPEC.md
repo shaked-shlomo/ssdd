@@ -2019,6 +2019,19 @@ at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
   --ref HEAD` into a scratch repo), `node --test .ssdd/hooks/*.selftest.mjs`
   → 546 tests, 545 pass, 1 skipped (the source-tree-only config-example
   check), 0 fail.
+- **`update` to 3.x** (Scope; no AC) — a scratch repo installed at `v2.7.0`
+  (adapters `claude-code` and `cursor`) with one old-format plan, then
+  `update --to HEAD` at `4e1a2e2`:
+  - exit 0, "unchanged: 24", "updated (12)", "added (8)", including
+    `.ssdd/hooks/plan-migrate.mjs` and `.agents/skills/migrate-plans/SKILL.md`
+  - 0 conflict markers and 0 `.ssdd-new` files; `.claude/settings.json`
+    has the same sha256, and the `"SessionStart": [` template diff is printed
+  - output ends with `── Upgrade steps (manual), from the CHANGELOG:` /
+    `v3.0.0:` and the `/migrate-plans`, `SessionStart` and `/skills-audit`
+    steps, then `onboarding: 1 plan in the old format: run /migrate-plans`
+    and `onboarding: /skills-audit hasn't run here`
+  - in that layout, `node --test .ssdd/hooks/*.selftest.mjs` → 546 tests,
+    545 pass, 1 skipped, 0 fail
 - **Node 18** — DEFERRED (operator). There's no Node 18 on this machine, and
   CI runs on a push, which waits for the owner. No API newer than Node 18
   was added (`Array.prototype.at` is 16.6+).
@@ -2072,6 +2085,8 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
     entries from today's code and tests ("Passed in the run above" for
     test names the plan never records), and added research notes.
   - **The recipe:** five entry shapes, all resting on the plan's own text.
+  - **Not yet run:** the final text, with the rules below, has had no
+    fresh agent run end to end. Prizma's real migration will be its first.
   - **Added from the prizma run:**
     - a partial line for a passage that closes half a criterion
     - a DEFERRED head for a line that says the criterion isn't met (open,

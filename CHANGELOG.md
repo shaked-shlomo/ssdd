@@ -50,8 +50,9 @@ v3. VERSION and the tag wait for the owner's go-ahead.
   is the agent pass: entries cite their IDs from the plan's own record,
   Status words become one of the six (checked against git, the old text
   kept), references gain IDs, and a criterion nothing closes gets `NOT
-  RECORDED (migrated <date>)`. `--migrate-check <ref>` is its floor: no
-  removed text the new file doesn't keep, nothing left to do.
+  RECORDED (migrated <date>)`. `--migrate-check <ref>` is its floor: every
+  removed line kept under one of its IDs (a ❌, ☐ or `[ ]` still saying not
+  met), nothing left to do.
 - **Onboarding lines.** The view, `status` and `update` say `N plans in the
   old format: run /migrate-plans` and `/skills-audit hasn't run here` until
   each step is done. `skills-audit.mjs record` sets `"audited"` in
@@ -66,10 +67,14 @@ v3. VERSION and the tag wait for the owner's go-ahead.
 - Templates: criteria are `- **AC1** — …` with no checkbox; Verification
   entries cite the IDs, with a `DEFERRED (operator)` form. The ledger
   template's finished example row is ticked.
-- The plan parser reads IDs with a letter (`AC8b`), `[~]` and `[-]`
-  checkboxes and checkboxed Verification entries, all found in prizma. A
-  `NOT RECORDED` entry counts as an entry, not as verified; open plans show
-  their not-recorded count.
+- The plan parser reads what prizma writes: IDs with a letter (`AC8b`),
+  `[~]` and `[-]` checkboxes on criteria, and Verification entries ticked
+  `[x]` or `[~]`. An unticked `- [ ] **AC1** — …` is still no entry.
+  Criteria are the top-level items of the criteria section (a sub-bullet
+  naming an ID isn't one), a line headed by a run of IDs (`AC1–AC3`) is no
+  ID's entry, and a `##` line inside a code fence starts no section. A `NOT
+  RECORDED` entry counts as an entry, not as verified; open plans show their
+  not-recorded count.
 - SDD.md, the templates, `/new-plan` and the AGENTS template name the
   folders by setting ("the plans folder (`paths.plans`, default
   `.ssdd/plans`)").
