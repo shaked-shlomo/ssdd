@@ -1,27 +1,31 @@
 ---
 name: new-plan
-description: Creates the next numbered SSDD plan in .ssdd/plans/ from the template, or syncs a finished one back. Use when a plan is approved (e.g. leaving plan mode), when starting numbered work, or when the user says "sync the plan".
+description: Creates the next numbered SSDD plan in the plans folder (paths.plans in .ssdd/config.json) from the template, or syncs a finished one back. Use when a plan is approved (e.g. leaving plan mode), when starting numbered work, or when the user says "sync the plan".
 ---
 
 # New plan / plan sync
 
 Plans are the repo's cross-session record: one file per plan,
-`.ssdd/plans/NN-kebab-slug.md`. The harness's plan UI (if any) is where a plan
+`<plans>/NN-kebab-slug.md`, where `<plans>` is the plans folder
+(`paths.plans` in `.ssdd/config.json`, default `.ssdd/plans`). Ledgers go in
+the ledgers folder (`paths.ledgers`, default `.ssdd/ledgers`). The harness's
+plan UI (if any) is where a plan
 is approved; this skill writes it to the repo and keeps it in sync. What a
 plan must contain, and why, is `.ssdd/process/SDD.md` §2.
 
 ## Creating
 
-1. **Number** = highest existing `NN-` + 1, counting open branches too
-   (`git fetch` first):
-   `{ ls .ssdd/plans/; git log --all --name-only --format= -- .ssdd/plans/; } | sed 's|.*/||' | grep -oE '^[0-9]+' | sort -n | tail -1`
+1. **Number:** `git fetch`, then `node .ssdd/hooks/work-state.mjs --next-plan`.
+   It reads `paths.plans` and prints `next plan: <plans>/NN-<slug>.md`, the
+   highest existing `NN-` + 1 across every worktree and every ref git knows.
    Never reuse, skip or backfill a number.
-2. **Strays:** a file in `.ssdd/plans/` that isn't `NN-*.md` breaks the
-   convention. Point it out (number it or fold it in); don't add more.
-3. **Write** `.ssdd/plans/NN-<slug>.md` from
+2. **Strays:** it also prints `stray in <plans>: …` for a file that isn't
+   `NN-*.md`, which breaks the convention. Point it out (number it or fold
+   it in); don't add more.
+3. **Write** `<plans>/NN-<slug>.md` from
    `.ssdd/process/templates/plan-template.md`: run the clarify pass (SDD.md §2),
    then write the acceptance criteria, each with an `AC<n>` ID, before any code.
-4. For a multi-task plan, start the ledger from
+4. For a multi-task plan, start `<ledgers>/NN-<slug>-ledger.md` from
    `.ssdd/process/templates/task-ledger-template.md`.
 5. Stage the plan with the work's first commit (the pre-commit hook blocks on
    untracked files).

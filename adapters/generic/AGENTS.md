@@ -9,10 +9,11 @@ everything (e.g. `npm run check`).>
 
 ## Workflow: SSDD
 
-Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan in
-`.ssdd/plans/` (`/new-plan`), a clarify pass and acceptance criteria before
-code, a ledger per multi-task plan, and verification that closes each
-criterion with real command output.
+Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan in the
+plans folder (`paths.plans` in `.ssdd/config.json`, default `.ssdd/plans`;
+`/new-plan`), a clarify pass and acceptance criteria before code, a ledger
+per multi-task plan, and verification that closes each criterion with real
+command output.
 Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.
 
 - **Evidence:** before reporting progress, check each claim against a tool

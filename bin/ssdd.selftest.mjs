@@ -719,3 +719,30 @@ describe('upgrade steps and onboarding', () => {
     assert.doesNotMatch(r.out, /onboarding:/);
   });
 });
+
+describe('paths everywhere', () => {
+  it('install creates the folders the config names', () => {
+    put(tgt, '.ssdd/config.json', '{ "routing": [], "paths": { "plans": ".claude/plans" } }\n');
+    assert.equal(ssdd('install', tgt).code, 0);
+    assert.ok(existsSync(join(tgt, '.claude/plans')));
+    assert.ok(existsSync(join(tgt, '.ssdd/specs')));
+    assert.ok(!existsSync(join(tgt, '.ssdd/plans')));
+  });
+
+  it('docs name the paths setting', () => {
+    const repo = join(dirname(SCRIPT), '..');
+    const files = ['process', 'skills', 'adapters'].flatMap((d) => {
+      const walk = (rel) => readdirSync(join(repo, rel), { withFileTypes: true })
+        .flatMap((e) => (e.isDirectory() ? walk(`${rel}/${e.name}`) : [`${rel}/${e.name}`]));
+      return walk(d);
+    });
+    const bad = [];
+    for (const f of files) {
+      readFileSync(join(repo, f), 'utf8').split('\n').forEach((line, i) => {
+        if (/\.ssdd\/(plans|specs|ledgers)\b/.test(line) && !/default/.test(line)) bad.push(`${f}:${i + 1}: ${line.trim()}`);
+      });
+    }
+    assert.deepEqual(bad, []);
+  });
+});
+

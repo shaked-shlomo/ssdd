@@ -29,7 +29,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ARM_HOOK, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
+import { ARM_HOOK, DEFAULT_PATHS, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
@@ -305,10 +305,12 @@ function install(target) {
   }
   const log = (m) => console.log(`  ${m}`);
   console.log(`Installing SSDD v${version} (${ref} ${commit.slice(0, 7)}) into ${target} — adapters: ${adapters.join(',')}`);
-  for (const d of ['.ssdd/plans', '.ssdd/specs', '.ssdd/ledgers']) mkdirSync(join(target, d), { recursive: true });
   for (const [t, s] of Object.entries(p.managed)) writeFile(join(target, t), readFileSync(join(tree, s)), join(tree, s));
   log(`wrote     ${Object.keys(p.managed).length} framework file(s)`);
   for (const [t, s] of Object.entries(p.seeded)) seedOne(target, t, tree, s, log);
+  // The folders the config names (a project's own config may move them).
+  const paths = loadSsddConfig(target)?.cfg?.paths ?? DEFAULT_PATHS;
+  for (const d of Object.values(paths)) mkdirSync(join(target, d), { recursive: true });
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, p, tree));
   log(`locked    ${LOCK} @ v${version}`);

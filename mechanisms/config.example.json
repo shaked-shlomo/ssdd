@@ -11,8 +11,9 @@
   ],
 
   "paths": {
-    "$comment": "Where plans and ledgers live, repo-relative. Read by the work-state view and the close check (.ssdd/hooks/work-state.mjs). Defaults shown.",
+    "$comment": "Where plans, specs and ledgers live, repo-relative. Read by the work-state view, the close check, --next-plan and the migration (.ssdd/hooks/work-state.mjs); the process docs and skills name these settings. Defaults shown.",
     "plans": ".ssdd/plans",
+    "specs": ".ssdd/specs",
     "ledgers": ".ssdd/ledgers"
   },
 

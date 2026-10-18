@@ -17,7 +17,8 @@
 //   reviewGate.reviewerModelSets  [reviewerModels] when it is a non-empty list
 //   gitGuard.block*         off only when the config says false
 //   gitGuard.extraRules     as given
-//   paths.plans / .ledgers  repo-relative, defaults .ssdd/plans, .ssdd/ledgers
+//   paths.plans / .specs / .ledgers  repo-relative; defaults .ssdd/plans,
+//                           .ssdd/specs, .ssdd/ledgers
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -36,9 +37,9 @@ const SECTIONS = [
   ['paths', isObject, 'an object'],
 ];
 
-// Where plans and ledgers live, repo-relative. A key that isn't a non-empty
-// string keeps its default.
-export const DEFAULT_PATHS = Object.freeze({ plans: '.ssdd/plans', ledgers: '.ssdd/ledgers' });
+// Where plans, specs and ledgers live, repo-relative. A key that isn't a
+// non-empty string keeps its default.
+export const DEFAULT_PATHS = Object.freeze({ plans: '.ssdd/plans', specs: '.ssdd/specs', ledgers: '.ssdd/ledgers' });
 function buildPaths(paths) {
   const out = { ...DEFAULT_PATHS };
   for (const k of Object.keys(DEFAULT_PATHS)) {

@@ -10,7 +10,10 @@ You are picking up <what> in <project>. Read the project instructions file and
 `.ssdd/process/SDD.md` first. This is <a spec → plan piece of work | a plan's
 next task | a drive-by fix>, because <why>. <Use a git worktree if the checkout
 is shared.> The next free numbers are spec `NN` and plan `NN` — check
-`.ssdd/specs/`, `.ssdd/plans/` and open branches before taking them.
+the specs folder (`paths.specs` in `.ssdd/config.json`, default `.ssdd/specs`),
+the plans folder (`paths.plans`, default `.ssdd/plans`) and open branches
+before taking them; `node .ssdd/hooks/work-state.mjs --next-plan` gives the
+plan number.
 
 ## The problem
 

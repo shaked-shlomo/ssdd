@@ -767,3 +767,36 @@ describe('onboarding', () => {
     assert.doesNotMatch(run().out, /skills-audit/);
   });
 });
+
+describe('next plan', () => {
+  it('reads paths.plans and counts other branches', () => {
+    put('.ssdd/config.json', '{"paths":{"plans":".claude/plans"}}\n');
+    put('.claude/plans/03-a.md', planText());
+    commitAll('a');
+    git('switch', '-q', '-c', 'x');
+    put('.claude/plans/07-b.md', planText());
+    commitAll('b');
+    git('switch', '-q', 'main');
+    put('.claude/plans/notes.md', 'n\n');
+    const { code, out } = run(['--next-plan']);
+    assert.equal(code, 0, out);
+    assert.match(out, /^next plan: \.claude\/plans\/08-<slug>\.md$/m);
+    assert.match(out, /^stray in \.claude\/plans: notes\.md \(not NN-\*\.md\)$/m);
+  });
+
+  it('counts a plan only another worktree has on disk', () => {
+    put('.ssdd/plans/02-a.md', planText());
+    commitAll('a');
+    const wt = join(base, 'wt');
+    git('worktree', 'add', '-q', '-b', 'w', wt);
+    put('.ssdd/plans/05-new.md', planText(), wt);
+    assert.match(run(['--next-plan']).out, /^next plan: \.ssdd\/plans\/06-<slug>\.md$/m);
+  });
+
+  it('starts at 01', () => {
+    const { code, out } = run(['--next-plan']);
+    assert.equal(code, 0);
+    assert.equal(out, 'next plan: .ssdd/plans/01-<slug>.md\n');
+  });
+});
+

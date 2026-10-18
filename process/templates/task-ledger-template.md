@@ -1,7 +1,7 @@
 # Plan NN — <title> — task ledger
 
-Plan: `.ssdd/plans/NN-<slug>.md`
-Spec: `.ssdd/specs/NN-<slug>-spec.md`
+Plan: `<plans>/NN-<slug>.md` (the plans folder: `paths.plans`, default `.ssdd/plans`)
+Spec: `<specs>/NN-<slug>-spec.md` (the specs folder: `paths.specs`, default `.ssdd/specs`)
 Branch: `<branch>`. Started <YYYY-MM-DD>. BASE commit `<hash>`.
 Execution: <inline | subagent-driven>; per task <who reviews: spec+quality
 reviewer, plus every reviewer the gate names>.

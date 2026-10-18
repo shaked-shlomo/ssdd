@@ -7,6 +7,7 @@
 //   node .ssdd/hooks/work-state.mjs --staged           the close check (pre-commit)
 //   node .ssdd/hooks/work-state.mjs --migrate          rewrite this checkout's plans for v3
 //   node .ssdd/hooks/work-state.mjs --migrate-check <ref>   what the migration lost or left
+//   node .ssdd/hooks/work-state.mjs --next-plan        the next free plan number
 //
 // Sources: the default branch (origin/HEAD as last fetched, else main, else
 // master, else the current branch), every other local branch (git objects),
@@ -546,6 +547,31 @@ function migrateCheck(repo, ref) {
   return problems ? 1 : 0;
 }
 
+// ── the next plan number ─────────────────────────────────────────────────────
+// Highest `NN-` in the plans folder + 1, across every worktree's disk and every
+// ref's history (`git log --all`), so parallel branches don't take one number
+// twice. Also names files in this checkout's plans folder that aren't NN-*.md.
+function nextPlan(repo) {
+  const r = migrationRepo(repo);
+  if (!r) return 2;
+  const names = new Set();
+  const here = new Set();
+  for (const d of [r.root, ...worktrees(r.root).map((w) => w.dir)]) {
+    let list = [];
+    try { list = readdirSync(join(d, r.paths.plans)); } catch { /* none */ }
+    for (const n of list) { names.add(n); if (d === r.root) here.add(n); }
+  }
+  const logged = gitOut(r.root, '-c', 'core.quotePath=false', 'log', '--all', '--name-only', '--format=', '--', r.paths.plans) ?? '';
+  for (const p of logged.split('\n')) if (p && posix.dirname(p) === r.paths.plans) names.add(posix.basename(p));
+  const nums = [...names].map((n) => /^(\d+)/.exec(n)?.[1]).filter(Boolean).map(Number);
+  const out = [`next plan: ${r.paths.plans}/${String(Math.max(0, ...nums) + 1).padStart(2, '0')}-<slug>.md`];
+  for (const n of [...here].sort()) {
+    if (!n.startsWith('.') && !/^\d+-.+\.md$/.test(n)) out.push(`stray in ${r.paths.plans}: ${n} (not NN-*.md)`);
+  }
+  process.stdout.write(out.join('\n') + '\n');
+  return 0;
+}
+
 function main(argv) {
   const start = argv.find((a) => a === '--session-start' || a.startsWith('--session-start='));
   // The close check and the migration act on the repo git runs in (the cwd),
@@ -555,6 +581,7 @@ function main(argv) {
   if (argv.includes('--migrate')) return migrate(process.cwd());
   const check = argv.indexOf('--migrate-check');
   if (check >= 0) return migrateCheck(process.cwd(), argv[check + 1]);
+  if (argv.includes('--next-plan')) return nextPlan(process.cwd());
   const repo = process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR || process.cwd();
   if (start) return sessionStart(repo, start === '--session-start=cursor');
   process.stdout.write(render(collect(repo)));

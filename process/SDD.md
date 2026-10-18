@@ -4,6 +4,12 @@ One lifecycle for every non-trivial piece of work. "Non-trivial" = anything
 whose scope you couldn't state, verify, and revert in a single sitting; a
 one-line fix doesn't need a plan, a new feature or subsystem always does.
 
+**Folders.** Plans, specs and ledgers live where `.ssdd/config.json` →
+`paths` puts them: the plans folder (`paths.plans`, default `.ssdd/plans`),
+the specs folder (`paths.specs`, default `.ssdd/specs`) and the ledgers
+folder (`paths.ledgers`, default `.ssdd/ledgers`). Below, `<plans>`,
+`<specs>` and `<ledgers>` name them.
+
 ```
 brainstorm ──▶ spec ──▶ plan (clarify pass, criteria first) ──▶ task ledger
                                                                     │
@@ -19,7 +25,7 @@ propose 2–3 approaches with trade-offs; converge on one. For work spanning
 multiple independent subsystems, decompose first — each sub-project gets its
 own spec → plan → implementation cycle.
 
-## 1. Spec (`.ssdd/specs/NN-<slug>-spec.md`)
+## 1. Spec (`<specs>/NN-<slug>-spec.md`)
 
 The validated design, written **before** the plan, from
 [templates/spec-template.md](templates/spec-template.md). The load-bearing
@@ -29,11 +35,12 @@ Y"), not just outcomes.
 
 Small work may skip the spec and go straight to a plan; never skip the plan.
 
-## 2. Plan (`.ssdd/plans/NN-<slug>.md`)
+## 2. Plan (`<plans>/NN-<slug>.md`)
 
 One numbered markdown file per plan, `NN-kebab-slug.md`. Next number = highest
-existing `NN-` prefix + 1 (check with a command, not memory) — across `main`
-**and open branches/PRs**, since parallel worktrees race for the same number.
+existing `NN-` prefix + 1 (check with a command, not memory:
+`node .ssdd/hooks/work-state.mjs --next-plan`) — across `main` **and open
+branches/PRs**, since parallel worktrees race for the same number.
 Never reuse, skip, or backfill numbers; never add unnumbered files to the
 plans directory.
 
@@ -52,7 +59,7 @@ Each gets an ID (`- **AC1** — …`) that its Verification entry cites later.
 
 Template: [templates/plan-template.md](templates/plan-template.md).
 
-## 3. Task ledger (`.ssdd/ledgers/NN-<slug>-ledger.md`)
+## 3. Task ledger (`<ledgers>/NN-<slug>-ledger.md`)
 
 For multi-task plans, the ledger is the cross-session execution record — one
 checkbox line per task carrying: the commit hash(es), spec-compliance ✅,
@@ -152,7 +159,7 @@ the operator checklist recorded.
 ## Handover (work that crosses sessions)
 
 When work must continue in a fresh session before it has a plan — or a plan's
-next step needs a clean context — write `.ssdd/specs/HANDOVER-<slug>.md` from
+next step needs a clean context — write `<specs>/HANDOVER-<slug>.md` from
 [templates/handover-template.md](templates/handover-template.md): a
 self-contained opening prompt, verified against a named commit, that states
 the problem with file:line evidence, what is decided, what is not, and the
