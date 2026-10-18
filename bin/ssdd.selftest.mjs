@@ -663,3 +663,59 @@ describe('session-start wiring in the adapter templates', () => {
     assert.ok(readFileSync(join(ADAPTERS, 'generic', 'AGENTS.md'), 'utf8').includes(LINE));
   });
 });
+
+describe('upgrade steps and onboarding', () => {
+  function release(version, changelog, { tag = true } = {}) {
+    put(src, 'VERSION', `${version}\n`);
+    put(src, 'CHANGELOG.md', changelog);
+    commitAll(src, `v${version}`);
+    if (tag) git(src, 'tag', `v${version}`);
+  }
+  const OLD = '\n## [2.0.0]\n\n- per-file stamps\n';
+  const UPGRADE = '### Upgrade\n- Run /migrate-plans once.\n- Add the SessionStart entry.\n';
+  const installed = () => { assert.equal(ssdd('install', tgt).code, 0); commitAll(tgt, 'install ssdd'); };
+
+  it('update across 3.0.0 prints its Upgrade section', () => {
+    installed();
+    release('3.0.0', `# Changelog\n\n## [3.0.0] — 2026-10-20\n\n### Added\n- x\n\n${UPGRADE}${OLD}`);
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /── Upgrade steps \(manual\), from the CHANGELOG:\nv3\.0\.0:\n- Run \/migrate-plans once\.\n- Add the SessionStart entry\.\n/);
+  });
+
+  it('an update within a version prints no Upgrade block', () => {
+    installed();
+    release('2.0.1', `# Changelog\n\n## [2.0.1] — 2026-10-20\n\n- a fix\n${OLD}`);
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /Upgrade steps/);
+  });
+
+  it('a +sha target counts an unreleased section', () => {
+    installed();
+    release('2.0.0', `# Changelog\n\n## [3.0.0] — unreleased\n\n${UPGRADE}${OLD}`, { tag: false });
+    const r = ssdd('update', tgt, '--to', git(src, 'rev-parse', 'HEAD'));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Upgrade steps \(manual\)[\s\S]*v3\.0\.0:\n- Run \/migrate-plans once\./);
+  });
+
+  it('status and update print the onboarding lines', () => {
+    installed();
+    put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DRAFT\n\n## Acceptance criteria\n- [ ] a\n');
+    commitAll(tgt, 'old plan');
+    const OLD_LINE = /^onboarding: 1 plan in the old format: run \/migrate-plans$/m;
+    const AUDIT_LINE = /^onboarding: \/skills-audit hasn't run here$/m;
+    let r = ssdd('status', tgt);
+    assert.match(r.out, OLD_LINE);
+    assert.match(r.out, AUDIT_LINE);
+    release('2.0.1', `# Changelog\n\n## [2.0.1]\n\n- a fix\n${OLD}`);
+    r = ssdd('update', tgt);
+    assert.match(r.out, OLD_LINE);
+    assert.match(r.out, AUDIT_LINE);
+    put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DRAFT\n\n## Acceptance criteria\n- **AC1** — a\n');
+    put(tgt, '.ssdd/skills.json', '{"version":1,"sources":{},"audited":"2026-10-18"}\n');
+    commitAll(tgt, 'migrated, audited');
+    r = ssdd('status', tgt);
+    assert.doesNotMatch(r.out, /onboarding:/);
+  });
+});

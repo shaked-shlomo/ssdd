@@ -30,7 +30,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARM_HOOK, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
-import { ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
+import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
 // Superpowers writes this file as `*` when none exists (create-only); SSDD's
@@ -326,14 +326,40 @@ function merge3(local, base, up, t, vOld, vNew) {
   return { conflicts: r.status, out: r.stdout };
 }
 
-function changelogBetween(tree, from, to) {
+// CHANGELOG sections after `from` up to `to`. A `+sha` target is a commit past
+// its VERSION, so it also carries the sections headed "unreleased".
+function changelogSections(tree, from, to) {
   const f = join(tree, 'CHANGELOG.md');
-  if (!existsSync(f)) return '';
-  const parts = readFileSync(f, 'utf8').split(/^(?=## \[?\d+\.\d+\.\d+)/m);
-  return parts.filter((s) => {
-    const m = /^## \[?(\d+\.\d+\.\d+)/.exec(s);
-    return m && cmpVersion(m[1], from) > 0 && cmpVersion(m[1], to) <= 0;
-  }).join('').trim();
+  if (!existsSync(f)) return [];
+  const dev = String(to).includes('+');
+  return readFileSync(f, 'utf8').split(/^(?=## \[?\d+\.\d+\.\d+)/m).filter((s) => {
+    const m = /^## \[?(\d+\.\d+\.\d+)\]?([^\n]*)/.exec(s);
+    if (!m || cmpVersion(m[1], from) <= 0) return false;
+    return cmpVersion(m[1], to) <= 0 || (dev && /unreleased/i.test(m[2]));
+  });
+}
+const changelogBetween = (tree, from, to) => changelogSections(tree, from, to).join('').trim();
+
+// Each crossed version's `### Upgrade…` subsection, oldest first: the manual
+// steps a MAJOR needs (CHANGELOG.md's header says they live there).
+function upgradeSteps(tree, from, to) {
+  return changelogSections(tree, from, to).reverse().map((s) => {
+    const body = [];
+    let inside = false;
+    for (const line of s.split('\n')) {
+      if (/^#{2,3} /.test(line)) inside = /^### Upgrade/i.test(line);
+      else if (inside) body.push(line);
+    }
+    const text = body.join('\n').trim();
+    return text ? `v${/^## \[?(\d+\.\d+\.\d+)/.exec(s)[1]}:\n${text}` : '';
+  }).filter(Boolean);
+}
+
+// The onboarding steps still open: the work-state view's onboarding lines.
+function onboarding(target) {
+  let lines = [];
+  try { lines = collect(target)?.onboarding ?? []; } catch { /* no view, no lines */ }
+  return lines.map((l) => `onboarding: ${l}`);
 }
 
 function update(target) {
@@ -426,6 +452,10 @@ function update(target) {
   for (const n of notes) console.log(`\n${n}`);
   const log2 = changelogBetween(newTree, lock.ssdd, version);
   if (log2) console.log(`\n── CHANGELOG since v${lock.ssdd}:\n${log2}`);
+  const steps = upgradeSteps(newTree, lock.ssdd, version);
+  if (steps.length) console.log(`\n── Upgrade steps (manual), from the CHANGELOG:\n${steps.join('\n\n')}`);
+  const open = onboarding(target);
+  if (open.length) console.log(`\n${open.join('\n')}`);
   console.log(`\nlocked ${LOCK} @ v${version}. Review with: git -C '${target}' diff`);
   if (rows.conflict.length || rows.sidecar.length) process.exit(1);
 }
@@ -562,6 +592,7 @@ function status(target) {
     console.log(`up to date with the newest release in ${SRC} (${latest})`);
   }
   gateWarnings(target);
+  for (const l of onboarding(target)) console.log(l);
   if (opt.skills) skillsDrift(target);
   if (conflicted.length || sidecars.length) process.exit(1);
 }
