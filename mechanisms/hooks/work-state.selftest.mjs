@@ -411,6 +411,17 @@ describe('session start', () => {
     assert.match(out, /^ {2}! \/skills-audit hasn't run here$/m);
   });
 
+  it('onboarding lines outrank other warnings under the cap', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('DRAFT', ['- [ ] a']));
+    for (let i = 1; i <= 10; i++) put(`.superpowers/sdd/x${i}/progress.md`, progress(`.ssdd/plans/9${i}-gone.md`, ['Task 1: complete (x)']));
+    put('.ssdd/skills.json', '{"version":1,"sources":{}}\n');
+    commitAll('ledgers and an old plan');
+    const { out } = run(['--session-start']);
+    assert.ok(out.trimEnd().split('\n').length <= 12, out);
+    assert.match(out, /! 1 plan in the old format: run \/migrate-plans/);
+    assert.match(out, /! \/skills-audit hasn't run here/);
+  });
+
   it('broken config and corrupt plan exit 0', () => {
     put('.ssdd/plans/01-junk.md', Buffer.from([0, 255, 254, 0, 10, 13, 0]));
     commitAll('junk');

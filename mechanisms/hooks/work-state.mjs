@@ -337,11 +337,12 @@ export function collect(repo) {
   }
 
   // Onboarding steps still open (SPEC.md → v3 → Part 2); `update` and
-  // `status` print the same lines.
+  // `status` print the same lines. They come right after a config error, so
+  // the session-start cap keeps them over ledger and numbering warnings.
   const onboarding = [];
   if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate-plans`);
   if (!skillsAudited(root)) onboarding.push("/skills-audit hasn't run here");
-  warnings.push(...onboarding.map((l) => `! ${l}`));
+  warnings.splice(loaded.error ? 1 : 0, 0, ...onboarding.map((l) => `! ${l}`));
   return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 
