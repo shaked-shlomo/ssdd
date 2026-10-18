@@ -187,6 +187,26 @@ describe('lostText', () => {
     assert.deepEqual(lostText(plan([], ['- **AC1** — `cmd` → 12 pass', '- **AC2** — ok']), plan([], ['- **AC2** — ok'])),
       ['- **AC1** — `cmd` → 12 pass']);
   });
+  it('an entry replaced while its text survives under another ID is lost', () => {
+    const before = plan([], ['- **AC2** — PASS', '- **AC3** — PASS (see run)']);
+    const after = plan([], ["- **AC2** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this.", '- **AC3** — PASS (see run)']);
+    assert.deepEqual(lostText(before, after), ['- **AC2** — PASS']);
+  });
+  it('a not-met mark must survive, or become DEFERRED or NOT RECORDED', () => {
+    assert.deepEqual(lostText(plan([], ['- AC6 ❌ — the live run failed: 3/10']), plan([], ['- **AC6** ✅ — the live run failed: 3/10'])),
+      ['- AC6 ❌ — the live run failed: 3/10']);
+    assert.deepEqual(lostText(plan([], ['- [ ] **AC7** — pending prod']), plan([], ['- [x] **AC7** — pending prod'])),
+      ['- [ ] **AC7** — pending prod']);
+    assert.deepEqual(lostText(plan([], ['- [ ] **AC7** — pending prod']), plan([], ['- **AC7** — DEFERRED (operator): pending prod'])), []);
+    assert.deepEqual(lostText(plan([], ['- AC6 ❌ — failed']), plan([], ['- **AC6** — DEFERRED (plan 43): ❌ — failed'])), []);
+  });
+  it('a deleted verdict-only line is lost', () => {
+    assert.deepEqual(lostText(plan([], ['- AC3 ✅', '- **AC4** — ok']), plan([], ['- **AC4** — ok'])), ['- AC3 ✅']);
+    assert.deepEqual(lostText(plan([], ['- AC3 ✅']), plan([], ['- **AC3** ✅'])), []);
+  });
+  it('a Status naming an ID keeps its text after "was:"', () => {
+    assert.deepEqual(lostText(plan([], [], 'AC6 FAILED — 2026-10-17'), plan([], [], 'BUILT — migrated 2026-10-18; was: AC6 FAILED — 2026-10-17')), []);
+  });
   it('an added NOT RECORDED line loses nothing', () => {
     assert.deepEqual(lostText(plan([]), plan([], ["- **AC3** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this."])), []);
   });

@@ -5,7 +5,8 @@
 //   todoFor(text, opts)    what the agent pass still has to do for a plan
 //   needsMigration(text)   "old format": criteria to rewrite, or a closed plan
 //                          with an ID that has no Verification entry
-//   lostText(old, new)     removed lines whose text the new file doesn't keep
+//   lostText(old, new)     removed lines the new file doesn't keep (same IDs,
+//                          same text, a not-met mark still there)
 //   idRange(ids)           ['AC1','AC2','AC3','AC5'] → 'AC1–AC3, AC5'
 //
 // Only top-level items of `## Acceptance criteria` change: the section's
@@ -173,17 +174,40 @@ function bare(line) {
     .trim();
 }
 
+// The IDs a line is headed by, after quote and list markers, a checkbox and
+// bold. A Status line has none ("**Status:** AC6 FAILED" names no entry).
+function headIds(line) {
+  const s = line.replace(/^\s*(?:>\s*)*/, '').replace(/^(?:[-*+]|\d+[.)])\s+/, '')
+    .replace(new RegExp(`^${CHECKBOX}\\s*`), '').replace(/^\*\*/, '');
+  if (/^Status:/i.test(s.replace(/\*\*/g, ''))) return [];
+  const m = ID_HEAD.exec(s);
+  return m ? idsIn(m[0]) : [];
+}
+// A Verification line that says a criterion isn't met, and the marks a new
+// line may carry it on.
+const NOT_MET = /❌|☐|^\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\[ \]/;
+const STILL_OPEN = /❌|☐|\[ \]|\bDEFERRED\b|\bNOT RECORDED\b/;
+
+// A removed line is kept when a line of the new file carries its text: under
+// one of the same IDs when it was headed by IDs, and, for a Verification line
+// that said "not met", still saying so (❌, ☐, [ ], DEFERRED, NOT RECORDED).
 export function lostText(oldText, newText) {
   const before = split(oldText).lines;
   const after = split(newText).lines;
   const left = new Map();
   for (const l of after) left.set(l, (left.get(l) ?? 0) + 1);
-  const kept = after.map(bare).filter(Boolean).join(' ');
+  const where = scan(before);
+  const candidates = after.map((l) => ({ l, bare: bare(l), ids: headIds(l) }));
   const lost = [];
-  for (const l of before) {
-    if (left.get(l)) { left.set(l, left.get(l) - 1); continue; }
+  before.forEach((l, i) => {
+    if (left.get(l)) { left.set(l, left.get(l) - 1); return; }
     const b = bare(l);
-    if (b && !kept.includes(b)) lost.push(l);
-  }
+    const ids = headIds(l);
+    if (!b && !ids.length) return;
+    const notMet = where[i].section?.startsWith('verification') && NOT_MET.test(l);
+    const kept = candidates.some((c) => (!ids.length || c.ids.some((id) => ids.includes(id)))
+      && (!notMet || STILL_OPEN.test(c.l)) && c.bare.includes(b));
+    if (!kept) lost.push(l);
+  });
   return lost;
 }
