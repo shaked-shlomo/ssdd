@@ -1982,9 +1982,11 @@ at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
   - **The view:** after a fast-forward of the clone's `main` to the
     migration, `work-state.mjs` → no old-format line and no
     status-outside-the-six line, 0.132 s (0.154 s at `4951153`). It still prints `! /skills-audit
-    hasn't run here` (prizma has no `skills.json`), and it flags 9 IN
-    PROGRESS plans that git shows merged (see the Status ruling in
-    Deviations).
+    hasn't run here` (prizma has no `skills.json`). It also flags 9 IN
+    PROGRESS plans as having nothing working on them; the clone has no
+    other branches. The verifiers found 7 of those merged (17, 18, 20,
+    29-studio, 32, 34 and 36), while 38 and 43 have work left. See the
+    Status ruling in Deviations.
   - **The real repo:** `git -C ~/Developer/prizma status --porcelain`
     stays empty at `441a9e6`.
 - **AC15** — a scratch repo installed from this branch (`install … claude-code
@@ -2113,7 +2115,8 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
 - **Status ruling.** A Status already from the six stays, even when git
   shows the plan merged. The migration formats; Part 1's view flags an IN
   PROGRESS nothing is working on, and Part 1's Scope leaves editing Status
-  to people. On prizma that is 9 plans for the owner to re-status.
+  to people. On prizma that leaves 7 merged plans for the owner to
+  re-status.
 
 ## Part 3 — a cheaper gate
 
