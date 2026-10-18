@@ -25,6 +25,19 @@ const SEP = /^\s*(?:[—–:.-](?=\s|$))?\s*/;
 // One ID or a run of them (`AC1–AC3`, `AC1/AC2`), as a regex source.
 const ID_RUN = `${AC_ID}(?:\\s*[–/,&-]\\s*${AC_ID})*\\b`;
 const num = (id) => Number(/\d+/.exec(id)[0]);
+// The IDs a run names: `AC1–AC3` → AC1, AC2, AC3; `AC2/AC3` → AC2, AC3.
+function idsIn(run) {
+  const parts = run.split(/\s*([–/,&-])\s*/);
+  const ids = [];
+  for (let k = 0; k < parts.length; k += 2) {
+    const [prev, sep, id] = [parts[k - 2], parts[k - 1], parts[k]];
+    if (prev && /[–-]/.test(sep) && /^AC\d+$/.test(prev) && /^AC\d+$/.test(id)) {
+      for (let n = num(prev) + 1; n < num(id); n++) ids.push(`AC${n}`);
+    }
+    ids.push(id);
+  }
+  return ids;
+}
 
 // Lines without a BOM and with LF endings, plus how to put both back.
 function split(text) {
@@ -123,7 +136,9 @@ export function todoFor(text, { ticked = [] } = {}) {
   lines.forEach((line, i) => {
     if (where[i].fence || !where[i].section?.startsWith('verification')) return;
     const m = head.exec(line);
-    if (m && (!entry.test(line) || /[–/,&-]/.test(m[1]))) unparsed.push(m[1]);
+    // A line the check can't read is left to do while an ID it names has no
+    // entry; a kept range line with one entry per ID after it is fine.
+    if (m && (!entry.test(line) || /[–/,&-]/.test(m[1])) && idsIn(m[1]).some((id) => !p.entries.has(id))) unparsed.push(m[1]);
   });
   if (unparsed.length) todo.push(`Verification lines cite IDs the close check can't read: ${unparsed.join(', ')} (write - **AC1** — …, one ID per line)`);
   return todo;

@@ -132,6 +132,14 @@ describe('todoFor', () => {
     assert.match(item, /AC1, AC2-AC3/);
     assert.match(item, /- \*\*AC1\*\* — …/);
   });
+  it('a kept range line is fine once each ID has an entry', () => {
+    const crit = ['- **AC1** — a', '- **AC2** — b', '- **AC3** — c'];
+    const done = todoFor(plan(crit, ['- AC1–AC2 ✅ `cmd` → ok', '- **AC1** — see "`cmd` → ok" above.',
+      '- **AC2** — see "`cmd` → ok" above.', '- AC3 ✅ — ok', '- **AC3** — see "ok" above.']));
+    assert.deepEqual(done, []);
+    const half = todoFor(plan(crit, ['- AC1–AC2 ✅ `cmd` → ok', '- **AC1** — see "`cmd` → ok" above.', '- **AC3** — ok']));
+    assert.ok(half.some((x) => x.startsWith('Verification lines') && x.includes('AC1–AC2')), half.join(' | '));
+  });
   it('a clean closed plan has nothing to do', () => {
     assert.deepEqual(todoFor(plan(['- **AC1** — a'], ['- **AC1** — `cmd` → ok'])), []);
   });

@@ -59,9 +59,11 @@ says are met. Each gets exactly one line, in the first shape that fits:
 
 1. The plan has a Verification line for it in another form: re-prefix that
    line, `- **AC3** — <its text, unchanged>`. Only the head changes (list
-   marker, checkbox, bold, the ID); a ✅ may stay.
+   marker, checkbox, bold, the ID); a ✅ may stay. When that line says the
+   criterion is still open, pending or deferred, the head is
+   `- **AC3** — DEFERRED (operator): <its text, unchanged>`.
 2. One line or passage covers several IDs (`AC1–AC3`, `AC2/AC3`, "Unit
-   criteria (…)"): keep it, and add one line per ID right after it,
+   criteria (…)"): keep it as it is, and add one line per ID right after it,
    `- **AC2** — see "<its first words>" above.`
 3. Prose closes it without its ID: add `- **AC4** — see "<that passage's first words>" above.`
 4. The plan says it is still open, pending or deferred:
