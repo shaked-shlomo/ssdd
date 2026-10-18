@@ -1916,12 +1916,13 @@ onboarding steps are still open.
 ### Verification
 
 *Verified 2026-10-18 on branch `claude/goofy-faraday-0bc0ee` (cut from local
-`main` at `71c95e4`), code at `701cad5`. Node 24.15.0. Selftest counts:
-`plan-migrate` 29, `plan-parse` 26, `work-state` 63, `ssdd-config` 15,
-`bin/ssdd` 56, `bin/skills-audit` 27, all passing.*
+`main` at `71c95e4`). First at `701cad5`; every check below was re-run at
+`4951153`, after the final review's fix pass. Node 24.15.0. Selftest counts
+at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
+`ssdd-config` 15, `bin/ssdd` 56, `bin/skills-audit` 27, all passing.*
 
 - **AC13** — `node --test mechanisms/hooks/plan-migrate.selftest.mjs
-  mechanisms/hooks/work-state.selftest.mjs` → 92 tests, 92 pass. Named
+  mechanisms/hooks/work-state.selftest.mjs` → 101 tests, 101 pass. Named
   cases:
   - `migratePlan`: "checkbox forms become canonical, numbers kept",
     "keeps AC8b", "a bold title that wraps keeps its ID (prizma 03, 05,
@@ -1932,8 +1933,12 @@ onboarding steps are still open.
     `to do:` lines), "run twice: byte-equal" (the second run prints
     `0 changed, 3 unchanged` and every plan's bytes are equal),
     "paths.plans honored", "acts on the cwd, refuses without config"
-  - `lostText`: "a deleted Verification line is returned", and a
-    reformatted criterion, entry, Status or split range loses nothing
+  - `lostText`: "a deleted Verification line is returned", "a not-met
+    mark must survive, or become DEFERRED or NOT RECORDED", "a deleted
+    verdict-only line is lost", and a reformatted criterion, entry, Status
+    or split range loses nothing
+  - On real data: `--migrate` over the 43 migrated prizma plans (AC14) →
+    `0 changed, 43 unchanged`.
 - **AC14** — a scratch clone of `~/Developer/prizma` (`git clone`, then
   `checkout -B main 2712ab0` and `update-ref refs/remotes/origin/main
   2712ab0`), branch `migrate-plans`, with this branch's scripts run by path
@@ -1957,9 +1962,10 @@ onboarding steps are still open.
     criteria section is empty. It has no criteria to number, and none were
     invented.
   - **No Verification line removed:** `git diff --stat` can't show this
-    (see Deviations). `--migrate-check HEAD~1` → `migrate-check: ok`: every
-    removed line's text survives in the new file, with only its head
-    reformatted.
+    (see Deviations). `--migrate-check HEAD~1` → `migrate-check: ok`, both
+    at `701cad5` and with the stricter check at `4951153`. Every removed
+    line's text survives under one of its own IDs, with only its head
+    reformatted, and every not-met mark is kept or became DEFERRED.
   - **NOT RECORDED in the commit message:** it lists 45 entries in 9
     plans, the same 9 `not recorded:` lines the check printed.
   - **Hand-checked:** 01, 09, 24, 32 and 40, each new entry against the old
@@ -1975,14 +1981,14 @@ onboarding steps are still open.
     - 40: AC6's ❌ is DEFERRED (plan 43).
   - **The view:** after a fast-forward of the clone's `main` to the
     migration, `work-state.mjs` → no old-format line and no
-    status-outside-the-six line, 0.132 s. It still prints `! /skills-audit
+    status-outside-the-six line, 0.132 s (0.154 s at `4951153`). It still prints `! /skills-audit
     hasn't run here` (prizma has no `skills.json`), and it flags 9 IN
     PROGRESS plans that git shows merged (see the Status ruling in
     Deviations).
   - **The real repo:** `git -C ~/Developer/prizma status --porcelain`
     stays empty at `441a9e6`.
 - **AC15** — a scratch repo installed from this branch (`install … claude-code
-  --ref HEAD`, `673ee5c`), committed:
+  --ref HEAD`, at `673ee5c` and again at `4951153`, same output), committed:
   - Before: `status` → `onboarding: /skills-audit hasn't run here`; `update
     --to HEAD` prints the same line; the view → `SSDD · no open plans` /
     `! /skills-audit hasn't run here`.
@@ -1996,7 +2002,8 @@ onboarding steps are still open.
     lines", and `record`'s three cases all pass.
 - **AC16** — a scratch repo whose `.ssdd/config.json` sets `paths.plans:
   ".claude/plans"` and `paths.specs: "docs/specs"`, with `03-a` on `main`
-  and `07-b` only on branch `other`:
+  and `07-b` only on branch `other` (run at `39b3426` and again at
+  `4951153`, same output):
   - After `install … --ref HEAD`, `.claude/plans`, `docs/specs` and
     `.ssdd/ledgers` exist, and `.ssdd/plans` doesn't.
   - `node .ssdd/hooks/work-state.mjs --next-plan` → `next plan:
@@ -2007,7 +2014,11 @@ onboarding steps are still open.
     other branches" and "install creates the folders the config names"
     pass.
 - **Existing tests** — `node --test mechanisms/hooks/*.selftest.mjs
-  bin/*.selftest.mjs` → 617 tests, 617 pass, 0 fail.
+  bin/*.selftest.mjs` → 629 tests, 629 pass, 0 fail at `4951153` (617
+  before the fix pass). In an installed layout (`install … claude-code,cursor
+  --ref HEAD` into a scratch repo), `node --test .ssdd/hooks/*.selftest.mjs`
+  → 546 tests, 545 pass, 1 skipped (the source-tree-only config-example
+  check), 0 fail.
 - **Node 18** — DEFERRED (operator). There's no Node 18 on this machine, and
   CI runs on a push, which waits for the owner. No API newer than Node 18
   was added (`Array.prototype.at` is 16.6+).
@@ -2023,10 +2034,11 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
 - **`--migrate-check <ref>` was added.** AC14 asks `git diff --stat` to
   show no Verification line removed, but it can't tell a reformat from a
   deletion, and Clarify 15 lets the agent reformat a line to cite its ID.
-  The check strips each removed line's formatting and requires its text in
-  the new file. It also re-runs the to-do against the base, so the verifier
-  has a floor, and it lists the NOT RECORDED entries for the commit
-  message.
+  For each removed line, the check strips the formatting and requires the
+  text in a new line under one of the same IDs. A not-met mark (❌, ☐,
+  `[ ]`) must stay, or become DEFERRED or NOT RECORDED. It also re-runs the
+  to-do against the base, so the verifier has a floor, and it lists the NOT
+  RECORDED entries for the commit message.
 - **The parser reads prizma's real forms.** These changes are in Part 1's
   parser:
   - IDs with a letter (`AC8b`, plans 20, 24 and 32), and `[~]` and `[-]`
@@ -2069,6 +2081,20 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
       whole folder from its snapshot)
     - References run once, after the fan-out
     - the view changes only once the branch merges
+- **The final review's fix pass** (0 Critical, 5 Important, each fixed
+  test-first):
+  - An entry's checkbox, if it has one, must be ticked. `- [ ] **AC1** —
+    run the suite` had counted as a record and let a BUILT plan pass the
+    close check that Part 1 blocked.
+  - Criteria are top-level items in the parser too. Parser and migration
+    share one fence-aware scan, so a sub-bullet like "AC5's follow-up" is
+    no criterion.
+  - `--migrate-check` matches by ID and keeps not-met marks (above).
+  - The onboarding lines come right after a config error, so the cap keeps
+    them.
+  - The old-format count is the default branch's plans, which is where the
+    migration lands. On real prizma it reads 42, not the 44 that included
+    worktree-only plans.
 - **Status ruling.** A Status already from the six stays, even when git
   shows the plan merged. The migration formats; Part 1's view flags an IN
   PROGRESS nothing is working on, and Part 1's Scope leaves editing Status
