@@ -773,6 +773,18 @@ describe('onboarding', () => {
     assert.doesNotMatch(run().out, OLD_LINE);
   });
 
+  it('counts the default branch\'s plans, not one only on another branch', () => {
+    put('.ssdd/plans/01-a.md', planText({ status: 'DRAFT', ac: ['AC1'] }));
+    commitAll('migrated main');
+    git('switch', '-q', '-c', 'old');
+    put('.ssdd/plans/02-b.md', oldPlan('DRAFT', ['- [ ] b']));
+    commitAll('old-format plan on a branch');
+    git('switch', '-q', 'main');
+    assert.doesNotMatch(run().out, /in the old format/);
+    git('merge', '-q', '--no-edit', 'old');
+    assert.match(run().out, /! 1 plan in the old format: run \/migrate-plans/);
+  });
+
   it('a SHIPPED plan with a missing entry counts', () => {
     put('.ssdd/plans/01-a.md', planText({ status: 'SHIPPED', ac: ['AC1', 'AC2'], done: ['AC1'] }));
     commitAll('shipped');

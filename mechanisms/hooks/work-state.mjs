@@ -287,7 +287,9 @@ export function collect(repo) {
     const onDefault = def?.files.has(plan);
     const home = onDefault ? def : others.find((s) => s.files.has(plan));
     const parsed = parsePlan(home.files.get(plan));
-    if (needsMigration(home.files.get(plan))) oldFormat++;
+    // The migration lands on the default branch, so only its copies count; a
+    // plan only on a branch counts once it merges.
+    if (onDefault && needsMigration(def.files.get(plan))) oldFormat++;
     const word = parsed.status.word;
     if (!word) { unknown.push(statusToken(parsed.status.raw)); continue; }
     if (!OPEN_WORDS.has(word)) continue;
