@@ -11,9 +11,10 @@ ID, a Status from DRAFT, IN PROGRESS, BUILT, SHIPPED, SUPERSEDED, ABANDONED
 A script does the mechanical half; this skill is the half that takes reading.
 It runs once per repo and lands as one commit.
 
-Folders: the plans folder (`paths.plans` in `.ssdd/config.json`, default
-`.ssdd/plans`), the specs folder (`paths.specs`, default `.ssdd/specs`), the
-ledgers folder (`paths.ledgers`, default `.ssdd/ledgers`).
+Folders, from `paths` in `.ssdd/config.json`:
+- the plans folder (`paths.plans`, default `.ssdd/plans`)
+- the specs folder (`paths.specs`, default `.ssdd/specs`)
+- the ledgers folder (`paths.ledgers`, default `.ssdd/ledgers`)
 
 ## 1. Start clean
 
