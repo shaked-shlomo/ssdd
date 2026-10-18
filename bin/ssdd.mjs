@@ -331,23 +331,27 @@ function merge3(local, base, up, t, vOld, vNew) {
 }
 
 // CHANGELOG sections after `from` up to `to`. A `+sha` target is a commit past
-// its VERSION, so it also carries the sections headed "unreleased".
-function changelogSections(tree, from, to) {
+// its VERSION, so it also carries the sections headed "unreleased", unless the
+// locked commit (baseTree) already had that section word for word.
+const sectionsOf = (tree) => {
   const f = join(tree, 'CHANGELOG.md');
-  if (!existsSync(f)) return [];
+  return existsSync(f) ? readFileSync(f, 'utf8').split(/^(?=## \[?\d+\.\d+\.\d+)/m) : [];
+};
+function changelogSections(tree, from, to, baseTree) {
   const dev = String(to).includes('+');
-  return readFileSync(f, 'utf8').split(/^(?=## \[?\d+\.\d+\.\d+)/m).filter((s) => {
+  const seen = new Set(baseTree ? sectionsOf(baseTree).map((s) => s.trim()) : []);
+  return sectionsOf(tree).filter((s) => {
     const m = /^## \[?(\d+\.\d+\.\d+)\]?([^\n]*)/.exec(s);
     if (!m || cmpVersion(m[1], from) <= 0) return false;
-    return cmpVersion(m[1], to) <= 0 || (dev && /unreleased/i.test(m[2]));
+    return cmpVersion(m[1], to) <= 0 || (dev && /unreleased/i.test(m[2]) && !seen.has(s.trim()));
   });
 }
-const changelogBetween = (tree, from, to) => changelogSections(tree, from, to).join('').trim();
+const changelogBetween = (tree, from, to, baseTree) => changelogSections(tree, from, to, baseTree).join('').trim();
 
 // Each crossed version's `### Upgrade…` subsection, oldest first: the manual
 // steps a MAJOR needs (CHANGELOG.md's header says they live there).
-function upgradeSteps(tree, from, to) {
-  return changelogSections(tree, from, to).reverse().map((s) => {
+function upgradeSteps(tree, from, to, baseTree) {
+  return changelogSections(tree, from, to, baseTree).reverse().map((s) => {
     const body = [];
     let inside = false;
     for (const line of s.split('\n')) {
@@ -454,9 +458,9 @@ function update(target) {
     for (const x of list) console.log(`  ${x}`);
   }
   for (const n of notes) console.log(`\n${n}`);
-  const log2 = changelogBetween(newTree, lock.ssdd, version);
+  const log2 = changelogBetween(newTree, lock.ssdd, version, baseTree);
   if (log2) console.log(`\n── CHANGELOG since v${lock.ssdd}:\n${log2}`);
-  const steps = upgradeSteps(newTree, lock.ssdd, version);
+  const steps = upgradeSteps(newTree, lock.ssdd, version, baseTree);
   if (steps.length) console.log(`\n── Upgrade steps (manual), from the CHANGELOG:\n${steps.join('\n\n')}`);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);

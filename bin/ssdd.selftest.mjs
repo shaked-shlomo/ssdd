@@ -707,6 +707,21 @@ describe('upgrade steps and onboarding', () => {
     assert.match(r.out, /^onboarding: 1 plan in the old format: run \/migrate-plans$/m);
   });
 
+  it('a +sha update repeats no unreleased section the locked commit already had', () => {
+    release('2.0.0', `# Changelog\n\n## [3.0.0] — unreleased\n\n${UPGRADE}${OLD}`, { tag: false });
+    assert.equal(ssdd('install', tgt, '--ref', git(src, 'rev-parse', 'HEAD')).code, 0);
+    commitAll(tgt, 'install dev');
+    put(src, 'process/SDD.md', 'dev 2\n');
+    commitAll(src, 'unrelated dev commit');
+    let r = ssdd('update', tgt, '--to', git(src, 'rev-parse', 'HEAD'));
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /Upgrade steps/);
+    commitAll(tgt, 'update dev');
+    release('2.0.0', `# Changelog\n\n## [3.0.0] — unreleased\n\n${UPGRADE}- A new step.\n${OLD}`, { tag: false });
+    r = ssdd('update', tgt, '--to', git(src, 'rev-parse', 'HEAD'));
+    assert.match(r.out, /Upgrade steps \(manual\)[\s\S]*- A new step\./);
+  });
+
   it('status and update print the onboarding lines', () => {
     installed();
     put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DRAFT\n\n## Acceptance criteria\n- [ ] a\n');
