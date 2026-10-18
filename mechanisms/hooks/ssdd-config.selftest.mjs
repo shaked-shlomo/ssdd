@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadSsddConfig } from './ssdd-config.mjs';
+import { loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 
 let dir;
 function git(...args) {
@@ -149,5 +149,18 @@ describe('loadSsddConfig', () => {
     assert.notEqual(r, null);
     assert.match(r.error, /\.ssdd\/config\.json can't be read/);
     assert.equal(r.cfg.root, r.root);
+  });
+});
+
+describe('skillsAudited', () => {
+  it('reads the date, null otherwise', () => {
+    const put = (body) => { mkdirSync(join(dir, '.ssdd'), { recursive: true }); writeFileSync(join(dir, '.ssdd', 'skills.json'), body); };
+    assert.equal(skillsAudited(dir), null);
+    for (const body of ['{ not json', '[]', '{"audited":""}', '{"audited":7}', '{"version":1,"sources":{}}']) {
+      put(body);
+      assert.equal(skillsAudited(dir), null, body);
+    }
+    put('{"version":1,"sources":{},"audited":"2026-10-18"}');
+    assert.equal(skillsAudited(dir), '2026-10-18');
   });
 });

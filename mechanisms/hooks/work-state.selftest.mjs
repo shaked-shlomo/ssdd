@@ -66,6 +66,7 @@ function countGit(args, opts = {}) {
   const r = run(args, { ...opts, extraEnv: { PATH: `${shim}:${process.env.PATH}` } });
   return { ...r, calls: existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).length : 0 };
 }
+const AUDITED = '{"version":1,"sources":{},"audited":"2026-10-18"}\n';
 const progress = (planPath, lines) => [`# SDD ledger — plan: ${planPath}`, '', ...lines, ''].join('\n');
 
 beforeEach(() => {
@@ -73,6 +74,8 @@ beforeEach(() => {
   dir = join(base, 'repo');
   initRepo(dir);
   put('.ssdd/config.json', '{}\n');
+  // /skills-audit has run, so its onboarding line stays out of other tests.
+  put('.ssdd/skills.json', AUDITED);
   put('README.md', 'x\n');
   commitAll('init');
 });
@@ -395,6 +398,17 @@ describe('session start', () => {
     assert.ok(out.trimEnd().split('\n').length <= 12, out);
     assert.match(out, /! plans numbered 03: 03-dup\.md \(main\), 03-p\.md \(main\)/);
     assert.match(out, /\+\d+ more: node \.ssdd\/hooks\/work-state\.mjs\n$/);
+  });
+
+  it('onboarding lines survive the cap', () => {
+    for (let i = 1; i <= 40; i++) put(`.ssdd/plans/${String(i).padStart(2, '0')}-plan-with-a-longish-name.md`, oldPlan('DRAFT', ['- [ ] a']));
+    put('.ssdd/skills.json', '{"version":1,"sources":{}}\n');
+    commitAll('40 old drafts');
+    const { out } = run(['--session-start']);
+    assert.ok(out.trimEnd().split('\n').length <= 12, out);
+    assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
+    assert.match(out, /^ {2}! 40 plans in the old format: run \/migrate-plans$/m);
+    assert.match(out, /^ {2}! \/skills-audit hasn't run here$/m);
   });
 
   it('broken config and corrupt plan exit 0', () => {
@@ -720,5 +734,36 @@ describe('migrate-check', () => {
   it('bad ref exits 2', () => {
     assert.equal(run(['--migrate-check', 'no-such-ref']).code, 2);
     assert.equal(run(['--migrate-check']).code, 2);
+  });
+});
+
+describe('onboarding', () => {
+  const OLD_LINE = /! (\d+) plans? in the old format: run \/migrate-plans/;
+  it('old-format plans are counted', () => {
+    put('.ssdd/plans/01-a.md', oldPlan('IN PROGRESS', ['- [ ] AC1 a']));
+    put('.ssdd/plans/02-b.md', oldPlan('DRAFT', ['- [ ] b']));
+    put('.ssdd/plans/03-c.md', planText({ status: 'IN PROGRESS', ac: ['AC1'] }));
+    commitAll('plans');
+    assert.match(run().out, /^ {2}! 2 plans in the old format: run \/migrate-plans$/m);
+    git('rm', '-q', '.ssdd/plans/02-b.md');
+    commitAll('one');
+    assert.match(run().out, /^ {2}! 1 plan in the old format: run \/migrate-plans$/m);
+    git('rm', '-q', '.ssdd/plans/01-a.md');
+    commitAll('none');
+    assert.doesNotMatch(run().out, OLD_LINE);
+  });
+
+  it('a SHIPPED plan with a missing entry counts', () => {
+    put('.ssdd/plans/01-a.md', planText({ status: 'SHIPPED', ac: ['AC1', 'AC2'], done: ['AC1'] }));
+    commitAll('shipped');
+    assert.match(run().out, /! 1 plan in the old format/);
+  });
+
+  it('skills-audit reminder until audited', () => {
+    put('.ssdd/skills.json', '{"version":1,"sources":{}}\n');
+    commitAll('not audited');
+    assert.match(run().out, /^ {2}! \/skills-audit hasn't run here$/m);
+    put('.ssdd/skills.json', AUDITED);
+    assert.doesNotMatch(run().out, /skills-audit/);
   });
 });

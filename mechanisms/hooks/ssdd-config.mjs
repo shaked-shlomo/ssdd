@@ -133,3 +133,13 @@ export function foreignHook(root) {
   return h && h.runs && !h.own ? h.value : '';
 }
 export const ARM_HOOK = 'git config core.hooksPath .githooks';
+
+// When /skills-audit last ran here: `audited` in .ssdd/skills.json, which the
+// skill sets on every run (even one that matched nothing). Null when it never
+// ran, or the ledger is missing or unreadable.
+export function skillsAudited(root) {
+  try {
+    const v = JSON.parse(readFileSync(join(root, '.ssdd', 'skills.json'), 'utf8'))?.audited;
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  } catch { return null; }
+}

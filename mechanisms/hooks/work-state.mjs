@@ -25,9 +25,9 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEFAULT_PATHS, loadSsddConfig } from './ssdd-config.mjs';
+import { DEFAULT_PATHS, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
-import { idRange, lostText, migratePlan, todoFor } from './plan-migrate.mjs';
+import { idRange, lostText, migratePlan, needsMigration, todoFor } from './plan-migrate.mjs';
 
 const SP_DIR = '.superpowers/sdd';
 const MAX_BUFFER = 256 * 1024 * 1024;
@@ -280,11 +280,13 @@ export function collect(repo) {
   const allPlans = new Set(all.flatMap((s) => [...s.files.keys()].filter((p) => posix.dirname(p) === paths.plans)));
   for (const s of all) s.links = linkLedgers(s, allPlans);
   const rows = []; const unknown = []; const warnings = loaded.error ? [`! ${loaded.error}`] : [];
+  let oldFormat = 0;
 
   for (const plan of [...allPlans].sort()) {
     const onDefault = def?.files.has(plan);
     const home = onDefault ? def : others.find((s) => s.files.has(plan));
     const parsed = parsePlan(home.files.get(plan));
+    if (needsMigration(home.files.get(plan))) oldFormat++;
     const word = parsed.status.word;
     if (!word) { unknown.push(statusToken(parsed.status.raw)); continue; }
     if (!OPEN_WORDS.has(word)) continue;
@@ -332,7 +334,14 @@ export function collect(repo) {
     const where = (plan) => all.find((s) => s.files.has(plan)).label;
     warnings.push(`! plans numbered ${n}: ${list.sort().map((p) => `${basename(p)} (${where(p)})`).join(', ')}`);
   }
-  return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings };
+
+  // Onboarding steps still open (SPEC.md → v3 → Part 2); `update` and
+  // `status` print the same lines.
+  const onboarding = [];
+  if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate-plans`);
+  if (!skillsAudited(root)) onboarding.push("/skills-audit hasn't run here");
+  warnings.push(...onboarding.map((l) => `! ${l}`));
+  return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 
 // ── rendering ────────────────────────────────────────────────────────────────
