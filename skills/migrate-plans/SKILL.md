@@ -34,6 +34,8 @@ and what is left, and it is the only record of which criteria were ticked
 
 ## 3. The agent pass, plan by plan
 
+Every plan gets this pass, not only the ones with a `to do:` line: the
+report can't see an open plan whose Verification says a criterion is met.
 For many plans, fan out: one agent per batch of about six, each given this
 section, its plans' report lines and today's date. They share one working
 tree, so each writes only its own plans' files, edit by edit: never a copy,
