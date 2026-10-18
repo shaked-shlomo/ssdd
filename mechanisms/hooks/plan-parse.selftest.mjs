@@ -102,6 +102,13 @@ describe('parsePlan', () => {
       "- **AC3** — NOT RECORDED (migrated 2026-10-18): the plan's Verification didn't close this."]));
     assert.deepEqual(p.entries.get('AC3'), { deferred: false, notRecorded: true });
   });
+  it('a range head is no ID\'s entry; the per-ID lines after it are', () => {
+    const p = parsePlan(plan(['## Acceptance criteria', '- **AC8** — a', '- **AC9** — b', '- **AC10** — c',
+      '## Verification', '- [ ] **AC8–AC9, AC10** release 2.', '- **AC1–AC3 (unit) — 2026-09-14**',
+      '- **AC8** — DEFERRED (operator): release 2', '- **AC9** — see "release 2" above.']));
+    assert.deepEqual([...p.entries.keys()], ['AC8', 'AC9']);
+    assert.equal(p.entries.get('AC8').deferred, true);
+  });
   it('AC1 is not AC10', () => {
     assert.deepEqual(parsePlan(plan(['## Acceptance criteria', '- **AC10** — x'])).criteria, ['AC10']);
   });

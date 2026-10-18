@@ -43,7 +43,9 @@ restore or checkout of the folder. Do the References paragraph after them,
 in one agent, since it edits other files. Sources are the plan's own text,
 and git for Status. Nothing else.
 
-**Status.** A Status already from the six stays. Otherwise find the plan's
+**Status.** A Status already from the six stays, even one git contradicts:
+the view flags an IN PROGRESS nothing is working on, and changing it is the
+owner's call. Otherwise find the plan's
 merge in git (`git log --oneline <default> -- <plan>`, the commits and PRs
 the plan names, `git branch -a --contains <sha>`) and pick the least-done
 word the evidence supports:
@@ -64,9 +66,8 @@ says are met. Each gets exactly one line, in the first shape that fits:
 
 1. The plan has a Verification line for it in another form: re-prefix that
    line, `- **AC3** — <its text, unchanged>`. Only the head changes (list
-   marker, checkbox, bold, the ID); a ✅ may stay. When that line says the
-   criterion is still open, pending or deferred, the head is
-   `- **AC3** — DEFERRED (operator): <its text, unchanged>`.
+   marker, checkbox, bold, the ID); a ✅ may stay. A `### AC3 …` heading
+   stays a heading; add `- **AC3** — see "AC3 …" above.` under its section.
 2. One line or passage covers several IDs (`AC1–AC3`, `AC2/AC3`, "Unit
    criteria (…)"): keep it as it is, and add one line per ID right after it,
    `- **AC2** — see "<its first words>" above.`
@@ -75,6 +76,11 @@ says are met. Each gets exactly one line, in the first shape that fits:
    `- **AC9** — DEFERRED (operator): <the plan's words for what's left>.`
 5. Nothing in the plan closes it:
    `- **AC6** — NOT RECORDED (migrated <YYYY-MM-DD>): the plan's Verification didn't close this.`
+
+A line that says the criterion isn't met (still open, pending, deferred,
+failed, superseded) is no verification: its head is
+`- **AC3** — DEFERRED (<what it waits on: operator, plan 43>): <its text, unchanged>`.
+That holds for entries that already read as `- **AC3** …`, so check those too.
 
 When the passage behind shape 2 or 3 closes only part of the criterion (the
 unit half, not the live run), the line ends with what it leaves:
@@ -131,6 +137,7 @@ no "status outside the six" line.
 |---|---|
 | Mapping today's test names onto criteria | point at the plan's record (shape 2 or 3), else NOT RECORDED |
 | A pointer to a passage that closes half the criterion | name the other half NOT RECORDED on the same line |
+| A failed or superseded criterion left as a plain entry | the DEFERRED head: the view counts a plain entry as verified |
 | Adding notes, later findings, reconciled counts | entries only: the plan is a record of then |
 | A Status the evidence doesn't support | the least-done word, the old text after "was:" |
 | Rewording or deleting an old line | re-prefix the head, add lines |
