@@ -128,8 +128,11 @@ and lists every NOT RECORDED entry from step 5 as `<plan file>: AC6, AC9`.
 
 ## 7. Confirm
 
-`node .ssdd/hooks/work-state.mjs` shows no "plans in the old format" line and
-no "status outside the six" line.
+The view reads the default branch, so it changes once the branch merges.
+Then `node .ssdd/hooks/work-state.mjs` shows no "plans in the old format"
+line and no "status outside the six" line. An IN PROGRESS that git shows
+merged is flagged there; tell the user, since its Status is theirs to
+change.
 
 ## Common mistakes
 
