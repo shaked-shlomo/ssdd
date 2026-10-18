@@ -12,10 +12,9 @@
 // least-indented list lines, outside code fences. Checkboxes are dropped, IDs
 // are kept (never renumbered), ID-less items are numbered after the highest
 // ID. Verification sections are never touched; the agent pass cites IDs there.
-import { AC_ID, CHECKBOX, ENTRY, parsePlan } from './plan-parse.mjs';
+import { AC_ID, CHECKBOX, ENTRY, criteriaLines, parsePlan, scan } from './plan-parse.mjs';
 
 const CLOSED = new Set(['BUILT', 'SHIPPED']);
-const LIST = /^([ \t]*)([-*+]|\d+[.)])[ \t]+(.*)$/;
 const BOX = new RegExp(`^${CHECKBOX}[ \\t]+`);
 const BOLD_HEAD = new RegExp(`^\\*\\*(${AC_ID})\\b(.*?)\\*\\*(.*)$`);
 // `**AC7 — a title that wraps` (the bold closes on a continuation line).
@@ -48,56 +47,34 @@ function split(text) {
   return { lines, join: (ls) => bom + (crlf ? ls.join('\r\n') : ls.join('\n')) };
 }
 
-// Each line's `## ` section (lower case) and whether it sits in a code fence.
-function scan(lines) {
-  let section = null; let fence = false;
-  return lines.map((line) => {
-    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return { section, fence: true }; }
-    if (!fence && /^##[ \t]/.test(line) && !line.startsWith('###')) section = line.replace(/^##[ \t]+/, '').trim().toLowerCase();
-    return { section, fence };
-  });
-}
-
-// Top-level criteria: [{ i, indent, box, id, body }] — id null when the item has
-// none; body is the text after the ID and its separator.
+// Top-level criteria (plan-parse's criteriaLines): [{ i, indent, box, id, body }]
+// — id null when the item has none; body is the text after the ID and its
+// separator.
 function criteriaItems(lines) {
-  const where = scan(lines);
-  const bySection = new Map();
-  lines.forEach((line, i) => {
-    const w = where[i];
-    if (w.fence || !w.section?.startsWith('acceptance criteria') || /^##/.test(line)) return;
-    const m = LIST.exec(line);
-    if (!m) return;
-    if (!bySection.has(w.section)) bySection.set(w.section, []);
-    bySection.get(w.section).push({ i, indent: m[1], marker: m[2], rest: m[3] });
-  });
   const items = [];
-  for (const list of bySection.values()) {
-    const min = Math.min(...list.map((x) => x.indent.length));
-    for (const x of list.filter((y) => y.indent.length === min)) {
-      let rest = x.rest; let box = null;
-      const b = BOX.exec(rest);
-      if (b) { box = rest[1]; rest = rest.slice(b[0].length); }
-      if (rest.startsWith('<')) continue; // a template placeholder
-      let id = null; let body = rest;
-      const bold = BOLD_HEAD.exec(rest);
-      const open = OPEN_BOLD.exec(rest);
-      const bare = BARE_HEAD.exec(rest);
-      if (bold) {
-        const title = bold[2].replace(SEP, '').trim();
-        id = bold[1];
-        body = title ? `**${title}**${bold[3]}` : bold[3].replace(SEP, '');
-      } else if (open) {
-        id = open[1];
-        body = `**${open[2].replace(SEP, '')}`;
-      } else if (bare) {
-        id = bare[1];
-        body = bare[2].replace(SEP, '');
-      }
-      items.push({ i: x.i, indent: x.indent, box, id, body });
+  for (const x of criteriaLines(lines)) {
+    let rest = x.rest; let box = null;
+    const b = BOX.exec(rest);
+    if (b) { box = rest[1]; rest = rest.slice(b[0].length); }
+    if (rest.startsWith('<')) continue; // a template placeholder
+    let id = null; let body = rest;
+    const bold = BOLD_HEAD.exec(rest);
+    const open = OPEN_BOLD.exec(rest);
+    const bare = BARE_HEAD.exec(rest);
+    if (bold) {
+      const title = bold[2].replace(SEP, '').trim();
+      id = bold[1];
+      body = title ? `**${title}**${bold[3]}` : bold[3].replace(SEP, '');
+    } else if (open) {
+      id = open[1];
+      body = `**${open[2].replace(SEP, '')}`;
+    } else if (bare) {
+      id = bare[1];
+      body = bare[2].replace(SEP, '');
     }
+    items.push({ i: x.i, indent: x.indent, box, id, body });
   }
-  return items.sort((a, b) => a.i - b.i);
+  return items;
 }
 
 export function idRange(ids) {

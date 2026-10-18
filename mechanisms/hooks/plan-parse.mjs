@@ -26,19 +26,55 @@ export function parseStatus(text) {
   return { raw, word };
 }
 
-// `## Name` sections → [{ name (lower case), lines }]. `###` and deeper stay
-// inside their section.
-function sections(text) {
+// Each line's `## ` section (lower case), whether it sits in a code fence, and
+// whether it is the heading itself. A `##` line inside a fence starts no
+// section; `###` and deeper stay inside theirs.
+export function scan(lines) {
+  let section = null; let fence = false;
+  return lines.map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return { section, fence: true }; }
+    if (!fence && /^##[ \t]+\S/.test(line) && !line.startsWith('###')) {
+      section = line.replace(/^##[ \t]+/, '').trim().toLowerCase();
+      return { section, fence, heading: true };
+    }
+    return { section, fence };
+  });
+}
+
+// `## Name` sections → [{ name, lines }], fenced lines left out.
+function sections(lines) {
   const out = [];
   let cur = null;
-  for (const line of normalize(text).split('\n')) {
-    const h = /^##[ \t]+(.+?)[ \t]*$/.exec(line);
-    if (h && !line.startsWith('###')) { cur = { name: h[1].toLowerCase(), lines: [] }; out.push(cur); continue; }
-    if (cur) cur.lines.push(line);
-  }
+  scan(lines).forEach((w, i) => {
+    if (w.heading) { cur = { name: w.section, lines: [] }; out.push(cur); return; }
+    if (cur && !w.fence) cur.lines.push(lines[i]);
+  });
   return out;
 }
 const linesOf = (secs, prefix) => secs.filter((s) => s.name.startsWith(prefix)).flatMap((s) => s.lines);
+
+// The criteria: list lines (`-`, `*`, `+`, `1.`) at each acceptance-criteria
+// section's least indent, outside fences → [{ i, indent, marker, rest }]. A
+// sub-bullet that names an ID ("AC5's follow-up") is not a criterion.
+const LIST = /^([ \t]*)([-*+]|\d+[.)])[ \t]+(.*)$/;
+export function criteriaLines(lines) {
+  const where = scan(lines);
+  const bySection = new Map();
+  lines.forEach((line, i) => {
+    const w = where[i];
+    if (w.fence || w.heading || !w.section?.startsWith('acceptance criteria')) return;
+    const m = LIST.exec(line);
+    if (!m) return;
+    if (!bySection.has(w.section)) bySection.set(w.section, []);
+    bySection.get(w.section).push({ i, indent: m[1], marker: m[2], rest: m[3] });
+  });
+  const out = [];
+  for (const list of bySection.values()) {
+    const min = Math.min(...list.map((x) => x.indent.length));
+    out.push(...list.filter((x) => x.indent.length === min));
+  }
+  return out.sort((a, b) => a.i - b.i);
+}
 
 // Regex sources shared with plan-migrate.mjs.
 export const AC_ID = 'AC\\d+[a-z]?';
@@ -52,10 +88,11 @@ export const ENTRY = new RegExp(`^\\s*[-*]\\s+(?:\\[[xX~]\\]\\s+)?\\*\\*(${AC_ID
 const ITEM = /^\s*(?:[-*]|\d+[.)])\s+(.*\S)/;
 
 export function parsePlan(text) {
-  const secs = sections(text);
+  const lines = normalize(text).split('\n');
+  const secs = sections(lines);
   const criteria = [];
-  for (const line of linesOf(secs, 'acceptance criteria')) {
-    const m = CRITERION.exec(line);
+  for (const { i } of criteriaLines(lines)) {
+    const m = CRITERION.exec(lines[i]);
     if (m && !criteria.includes(m[1])) criteria.push(m[1]);
   }
   const entries = new Map();

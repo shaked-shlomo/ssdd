@@ -76,6 +76,13 @@ describe('migratePlan', () => {
     ]);
   });
 
+  it('a sub-bullet naming an ID owes no entry', () => {
+    const t = plan(['- [x] AC1 main thing', "  - AC5's follow-up lives in plan 12"], ['- **AC1** — ok']);
+    const r = migratePlan(t);
+    assert.deepEqual(r.todo, []);
+    assert.equal(needsMigration(r.text), false);
+  });
+
   it('Verification is never touched', () => {
     const ver = ['- [ ] **AC1** — ok', '- AC2 ✅ — ok', '- [x] AC3 done'];
     const r = migratePlan(plan(['- [x] AC1 a', '- [x] AC2 b', '- [x] AC3 c'], ver));

@@ -115,6 +115,19 @@ describe('parsePlan', () => {
     assert.deepEqual([...p.entries.keys()], ['AC8', 'AC9']);
     assert.equal(p.entries.get('AC8').deferred, true);
   });
+  it('criteria are top-level items; a sub-bullet naming an ID is not one', () => {
+    const p = parsePlan(plan(['## Acceptance criteria', '- [x] AC1 main thing', "  - AC5's follow-up lives in plan 12",
+      '- **AC2** — b', '```', '- [ ] AC9 a fenced example', '```']));
+    assert.deepEqual(p.criteria, ['AC1', 'AC2']);
+  });
+  it('a fenced ## heading starts no section', () => {
+    const p = parsePlan(plan(['## Acceptance criteria', '- **AC1** — a', '## Approach', '```', '## Verification',
+      '- **AC1** — example', '```', '## Verification', '- **AC1** — real']));
+    assert.equal(p.entries.size, 1);
+    const q = parsePlan(plan(['## Acceptance criteria', '- **AC1** — a', '## Approach', '```', '## Verification',
+      '- **AC1** — example', '```']));
+    assert.equal(q.entries.size, 0);
+  });
   it('AC1 is not AC10', () => {
     assert.deepEqual(parsePlan(plan(['## Acceptance criteria', '- **AC10** — x'])).criteria, ['AC10']);
   });
