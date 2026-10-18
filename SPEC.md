@@ -1169,7 +1169,7 @@ parts, each with its own plan:
 | Part | What | Plan | Ships as |
 |---|---|---|---|
 | 1 | Work state: where the work is, at session start; the close check; tracked ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md` | 3.0.0, with Part 2 |
-| 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | Plan 2, not written yet | 3.0.0 |
+| 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | `docs/superpowers/plans/2026-10-18-v3-onboarding.md` | 3.0.0 |
 | 3 | A cheaper gate | Plan 3, not written yet | 3.1.0 |
 | 4 | The production guard and the Supabase pack | Plan 4, not written yet | 3.2.0 |
 | 5 | Trimming | Plan 5, not written yet | 3.3.0 |
