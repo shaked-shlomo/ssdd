@@ -315,6 +315,8 @@ function install(target) {
   writeLock(target, lockFrom(version, ref, commit, adapters, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
   nextSteps(target, adapters, armHook(target, log));
+  const open = onboarding(target);
+  if (open.length) console.log(`\n${open.join('\n')}`);
 }
 
 // ── update ───────────────────────────────────────────────────────────────────

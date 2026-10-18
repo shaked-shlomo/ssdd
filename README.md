@@ -79,6 +79,15 @@ SHIPPED is refused while an `AC` ID has no Verification entry or the plan's
 ledger isn't staged. Superpowers' per-plan ledgers
 (`.superpowers/sdd/<plan>/progress.md`) are tracked in git.
 
+**Onboarding a repo that already has plans.** Plans written before v3 (checkbox
+criteria, criteria without IDs, Status words like DONE) are migrated once with
+`/migrate-plans`: `work-state.mjs --migrate` does the mechanical half, an agent
+cites each Verification entry's ID from the plan's own record and fixes Status
+against git, a second agent checks it, and `--migrate-check` makes sure no text
+was lost. Plans can live anywhere: `paths` in `.ssdd/config.json` names the
+plans, specs and ledgers folders. The view, `status` and `update` list the
+onboarding steps still open.
+
 ## What's in the box
 
 | Layer | Path | What it is |
@@ -170,7 +179,8 @@ framework file three ways (your locked version, yours, the new release):
 
 Project-owned files are never touched; `update` prints how their templates
 changed so you can port what you need, and ends with the
-[CHANGELOG](CHANGELOG.md) entries since your version. Review with `git diff`
+[CHANGELOG](CHANGELOG.md) entries since your version, the manual Upgrade
+steps they name, and the onboarding steps still open. Review with `git diff`
 and commit, lock included.
 
 Releases are annotated `vX.Y.Z` tags with semver adapted to a framework that

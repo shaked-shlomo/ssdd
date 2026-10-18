@@ -699,6 +699,14 @@ describe('upgrade steps and onboarding', () => {
     assert.match(r.out, /Upgrade steps \(manual\)[\s\S]*v3\.0\.0:\n- Run \/migrate-plans once\./);
   });
 
+  it('install into a repo with plans prints the onboarding lines', () => {
+    put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DONE\n\n## Acceptance criteria\n- [x] a\n');
+    commitAll(tgt, 'existing plan');
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^onboarding: 1 plan in the old format: run \/migrate-plans$/m);
+  });
+
   it('status and update print the onboarding lines', () => {
     installed();
     put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DRAFT\n\n## Acceptance criteria\n- [ ] a\n');
@@ -746,3 +754,29 @@ describe('paths everywhere', () => {
   });
 });
 
+
+describe('migrate-plans skill', () => {
+  const REPO = join(dirname(SCRIPT), '..');
+  const SKILL = join(REPO, 'skills', 'migrate-plans', 'SKILL.md');
+  it('frontmatter', () => {
+    const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
+    assert.match(fm, /^name: migrate-plans$/m);
+    const desc = fm.match(/^description: (.+)$/m)[1];
+    assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
+    assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
+    assert.match(desc, /once/);
+  });
+
+  it('names the procedure', () => {
+    const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
+    for (const s of ['--migrate', '--migrate-check HEAD', 'NOT RECORDED (migrated', 'refute-by-default', 'one commit',
+      'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep']) assert.ok(text.includes(s), s);
+  });
+
+  it("the real CHANGELOG's 3.0.0 Upgrade section names both steps", () => {
+    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith('## [3.0.0]'));
+    const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
+    assert.match(upgrade, /\/migrate-plans/);
+    assert.match(upgrade, /SessionStart/);
+  });
+});

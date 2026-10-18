@@ -8,3 +8,16 @@ Pre-flight (shared interfaces):
 - T4 collect().onboarding → T6 (bin status/update): match. bin already imports work-state.mjs (CLI runs only when executed directly).
 - T5 record writes audited → T4 skillsAudited reads it: match (top-level "audited", non-empty string).
 - T7 DEFAULT_PATHS.specs → T8 skill names it: match.
+Task 1: complete (commits 0ace97f..0dfd1a9, tests: node --test mechanisms/hooks/plan-parse.selftest.mjs mechanisms/hooks/work-state.selftest.mjs → ℹ duration_ms 9482.77975)
+- Task 1: the "AC1 is not AC10" test passed before the change (Part 1's \b already handled it); kept as a guard on the new regex.
+- Task 2: early real-data run, in memory over prizma's 43 plans at 2712ab0 (read-only): no text lost, every plan idempotent, 42 in the old format. Found and fixed by test first: a bold title that wraps (`**AC7 — … does not` / `…**`, plans 03, 05, 26) lost its ID and was renumbered.
+Task 2: complete (commits 0dfd1a9..35f1be9, tests: node --test mechanisms/hooks/plan-migrate.selftest.mjs mechanisms/hooks/plan-parse.selftest.mjs → ℹ duration_ms 36.2725)
+Task 3: complete (commits 35f1be9..67f6000, tests: node --test mechanisms/hooks/work-state.selftest.mjs mechanisms/hooks/plan-migrate.selftest.mjs → ℹ duration_ms 9883.472792)
+- Task 4: prizma read-only, --session-start 0.435 s: "! 44 plans in the old format" (plans on worktree branches count too) and "! /skills-audit hasn't run here", within 12 lines.
+Task 4: complete (commits 67f6000..f15b9c1, tests: node --test mechanisms/hooks/ssdd-config.selftest.mjs mechanisms/hooks/work-state.selftest.mjs → ℹ duration_ms 12426.749167)
+Task 5: complete (commits f15b9c1..28e49e9, tests: node --test bin/skills-audit.selftest.mjs → ℹ duration_ms 737.999166)
+- Task 6: "an update within a version prints no Upgrade block" passed before the change (no block existed); kept as a guard.
+Task 6: complete (commits 28e49e9..26cea05, tests: node --test bin/ssdd.selftest.mjs → ℹ duration_ms 23728.839667)
+Task 7: complete (commits 26cea05..4503905, tests: node --test mechanisms/hooks/ssdd-config.selftest.mjs mechanisms/hooks/work-state.selftest.mjs bin/ssdd.selftest.mjs → ℹ duration_ms 24005.5345)
+- Task 8: skill written test-first per writing-skills. Baseline (no skill, sonnet, prizma 09/22/25 in a scratch clone): 12 min, 55 tool calls, 216k tokens; Status right and no text lost (it found --migrate-check), but it built entries from today's code and tests ("Passed in the run above" for test names the plan never records) and added "Later:" research notes. GREEN (with the skill, same plans): 3 min, 21 calls; entries from the plan only (shapes 1, 2, 4), migrate-check clean. Gap found: a pointer to a passage that closes half a criterion (09 AC6) overstates it; REFACTOR added the partial line ("…; the live run: NOT RECORDED").
+- Task 8: Ruling: install also prints the onboarding lines — Clarify 15 names install into a repo with plans (Hatedate later) as a migration trigger — cost if wrong: one more output block after install.

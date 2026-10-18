@@ -12,8 +12,8 @@ the target, so upgrade steps belong here and not only in commit messages.
 
 ## [3.0.0] — unreleased
 
-v3 Part 1 (work state). 3.0.0 is tagged once Part 2 (the plan migration)
-lands too; see `SPEC.md` → v3.
+v3 Parts 1 (work state) and 2 (onboarding existing repos); see `SPEC.md` →
+v3. VERSION and the tag wait for the owner's go-ahead.
 
 ### Added
 - **The work-state view** (`.ssdd/hooks/work-state.mjs`). It lists every open
@@ -40,8 +40,24 @@ lands too; see `SPEC.md` → v3.
   file is replaced; an edited one is left. `status` warns when a parent
   ignore rule (for example `.superpowers/` in the root `.gitignore`) hides the
   ledgers.
-- **`paths`** in `.ssdd/config.json`: `plans` and `ledgers`, defaulting to
-  `.ssdd/plans` and `.ssdd/ledgers`. The view and the close check read them.
+- **`paths`** in `.ssdd/config.json`: `plans`, `specs` and `ledgers`,
+  defaulting to `.ssdd/plans`, `.ssdd/specs` and `.ssdd/ledgers`. The view,
+  the close check, `--next-plan` and the migration read them; `install`
+  creates the folders they name.
+- **The plan migration**, for a repo whose plans predate v3. `work-state.mjs
+  --migrate` rewrites criteria to `- **AC1** — …` (IDs kept, ID-less ones
+  numbered after the highest) and prints each plan's to-do. `/migrate-plans`
+  is the agent pass: entries cite their IDs from the plan's own record,
+  Status words become one of the six (checked against git, the old text
+  kept), references gain IDs, and a criterion nothing closes gets `NOT
+  RECORDED (migrated <date>)`. `--migrate-check <ref>` is its floor: no
+  removed text the new file doesn't keep, nothing left to do.
+- **Onboarding lines.** The view, `status` and `update` say `N plans in the
+  old format: run /migrate-plans` and `/skills-audit hasn't run here` until
+  each step is done. `skills-audit.mjs record` sets `"audited"` in
+  `.ssdd/skills.json`; `/skills-audit` ends every run with it.
+- **`work-state.mjs --next-plan`**: the next free plan number across every
+  worktree and ref, read from `paths.plans`. `/new-plan` uses it.
 
 ### Changed
 - The pre-commit untracked-file block skips `.superpowers/sdd/*/progress.md`
@@ -50,11 +66,26 @@ lands too; see `SPEC.md` → v3.
 - Templates: criteria are `- **AC1** — …` with no checkbox; Verification
   entries cite the IDs, with a `DEFERRED (operator)` form. The ledger
   template's finished example row is ticked.
+- The plan parser reads IDs with a letter (`AC8b`), `[~]` and `[-]`
+  checkboxes and checkboxed Verification entries, all found in prizma. A
+  `NOT RECORDED` entry counts as an entry, not as verified; open plans show
+  their not-recorded count.
+- SDD.md, the templates, `/new-plan` and the AGENTS template name the
+  folders by setting ("the plans folder (`paths.plans`, default
+  `.ssdd/plans`)").
+- `update` ends with each crossed version's `### Upgrade` section from this
+  file, oldest first; a `+sha` target also counts sections headed
+  `unreleased`.
 
 ### Upgrade
+- Run `/migrate-plans` once, in a repo with existing plans: it formats them
+  for v3 in one commit (`node .ssdd/hooks/work-state.mjs --migrate` is its
+  first step). Until then the session view says how many plans are in the
+  old format.
 - Claude Code: `.claude/settings.json` is project-owned, so add the
   `SessionStart` entry from `adapters/claude-code/settings-hooks.json`
   (`update` prints the template diff).
+- Run `/skills-audit` if it never ran here; `update` and `status` say so.
 
 ## [2.7.0] — 2026-10-17
 
