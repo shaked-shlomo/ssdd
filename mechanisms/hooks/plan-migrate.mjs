@@ -12,7 +12,7 @@
 // least-indented list lines, outside code fences. Checkboxes are dropped, IDs
 // are kept (never renumbered), ID-less items are numbered after the highest
 // ID. Verification sections are never touched; the agent pass cites IDs there.
-import { AC_ID, CHECKBOX, parsePlan } from './plan-parse.mjs';
+import { AC_ID, CHECKBOX, ENTRY, parsePlan } from './plan-parse.mjs';
 
 const CLOSED = new Set(['BUILT', 'SHIPPED']);
 const LIST = /^([ \t]*)([-*+]|\d+[.)])[ \t]+(.*)$/;
@@ -131,7 +131,6 @@ export function todoFor(text, { ticked = [] } = {}) {
   if (missing.length) todo.push(`no Verification entry: ${idRange(missing)}`);
   const where = scan(lines);
   const head = new RegExp(`^\\s*(?:(?:[-*+]|\\d+[.)])\\s+)?(?:${CHECKBOX}\\s+)?(?:\\*\\*)?(${ID_RUN})`);
-  const entry = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?\\*\\*${AC_ID}\\b`);
   const unparsed = [];
   lines.forEach((line, i) => {
     if (where[i].fence || !where[i].section?.startsWith('verification')) return;
@@ -139,7 +138,7 @@ export function todoFor(text, { ticked = [] } = {}) {
     // A line the check can't read is left to do while a criterion it names has
     // no entry; a kept range line with one entry per ID after it is fine.
     const owed = (id) => p.criteria.includes(id) && !p.entries.has(id);
-    if (m && (!entry.test(line) || /[–/,&-]/.test(m[1])) && idsIn(m[1]).some(owed)) unparsed.push(m[1]);
+    if (m && !ENTRY.test(line) && idsIn(m[1]).some(owed)) unparsed.push(m[1]);
   });
   if (unparsed.length) todo.push(`Verification lines cite IDs the close check can't read: ${unparsed.join(', ')} (write - **AC1** — …, one ID per line)`);
   return todo;

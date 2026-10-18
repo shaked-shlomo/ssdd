@@ -145,6 +145,11 @@ describe('todoFor', () => {
       '- **AC12** — DEFERRED (operator): release 2.', '- **AC13** — DEFERRED (operator): release 2.']));
     assert.deepEqual(t, []);
   });
+  it('an unticked Verification line is still to do', () => {
+    const t = todoFor(plan(['- **AC1** — a'], ['- [ ] **AC1** — run the e2e suite']));
+    assert.ok(t.includes('no Verification entry: AC1'), t.join(' | '));
+    assert.ok(t.some((x) => x.startsWith('Verification lines') && x.includes('AC1')), t.join(' | '));
+  });
   it('a clean closed plan has nothing to do', () => {
     assert.deepEqual(todoFor(plan(['- **AC1** — a'], ['- **AC1** — `cmd` → ok'])), []);
   });

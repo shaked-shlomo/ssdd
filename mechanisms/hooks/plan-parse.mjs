@@ -44,9 +44,11 @@ const linesOf = (secs, prefix) => secs.filter((s) => s.name.startsWith(prefix)).
 export const AC_ID = 'AC\\d+[a-z]?';
 export const CHECKBOX = '\\[[ xX~-]\\]';
 const CRITERION = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?(?:\\*\\*)?(${AC_ID})\\b`);
-// A head naming a run of IDs (`**AC1–AC3`, `**AC2/AC3`) is no ID's entry: each
-// ID gets its own line (`/migrate-plans` adds one per ID after a kept run).
-const ENTRY = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?\\*\\*(${AC_ID})\\b(?!\\s*[–/,&-]\\s*AC\\d)`);
+// An entry's checkbox, if it has one, is ticked: `- [ ] **AC1** — run the
+// suite` is a check still to do, not a record of one. A head naming a run of
+// IDs (`**AC1–AC3`, `**AC2/AC3`) is no ID's entry: each ID gets its own line
+// (`/migrate-plans` adds one per ID after a kept run).
+export const ENTRY = new RegExp(`^\\s*[-*]\\s+(?:\\[[xX~]\\]\\s+)?\\*\\*(${AC_ID})\\b(?!\\s*[–/,&-]\\s*AC\\d)`);
 const ITEM = /^\s*(?:[-*]|\d+[.)])\s+(.*\S)/;
 
 export function parsePlan(text) {

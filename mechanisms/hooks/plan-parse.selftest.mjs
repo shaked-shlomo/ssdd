@@ -92,10 +92,16 @@ describe('parsePlan', () => {
   it('suffix IDs and every checkbox parse', () => {
     const p = parsePlan(plan([
       '## Acceptance criteria', '- [~] **AC10 — x.** y', '- [x] AC6b — z', '- [-] AC2 q',
-      '## Verification', '- [ ] **AC8b** — ok',
+      '## Verification', '- [x] **AC8b** — ok', '- [~] **AC10** — half',
     ]));
     assert.deepEqual(p.criteria, ['AC10', 'AC6b', 'AC2']);
     assert.ok(p.entries.has('AC8b'));
+    assert.ok(p.entries.has('AC10'));
+  });
+  it('an unticked or dropped Verification checkbox is no entry', () => {
+    const p = parsePlan(plan(['## Acceptance criteria', '- **AC1** — a', '- **AC2** — b',
+      '## Verification', '- [ ] **AC1** — run the e2e suite', '- [-] **AC2** — check prod']));
+    assert.equal(p.entries.size, 0);
   });
   it('NOT RECORDED is an entry, flagged', () => {
     const p = parsePlan(plan(['## Acceptance criteria', '- **AC3** — c', '## Verification',

@@ -461,6 +461,15 @@ describe('close check (--staged)', () => {
     assert.match(err, /\[ssdd-work-state\] \.ssdd\/plans\/12-x\.md: AC2 has no Verification entry/);
   });
 
+  it('BUILT with unticked Verification checkboxes is blocked', () => {
+    put('.ssdd/plans/12-x.md', ['**Status:** BUILT', '## Acceptance criteria', '- **AC1** — a', '- **AC2** — b',
+      '## Verification', '- [ ] **AC1** — run the e2e suite', '- [ ] **AC2** — check prod', ''].join('\n'));
+    stage('.ssdd/plans/12-x.md');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 1);
+    assert.match(err, /AC1, AC2 have no Verification entry/);
+  });
+
   it('a DEFERRED entry passes', () => {
     put('.ssdd/plans/12-x.md', planText({ status: 'BUILT', ac: ['AC1', 'AC2'], done: ['AC1'], deferred: ['AC2'] }));
     stage('.ssdd/plans/12-x.md');
