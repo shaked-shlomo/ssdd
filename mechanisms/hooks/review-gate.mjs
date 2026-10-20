@@ -577,12 +577,13 @@ const { cfg } = loaded;
 // names files (no option but -f / -v, no directory, glob, pathspec magic or
 // expansion), inside this repo, and none is routed. Those can't change what
 // the commit owes, so the index judged now owes what the commit will. Each
-// file exists now, or is a tracked file being deleted. Nothing else in the
-// call may run before the commit but `cd`, `git add` and git reads (status,
-// diff, log, show, rev-parse, ls-files), outside a subshell: anything else
-// could change the files or the index between this check and the commit. A
-// word is a redirection only where the command has it unquoted.
-const BESIDE_ADD = new Set(['cd', 'git add', 'git status', 'git diff', 'git log', 'git show', 'git rev-parse', 'git ls-files']);
+// file exists now, or is a tracked file being deleted. No other git command
+// may run before the commit but git reads (status, diff, log, show,
+// rev-parse, ls-files), since one could change the index, and none of it in
+// a subshell, whose `cd` can't be followed. (Other programs are free to run:
+// git called from a program is the accepted limit the pre-commit layer
+// backs.) A word is a redirection only where the command has it unquoted.
+const BESIDE_ADD = new Set(['git add', 'git status', 'git diff', 'git log', 'git show', 'git rev-parse', 'git ls-files']);
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
 function chainedAddReason({ inv: { args }, words, dir, badC }) {
   if (badC !== undefined) return `\`-C ${badC}\` can't be read before it runs`;
@@ -641,7 +642,7 @@ function chainedAddReason({ inv: { args }, words, dir, badC }) {
     }
   }
   const adds = before.filter((s) => s.inv?.sub === 'add');
-  const other = before.find((s) => !BESIDE_ADD.has(s.name));
+  const other = before.find((s) => s.inv && !BESIDE_ADD.has(s.name));
   for (const add of adds) {
     const why = /[()]/.test(probe) ? 'a subshell can\'t be followed'
       : other ? `\`${other.name}\` runs in the same call, and may change what it stages`
