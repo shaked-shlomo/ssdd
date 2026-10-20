@@ -1155,7 +1155,9 @@ and the D13 `if` filter tested and included (item 9).
 
 **Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
 Parts 1 and 2 SHIPPED as 3.0.0, tagged 2026-10-20 (Node 18 CI and the
-after-`/compact` check DEFERRED, see their Verification sections) ·
+after-`/compact` check DEFERRED, see their Verification sections); Part 3
+BUILT 2026-10-20 on branch `claude/v3-cheaper-gate-cc1697`, unreleased
+(3.1.0) ·
 **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
@@ -2491,6 +2493,253 @@ Hatedate's Claude Code transcripts (read-only, 14 project folders under
   - An installed layout's selftests pass.
   - `update` from a `v3.0.0` install to this branch is clean.
   - No API newer than Node 18 is added; CI runs Node 18 and 24 on a push.
+
+### Verification
+
+*Verified 2026-10-20 on branch `claude/v3-cheaper-gate-cc1697`, cut from
+local `main` at `v3.0.0` (`722bc60`). Every check below was re-run at
+`79f7c62`, after the final review's fix pass. Node 24.15.0, git 2.54.0.
+Selftest counts at `79f7c62`: `review-gate` 78, `review-gate.shapes` 191,
+`review-stamp` 44, `git-guard` 261, `convention-lint` 17, `ssdd-config` 19,
+`work-state` 70, `plan-parse` 29, `plan-migrate` 35, `bin/ssdd` 56,
+`bin/skills-audit` 27, all passing.*
+
+- **AC17** — `node --test mechanisms/hooks/review-gate.selftest.mjs` → 78
+  pass. Its `merges` cases:
+  - "a path equal to git's merge of the default branch owes nothing" (the
+    block names the resolved `src/a.ts`, not the merged `src/b.ts`, and says
+    `merge: 1 staged path(s) match git's own merge with <sha> — owed by no
+    one`)
+  - "the harness hook and --check apply it too"
+  - "an edit made during the merge is owed"
+  - "once the resolution is stamped, the merge commits"
+  - "merging a branch that is not on the default branch is judged in full"
+    and "merging a commit no ref holds (git stash create) is judged in full"
+  - "an octopus merge is judged as today" and "a git without merge-tree
+    --write-tree is judged as today" (a `git` shim that exits 129)
+  - "--check mid-conflict lists the conflicted path"
+  - "in a linked worktree"
+  - "a merge of origin/main counts, though local main is behind"
+  - "the oversize warning doesn't count merged paths"
+
+  **On real data:** a scratch clone of prizma, with `origin/main` set to
+  `2712ab0` and `origin/HEAD` pointing at it. Each merge was redone with
+  `checkout --detach <c>^1`, `merge --no-commit <c>^2`, then `read-tree
+  --reset -u <c>` (the real resolution; `MERGE_HEAD` stays). Every `<c>^2`
+  is on `origin/main`.
+
+  | Merge | `v3.0.0` `--pre-commit` owes | `--check` at `79f7c62` owes |
+  |---|---|---|
+  | `ebbd494` | 37 | 0 |
+  | `60da710` | 25 | 0 |
+  | `5597881` | 46 | 1: `src/app/method/page.tsx`, with `merge: 70 staged path(s) match git's own merge with 9f35b43` |
+  | `1aa4cc6` | 12 | 0 |
+
+  That's 120 routed files owed today and 1 after. `--check` took 0.07–0.13 s
+  per merge. The real prizma: `git status --porcelain` is empty, at
+  `441a9e6`.
+- **AC18** — the same run, `the delta since the last stamp`. All pass:
+  - "after a full stamp, an edit gives git diff <stamped> <staged>, which
+    prints exactly the edit": the same line under `alpha` and `beta`, and
+    running it prints one body line, `+b`
+  - "hooks mode gives the same delta line"
+  - "no delta for a never-stamped file or a deletion"
+  - "a stamped blob that is gone owes the whole change"
+  - "a moved base is named" and "a stamped change that was then committed
+    is not a moved base"
+  - "a hand-edited key builds no delta and does not throw"
+  - "after the re-stamp the key names the new blob"
+- **AC19** — the same run, `--check`. All pass:
+  - "prints the owed list and exits 1"
+  - "prints nothing owed and exits 0"
+  - "writes nothing": the stamp file and `.git/index` are byte-equal before
+    and after
+  - "--repo works from another directory"
+  - "outside an SSDD repo it exits 0; a broken config exits 1"
+  - "the block message names --check"
+  - git-guard: "review-gate --check runs under stamping "hooks"", where
+    `--stamp` is still denied
+- **AC20** — `node --test mechanisms/hooks/review-gate.shapes.selftest.mjs`
+  → 191 pass, each case under both the Claude and the Cursor payload.
+  - **Refused:** a routed path (by its spelling on disk on a
+    case-insensitive disk too), a directory, `.`, a glob, `$X`, a path
+    outside the repo, a path that doesn't exist yet, `-A`, `-u`, `-p`, a
+    quoted `'2>'`, another git command before the commit, a subshell, and
+    chained `mv`, `restore` and `update-index`.
+  - **Passes:** "a visible chained git add passes". That covers `--`, `-f`,
+    `cd docs &&`, a name with a space and `é`, `2>&1`, `git status` or
+    `python3` first, a heredoc message, and a tracked deletion. "the staged
+    routed files are still judged" holds.
+  - "a repo without .ssdd/config.json judges no shapes": `-am`, `commit
+    <path>`, a chained `add` and a chained `rm` all pass. `cd $X` fails
+    closed.
+  - "a malformed route fails closed, never open", and "directory changes the
+    gate can and can't follow".
+
+  **On real data:** 209 Bash calls in Hatedate's transcripts stage and
+  commit. They were replayed through the hook in a scratch clone at
+  `8563f3c`, whose `.ssdd/config.json` carries Hatedate's gate routing (its
+  `ROUTES`, tests excluded).
+  - 33 target other repos or scratch dirs that are gone, and 8 stage
+    nothing before a commit; neither is replayed.
+  - **Of the 80 that add a routed file, none passes.**
+  - Of the 88 that add only unrouted files, 70 pass. Under `v3.0.0`, none
+    did.
+  - The other 18 are refused for another git command in the call (`git
+    checkout`, `git reset`, a second commit), a subshell, `-u` or `cd
+    $REPO`. Some name a file that has since left the tree, which is a replay
+    artifact.
+  - The real Hatedate: `git status --porcelain` is empty, at `8563f3cd`.
+- **AC21** — all pass:
+  - work-state: "pre-commit: an untracked file is a warning; the commit
+    lands" (it runs the real `pre-commit`), "pre-commit:
+    preCommit.blockUntracked restores the block", and "the untracked list
+    stops at 10".
+  - ssdd-config: "preCommit.blockUntracked defaults to false and reads
+    true", and "a non-object preCommit is a config error".
+- **AC22** — `node --test mechanisms/hooks/git-guard.selftest.mjs` → 261
+  pass.
+  - The `ALLOWED` table has 12 read forms: a bare read, `--local`,
+    `--global`, `--show-origin`, `--type=path`, `get`, `2>/dev/null`,
+    `2>&1`, `|| echo unset`, `; ls`, inside `"$(…)"`, and Hatedate's 07-11
+    command.
+  - The `BLOCKED` table adds 22 write forms: `""`, a quoted value,
+    `--unset-all`, `--add`, `--replace-all`, `set`, `unset`, read-then-write,
+    Hatedate's 08-09 read beside a write, arming, a value after `2>&1` or
+    `>&2`, `<(true)`, a quoted `'--unset'`, `get` after an option, `--unset-a`,
+    `--get` inside a `--comment` value or as its value, `$OP`, a backtick, a
+    brace and a zsh glob group.
+
+  **On real data**, the 4 Hatedate commands:
+
+  | Command | `v3.0.0` | `79f7c62` |
+  |---|---|---|
+  | 07-11, a plain read after a `cat` | BLOCK | allow |
+  | 08-09, arming a scratch repo | BLOCK | BLOCK |
+  | 08-09, a read in `$(…)` and then a write | BLOCK | BLOCK |
+  | 09-27, the key inside a Python string | allow | allow |
+- **AC23** — `node --test mechanisms/hooks/convention-lint.selftest.mjs`
+  → 17 pass. Its `only added lines` cases are all green:
+  - "an edit elsewhere passes the edit hook"
+  - "a new violating line is flagged with its number" (`:3`, not `:1`)
+  - "--staged: only staged added lines"
+  - "a new file is linted whole"
+  - "files named on the command line are linted whole"
+  - "a renamed file with an old violation passes --staged"
+  - "--staged judges the staged content, not the disk"
+  - "a path with a space and non-ASCII letters"
+  - "a name git C-quotes (a double quote, a tab)"
+  - "the edit hook lints from a project dir below the repo root"
+- **AC24** — updated:
+  - SDD.md §4 (`--check`, the delta as the reviewer's input, merges, the
+    chained `add` exception) and §2 (renumbering a duplicate)
+  - `mechanisms/config.example.json` (`preCommit`)
+  - the README (the gate paragraph, Known limitations)
+  - BACKLOG (the Part 3 row; the open decision gone; the `--remove-section
+    core` limit)
+  - CHANGELOG `## [3.1.0] — unreleased`
+- **AC25** — `node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs`
+  → 827 tests, 827 pass, 0 fail (631 at `v3.0.0`).
+  - **Update:** a scratch repo was installed at `v3.0.0` (adapters
+    `claude-code,cursor`) and committed. Then `update --to 79f7c62`:
+    - exit 0, "unchanged: 30 file(s)", "updated (14)"
+    - 0 conflict markers and 0 `.ssdd-new` files
+    - `.claude/settings.json` has the same sha256
+    - `.githooks/pre-commit` is byte-equal to `mechanisms/hooks/pre-commit`
+  - **Installed layout:** `node --test .ssdd/hooks/*.selftest.mjs` → 744
+    tests, 743 pass, 1 skipped (the source-tree-only config-example check),
+    0 fail. The final reviewer also made a real commit there with an
+    untracked file; it printed the warning and landed.
+  - **No API newer than Node 18:** a grep of the diff for `toSorted`,
+    `findLast`, `Object.groupBy`, `.union(`, `globSync`, `fromAsync` and
+    `.at(` finds none. `fs.realpathSync.native` is Node 9.2.
+- **AC25, Node 18 CI** — DEFERRED (operator). There's no Node 18 on this
+  machine, and CI runs on a push, which waits for the owner's go-ahead.
+
+### Deviations & discoveries
+
+What shipped differs from Clarify 18–27 in these ways. Each is ledgered in
+`.superpowers/sdd/2026-10-20-v3-cheaper-gate/progress.md` with its cost if
+wrong.
+
+- **An automated security review ran on every commit,** from a Claude Code
+  plugin in this environment. It drove seven follow-up fixes, each made
+  test-first, and the rulings on what it raised are in the ledger.
+- **Only a merge of the default branch is exempt** (Decision 1, Clarify 18,
+  narrowed).
+  - As first built, the rule trusted any `MERGE_HEAD`. Merging a `git stash
+    create` object, or any branch nobody reviewed, would have passed its
+    content unreviewed.
+  - Now `MERGE_HEAD` must be on the default branch, using Part 1's
+    definition: `origin/HEAD` and its local namesake, else `main` or
+    `master`.
+  - All four prizma merges brought `origin/main` into a branch, so the
+    evidence is unchanged. Merging one feature branch into another still
+    pays in full.
+- **`core.hooksPath`: everything after the key must be a redirection**
+  (Clarify 24, tightened).
+  - A read flag no longer makes a call a read. So `git config --get
+    core.hooksPath <value-pattern>` is now blocked, where `v3.0.0` allowed
+    it.
+  - Words before the key are split the way the shell splits them. A prefix
+    of a write option (`--unset-a`) is a write.
+  - So is anything the shell expands before the key: `$`, a backtick, a
+    brace, a parenthesis or a glob character.
+  - Scanning every match also closed a hole in `v3.0.0`: a `--get` followed
+    by a write in the same call passed.
+- **A chained `git add` has more conditions than Clarify 22 listed:**
+  - **Each path must exist now,** or be a tracked file being deleted. The
+    hook runs before any of the call, so it can't tell a file from a
+    directory that an earlier command makes.
+  - **No other git command may run before the commit,** except a read:
+    `status`, `diff`, `log`, `show`, `rev-parse`, `ls-files`.
+  - **No subshell.**
+  - **Other programs may run.** Refusing them too cut Hatedate's passing
+    chains from 70 to 50; 19 of the calls ran `python3` first. A program
+    reaches the index only by running git itself, which is the `v3.0.0`
+    limit that the pre-commit layer backs.
+- **`splitCommands` marks quoted words.** It also keeps `2>&1` and `&>file`
+  as one word; before, the `&` split the command, so `git add x 2>&1 && git
+  commit` looked like a command named `1`.
+- **Directory changes the gate can't follow fail closed before a commit.**
+  That means `pushd`, `popd`, `builtin cd`, and `cd` with an option. `v3.0.0`
+  judged the starting repo in those cases. A redirection on a `cd`, and a
+  `popd` after the last commit, are fine.
+- **Routing is checked to the regex** (final review). A string `paths`, a
+  regex that doesn't compile, or a route with no reviewer is a config error.
+  It had thrown inside the new chained-add check, outside the gate's try, and
+  Claude's PreToolUse reads that exit 1 as allow.
+- **Found in the clarify pass and fixed:**
+  - The harness gate refused shapes in repos with no config (Clarify 21).
+  - `convention-lint --staged` read the file on disk, and silently skipped
+    a staged file whose name has non-ASCII letters (git C-quoted it).
+  - The edit-hook lint, run from a project dir below the root, matched
+    nothing. That was a regression in this branch, caught by the final
+    review.
+- **The "base moved" note** (Clarify 19) appears only when `HEAD`'s side
+  differs from both the stamped base and the stamped content. A stamped
+  change that was later committed isn't a moved base.
+- **SubagentStop keeps comparing raw staged keys.** Applying the merge rule
+  there would report a merge-clean file as "changed during review".
+- **The final review** (opus) found 0 Critical, 1 Important (routing, fixed)
+  and 6 Minor.
+  - Two Minors were re-graded and fixed: the subdirectory lint regression,
+    and `cd x 2>/dev/null` plus a trailing `popd` failing closed in every
+    repo.
+  - Four are deferred, plus one of mine:
+    - convention-lint reads an added line that starts with `++ ` as a file
+      header
+    - a dropped or added final newline re-lints the last line
+    - during a merge, `--stamp --files` on a merge-clean path says "not
+      staged, or not routed"
+    - the delta abbreviates blobs to 12 characters
+    - when nothing is owed, `--check` doesn't show the merge line
+- **Out, as rulings:** `git config --remove-section core` and `export
+  GIT_INDEX_FILE` before a commit are both older than Part 3, and both are
+  new evasion shapes. The first is in BACKLOG's accepted limitations.
+- **The replay corpus stays out of the repo.** Hatedate's 209 chains and 4
+  hooksPath commands carry private paths and commit text. The scripts and
+  their outputs are in the session scratchpad; the counts are above.
 
 ## Part 4 — the production guard and the Supabase pack
 
