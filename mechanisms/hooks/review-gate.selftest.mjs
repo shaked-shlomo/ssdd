@@ -426,6 +426,106 @@ describe('the block message names the delta', () => {
   });
 });
 
+// v3.1: a reviewer's stamp names the blob it saw, so a re-review is handed
+// the change since then instead of the whole file.
+describe('the delta since the last stamp', () => {
+  const deltaUnder = (stderr, name) =>
+    new RegExp(`• ${name} — owes[^\\n]*:\\n\\s+src\\/a\\.ts[^\\n]*\\n\\s+review the change: (git diff \\S+ \\S+)`).exec(stderr)?.[1];
+  const diffBody = (d, cmd) =>
+    git(d, ...cmd.split(' ').slice(1)).split('\n').filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l));
+  const setKey = (d, reviewer, path, key) => {
+    const s = readStamp(d);
+    s.reviewers[reviewer][path].key = key;
+    writeFileSync(stampFile(d), JSON.stringify(s));
+  };
+
+  it('after a full stamp, an edit gives git diff <stamped> <staged>, which prints exactly the edit', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    write(dir, 'src/a.ts', 'a\nb\n');
+    const { status, stderr } = preCommit(dir);
+    assert.strictEqual(status, 1);
+    const a = deltaUnder(stderr, 'alpha');
+    assert.ok(a, stderr);
+    assert.strictEqual(deltaUnder(stderr, 'beta'), a);
+    assert.deepStrictEqual(diffBody(dir, a), ['+b']);
+    assert.match(stderr, /that diff is its input/);
+    assert.doesNotMatch(stderr, /base moved/);
+  });
+  it('hooks mode gives the same delta line', () => {
+    const d = makeRepo({ ...CONFIG, reviewGate: { stamping: 'hooks' } });
+    try {
+      write(d, 'src/a.ts', 'a\n');
+      stamp(d, 'alpha,beta');
+      write(d, 'src/a.ts', 'a\nb\n');
+      const { stderr } = preCommit(d);
+      assert.deepStrictEqual(diffBody(d, deltaUnder(stderr, 'alpha')), ['+b']);
+      assert.match(stderr, /Dispatch each owing reviewer/);
+      assert.match(stderr, /that diff is its input/);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+  it('no delta for a never-stamped file or a deletion', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.doesNotMatch(preCommit(dir).stderr, /git diff /);
+    git(dir, 'commit', '-qm', 'land a');
+    write(dir, 'src/a.ts', 'a2\n');
+    stamp(dir, 'alpha,beta');
+    git(dir, 'rm', '-qf', 'src/a.ts');
+    const { status, stderr } = preCommit(dir);
+    assert.strictEqual(status, 1);
+    assert.doesNotMatch(stderr, /git diff /);
+  });
+  it('a stamped blob that is gone owes the whole change', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    setKey(dir, 'alpha', 'src/a.ts', `000000:${'0'.repeat(40)}→100644:${'1'.repeat(40)}`);
+    const { status, stderr } = preCommit(dir);
+    assert.strictEqual(status, 1);
+    assert.match(stderr, /• alpha — owes[^\n]*:\n\s+src\/a\.ts[^\n]*\n\s+its stamped blob is gone: review the whole change/);
+    assert.doesNotMatch(stderr, /git diff /);
+  });
+  it('a moved base is named', () => {
+    write(dir, 'src/a.ts', 'base\n');
+    git(dir, 'commit', '-qm', 'base');
+    write(dir, 'src/a.ts', 'base\nx\n');
+    stamp(dir, 'alpha,beta');
+    git(dir, 'reset', '-q');
+    write(dir, 'src/a.ts', 'base2\n');
+    git(dir, 'commit', '-qm', 'base2');
+    write(dir, 'src/a.ts', 'base2\nx\n');
+    const { stderr } = preCommit(dir);
+    assert.match(stderr, /review the change: git diff \S+ \S+ \(its base moved too\)/);
+  });
+  it('a stamped change that was then committed is not a moved base', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    git(dir, 'commit', '-qm', 'land a');
+    write(dir, 'src/a.ts', 'a\nb\n');
+    const { stderr } = preCommit(dir);
+    assert.deepStrictEqual(diffBody(dir, deltaUnder(stderr, 'alpha')), ['+b']);
+    assert.doesNotMatch(stderr, /base moved/);
+  });
+  it('a hand-edited key builds no delta and does not throw', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    setKey(dir, 'alpha', 'src/a.ts', 'garbage');
+    const { status, stderr } = preCommit(dir);
+    assert.strictEqual(status, 1);
+    assert.match(stderr, /\(was garbage\)/);
+    assert.doesNotMatch(stderr, /git diff /);
+  });
+  it('after the re-stamp the key names the new blob', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    write(dir, 'src/a.ts', 'a\nb\n');
+    stamp(dir, 'alpha');
+    const blob = git(dir, 'ls-files', '-s', 'src/a.ts').split(/\s+/)[1];
+    assert.ok(readStamp(dir).reviewers.alpha['src/a.ts'].key.endsWith(`:${blob}`));
+  });
+});
+
 describe('the oversize warning', () => {
   const routed = (n) => { for (let i = 0; i < n; i++) write(dir, `src/f${i}.ts`, `${i}\n`); };
   const WARN = /WARNING: (\d+) routed file\(s\) staged \(limit (\d+)\)[^]*SDD\.md §4/;

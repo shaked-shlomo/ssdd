@@ -88,7 +88,9 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   unrouted files (ledgers, docs) never void a stamp. The procedure:
   1. Read the block message: per reviewer, the files it owes and why.
   2. Dispatch those reviewers in parallel. Name each one's input (the staged
-     diff, a range, or a file list); a reviewer given nothing answers
+     diff, a range, or a file list). For a file a reviewer stamped before,
+     the message gives `git diff <stamped blob> <staged blob>`: that change
+     is its input, not the whole file. A reviewer given nothing answers
      `NO DIFF — scope not provided`, and that is never stamped. Dispatched
      reviewers are read-only: no edits, commits, stamps, or `git stash`.
   3. Fix or triage the findings, re-stage, then stamp. In Claude Code with

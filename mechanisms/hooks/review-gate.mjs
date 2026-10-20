@@ -14,6 +14,10 @@
 // the whole staged diff, so any edit anywhere voided every stamp; in the source
 // project one plan ran six full review rounds over 29 files and never converged.)
 //
+// A stamp names the blob its reviewer saw, so when a file changes after its
+// stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
+// re-review reads that change, and the new stamp lands on the new blob.
+//
 // Stamping without actually running the named reviewers defeats the gate and
 // is forbidden by the process (process/SDD.md §4).
 //
@@ -187,11 +191,32 @@ function judge(cfg) {
     const mine = stamp.reviewers[name] ?? {};
     const missing = files
       .filter((f) => mine[f]?.key !== staged.get(f))
-      .map((f) => ({ path: f, prev: mine[f]?.key ?? null }));
+      .map((f) => {
+        const prev = mine[f]?.key ?? null;
+        return { path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) };
+      });
     if (missing.length) owed.push({ name, files, missing, refused: stamp.refused?.[name]?.reason });
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
   return { owed, unrouted, warning: oversizeWarning(cfg, routed.size) };
+}
+
+// What a reviewer re-reads after a fix: the change from the blob its stamp
+// names to the staged one. → { cmd, baseMoved } | 'gone' (that blob was
+// pruned) | null (no delta: a deletion on either side, the same blob — a mode
+// change — or a key this gate didn't write). Total, like short(): it feeds
+// the block message. The base moved when HEAD's side changed to something
+// other than the reviewed content (a rebase, not a commit of the stamped change).
+const KEY = /^(\d+):([0-9a-f]+)→(\d+):([0-9a-f]+)$/;
+function deltaFor(prev, now) {
+  const p = KEY.exec(String(prev));
+  const n = KEY.exec(String(now));
+  const zero = (b) => /^0+$/.test(b);
+  if (!p || !n || zero(p[4]) || zero(n[4]) || p[4] === n[4]) return null;
+  try {
+    execFileSync('git', ['-C', repo, 'cat-file', '-e', p[4]], { stdio: 'ignore' });
+  } catch { return 'gone'; }
+  return { cmd: `git diff ${p[4].slice(0, 12)} ${n[4].slice(0, 12)}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
 }
 
 // Not a block: SDD.md §4 is per task — implement → review gate → commit — and a
@@ -231,12 +256,14 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
         ? `  • ${name} — never stamped on this diff (${files.length} routed file(s)):`
         : `  • ${name} — owes ${missing.length} of ${files.length} routed file(s):`,
     );
-    for (const { path, prev } of missing) {
+    for (const { path, prev, delta } of missing) {
       lines.push(
         never ? `      ${path}`
         : prev === null ? `      ${path}   never stamped`
         : `      ${path}   changed since its last stamp (was ${short(prev)})`,
       );
+      if (delta === 'gone') lines.push('        its stamped blob is gone: review the whole change');
+      else if (delta) lines.push(`        review the change: ${delta.cmd}${delta.baseMoved ? ' (its base moved too)' : ''}`);
     }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
@@ -246,7 +273,8 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
       `[ssdd-review-gate] the staged diff owes reviews:\n` +
       lines.join('\n') +
       `\nDispatch each owing reviewer with the Agent tool (subagent_type = its name), telling\n` +
-      `it the files it owes. When it finishes with its verdict line, its completion stamps\n` +
+      `it the files it owes; for a file with a \`git diff\` line, that diff is its input.\n` +
+      `When it finishes with its verdict line, its completion stamps\n` +
       `those files — a file edited during its review stays owed. Fix or triage findings,\n` +
       `re-stage, and retry the commit. (reviewGate.stamping is "hooks": the agent can't run\n` +
       `--stamp; a person in a terminal can.)\n`
@@ -257,7 +285,8 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
     `[ssdd-review-gate] the staged diff owes reviews:\n` +
     lines.join('\n') +
     `\nRun each reviewer checklist (.ssdd/reviewers/<name>.md) against the files it owes —\n` +
-    `dispatch them in parallel if your harness supports subagents — fix/triage findings,\n` +
+    `for a file with a \`git diff\` line, that diff is its input; dispatch them in\n` +
+    `parallel if your harness supports subagents — fix/triage findings,\n` +
     `re-stage, then attest:\n` +
     `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}${repoHint}\n` +
     `(add --files <path,…> when a reviewer re-read only those files) and retry the\n` +
