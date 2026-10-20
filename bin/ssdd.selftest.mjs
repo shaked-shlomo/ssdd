@@ -787,7 +787,8 @@ describe('migrate-plans skill', () => {
     for (const s of ['--migrate', '--migrate-check HEAD', 'NOT RECORDED (migrated', 'refute-by-default', 'one commit',
       'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep',
       '## Status:', 'STATUS (date):', 'was: (no Status line)', 'no criteria', 'word for word',
-      'Never write criteria of your own']) assert.ok(text.includes(s), s);
+      'Never write criteria of your own', 'split across phases', 'records the build',
+      'list of unfinished work', 'a summary line']) assert.ok(text.includes(s), s);
   });
 
   it("the real CHANGELOG's 3.0.0 Upgrade section names both steps", () => {

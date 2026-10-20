@@ -69,11 +69,12 @@ with no items), once its Status is set:
 - **Closed** (SHIPPED, SUPERSEDED, ABANDONED): its Status only.
 - **Open** (DRAFT, IN PROGRESS, BUILT): if the plan has its own checklist of
   what done means (a Verification list, "Verify Phase N" items, a
-  gauntlet), copy that one list's items, in order and word for word, into a
-  new `## Acceptance criteria` section just before its `## Verification`
-  (else at the end), as `- **AC1** — <the item's text>`. The original list
-  stays where it is. Then give entries as below: an item the plan records
-  as done points at that record.
+  gauntlet), copy that checklist's items (one split across phases is still
+  one list), in plan order and word for word, into a new `## Acceptance
+  criteria` section just before its `## Verification` (else at the end), as
+  `- **AC1** — <the item's text>`. When no `## Verification` comes after the
+  passages the entries will cite, add one at the end to hold them. The
+  original list stays where it is. Then give entries as below.
 - **No such checklist:** leave it.
 
 Never write criteria of your own: no merged lists, reworded items or added
@@ -97,6 +98,13 @@ says are met. Each gets exactly one line, in the first shape that fits:
 5. Nothing in the plan closes it:
    `- **AC6** — NOT RECORDED (migrated <YYYY-MM-DD>): the plan's Verification didn't close this.`
 
+What counts as a record: a passage that says the item's check ran (its
+output, "verified", "passes"). A ✅ or "complete" on a phase or section
+heading records the build, not the check, and a summary line ("all
+features work", "verification COMPLETE") closes no single item. A DEFERRED
+may rest on the plan's list of unfinished work when the criterion plainly
+depends on an item in it; quote that list.
+
 A line that says the criterion isn't met (still open, pending, deferred,
 failed, superseded) is no verification: its head is
 `- **AC3** — DEFERRED (<what it waits on: operator, plan 43>): <its text, unchanged>`.
@@ -105,6 +113,8 @@ That holds for entries that already read as `- **AC3** …`, so check those too.
 When the passage behind shape 2 or 3 closes only part of the criterion (the
 unit half, not the live run), the line ends with what it leaves:
 `- **AC6** — see "…" above; the live run: NOT RECORDED (migrated <YYYY-MM-DD>).`
+When the plan says why the rest isn't done, that tail is
+`; <the rest>: DEFERRED (<what it waits on>): <the plan's words>` instead.
 
 Every entry rests on the plan's text. The code, its tests, other plans, the
 docs and the repo as it is today are not a record of what was verified then:

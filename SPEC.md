@@ -2146,13 +2146,24 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
     another way keeps its word, with a `**Status:**` line added beside it;
     a plan with no Status says `was: (no Status line)`; and a plan with no
     criteria gets its Status only and is listed for the user.
-- **Open (owner):** what to do with plans that have no criteria. In
-  Hatedate that is 77 of 90, many of them closed. The choices:
-  - leave them as history
-  - have the agent copy a plan's own checklist into an `## Acceptance
-    criteria` section, so nothing is invented and what wasn't recorded
-    shows as NOT RECORDED
-  - only do that for open plans
+- **Plans with no criteria** (owner ruling, 2026-10-20). In Hatedate that
+  is 77 of 90.
+  - An open plan (DRAFT, IN PROGRESS, BUILT) gets its own done-checklist
+    copied word for word into an `## Acceptance criteria` section, and
+    entries follow the usual rules.
+  - A closed plan keeps its Status only.
+  - The agent never writes criteria of its own.
+  - **Tried on the Hatedate copy, 01 and 22:** 01's four "Verify Phase N"
+    lists became AC1–AC19, and 22's Wave V gauntlet became AC1–AC5. The
+    diff is 60 added lines and 0 removed.
+  - **What the verifier changed:** a ✅ on a phase heading records the
+    build, not the check, so 15 of 01's pointers became NOT RECORDED.
+  - **The skill now says so,** and it also covers a checklist split across
+    phases, a `## Verification` added to hold the entries, and DEFERRED
+    resting on the plan's list of unfinished work.
+  - **The view now reads** `01 backend-production  BUILT · AC 0/19
+    verified · 4 deferred · 15 not recorded`, where before it showed a bare
+    BUILT.
 - **Status ruling.** A Status already from the six stays, even when git
   shows the plan merged. The migration formats; Part 1's view flags an IN
   PROGRESS nothing is working on, and Part 1's Scope leaves editing Status
