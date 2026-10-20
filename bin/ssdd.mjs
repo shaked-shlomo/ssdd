@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 // SSDD installer / updater — zero deps, Node >= 18, git CLI.
 //
-//   ssdd.mjs install <target> [adapters] [--ref <ref>] [--force]
-//   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--force]
+//   ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs <a,b>|none] [--force]
+//   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--packs <a,b>|none] [--force]
 //   ssdd.mjs adopt   <target> --base <ref> [--to <ref>] [--adapters <a,b>]
 //   ssdd.mjs status  <target> [--skills]
 //
 // adapters: comma-separated claude-code, cursor, generic (default: generic).
+// packs: knowledge for one stack (packs/<name>/, e.g. supabase), installed as
+// managed files in .ssdd/packs/<name>/. `install` runs each pack's detect.mjs
+// from the release it installs and records the matches in the lock's
+// `packs`; `update` installs what the lock lists and never detects, so packs
+// can't appear or vanish between updates; `status` says when the repo now
+// matches a pack it doesn't have. --packs a,b or --packs none overrides both.
 //
 // Content always comes from a git ref of this repo — by default the newest
 // vX.Y.Z tag — never from the working tree, so the lock's commit is exactly
@@ -28,7 +34,7 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ARM_HOOK, DEFAULT_PATHS, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
@@ -58,8 +64,8 @@ const SRC = resolve(opt.source || process.env.SSDD_SOURCE || join(dirname(fileUR
 
 function die(msg) { console.error(`ssdd: ${msg}`); process.exit(2); }
 function usage() {
-  die('usage: ssdd.mjs install <target> [adapters] [--ref <ref>] | update <target> [--to <ref>] ' +
-      '[--adapters a,b] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target> [--skills]');
+  die('usage: ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs a,b|none] | update <target> [--to <ref>] ' +
+      '[--adapters a,b] [--packs a,b|none] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target> [--skills]');
 }
 
 // ── git / fs helpers ─────────────────────────────────────────────────────────
@@ -136,6 +142,35 @@ function parseAdapters(s, fallback) {
   return list;
 }
 
+// ── packs ────────────────────────────────────────────────────────────────────
+// The packs a tree ships: packs/<name>/ holding a guard.mjs.
+function packsIn(tree) {
+  const dir = join(tree, 'packs');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(join(dir, e.name, 'guard.mjs'))).map((e) => e.name).sort();
+}
+// → [{ name, evidence }] for each of the tree's packs whose detect.mjs matches target.
+async function detectPacks(tree, target) {
+  const found = [];
+  for (const name of packsIn(tree)) {
+    const file = join(tree, 'packs', name, 'detect.mjs');
+    if (!existsSync(file)) continue;
+    let evidence = '';
+    try { evidence = String((await import(pathToFileURL(file).href)).detect(target) ?? ''); } catch { /* a broken detect matches nothing */ }
+    if (evidence) found.push({ name, evidence });
+  }
+  return found;
+}
+// --packs a,b | none → the names, each one the tree ships.
+function parsePacks(value, tree) {
+  const list = String(value).split(',').map((x) => x.trim()).filter(Boolean);
+  if (list.length === 1 && list[0] === 'none') return [];
+  const known = packsIn(tree);
+  for (const n of list) if (!known.includes(n)) die(`unknown pack: ${n} (this release has: ${known.join(', ') || 'none'})`);
+  return [...new Set(list)].sort();
+}
+
 function writeFile(dst, buf, modeFrom) {
   mkdirSync(dirname(dst), { recursive: true });
   writeFileSync(dst, buf);
@@ -143,7 +178,7 @@ function writeFile(dst, buf, modeFrom) {
 }
 
 // ── the one source → target mapping (install, update and adopt share it) ─────
-function plan(tree, adapters) {
+function plan(tree, adapters, packs = []) {
   const managed = {};
   const seeded = {};
   const add = (map, target, src) => { if (existsSync(join(tree, src))) map[target] = src; };
@@ -154,6 +189,7 @@ function plan(tree, adapters) {
   add(managed, '.githooks/pre-commit', 'mechanisms/hooks/pre-commit');
   add(managed, SP_GITIGNORE, 'mechanisms/superpowers-sdd.gitignore');
   for (const f of walk(tree, 'skills')) managed[`.agents/${f}`] = f;
+  for (const name of packs) for (const f of walk(tree, `packs/${name}`)) managed[`.ssdd/${f}`] = f;
   if (adapters.includes('cursor')) {
     add(managed, '.cursor/hooks.json', 'adapters/cursor/hooks.json');
     add(managed, '.cursor/rules/ssdd.mdc', 'adapters/cursor/rules/ssdd.mdc');
@@ -219,12 +255,12 @@ function writeLock(target, lock) {
   mkdirSync(join(target, '.ssdd'), { recursive: true });
   writeFileSync(join(target, LOCK), JSON.stringify(lock, null, 2) + '\n');
 }
-function lockFrom(version, ref, commit, adapters, p, tree) {
+function lockFrom(version, ref, commit, adapters, packs, p, tree) {
   const managed = {};
   for (const [t, s] of Object.entries(p.managed)) managed[t] = { src: s, sha256: sha(readFileSync(join(tree, s))) };
   const seeded = {};
   for (const [t, s] of Object.entries(p.seeded)) seeded[t] = { src: s };
-  return { ssdd: version, ref, commit, adapters, updatedAt: new Date().toISOString(), managed, seeded };
+  return { ssdd: version, ref, commit, adapters, packs, updatedAt: new Date().toISOString(), managed, seeded };
 }
 
 // Arm the portable pre-commit layer: set core.hooksPath to .githooks when it
@@ -286,14 +322,16 @@ function nextSteps(target, adapters, armed) {
 }
 
 // ── install ──────────────────────────────────────────────────────────────────
-function install(target) {
+async function install(target) {
   const adapters = parseAdapters(opt.adapters ?? pos[1]);
   const existing = readLock(target);
   if (existing) die(`already installed (v${existing.ssdd}); use: update ${target}`);
   const { ref, commit } = resolveRef(opt.ref);
   const tree = exportTree(commit);
   const version = versionOf(commit, tree);
-  const p = plan(tree, adapters);
+  const detected = opt.packs === undefined ? await detectPacks(tree, target) : null;
+  const packs = detected ? detected.map((d) => d.name) : parsePacks(opt.packs, tree);
+  const p = plan(tree, adapters, packs);
   const clash = Object.entries(p.managed)
     .filter(([t, s]) => existsSync(join(target, t)) && !same(read(join(target, t)), read(join(tree, s))))
     .filter(([t]) => !(t === SP_GITIGNORE && isSuperpowersDefault(read(join(target, t)))))
@@ -305,6 +343,9 @@ function install(target) {
   }
   const log = (m) => console.log(`  ${m}`);
   console.log(`Installing SSDD v${version} (${ref} ${commit.slice(0, 7)}) into ${target} — adapters: ${adapters.join(',')}`);
+  console.log(detected
+    ? `  packs: ${detected.length ? detected.map((d) => `${d.name} (${d.evidence})`).join(', ') : 'none detected'}`
+    : `  packs: ${packs.join(', ') || 'none'} (--packs)`);
   for (const [t, s] of Object.entries(p.managed)) writeFile(join(target, t), readFileSync(join(tree, s)), join(tree, s));
   log(`wrote     ${Object.keys(p.managed).length} framework file(s)`);
   for (const [t, s] of Object.entries(p.seeded)) seedOne(target, t, tree, s, log);
@@ -312,7 +353,7 @@ function install(target) {
   const paths = loadSsddConfig(target)?.cfg?.paths ?? DEFAULT_PATHS;
   for (const d of Object.values(paths)) mkdirSync(join(target, d), { recursive: true });
   linkAll(target, adapters, log);
-  writeLock(target, lockFrom(version, ref, commit, adapters, p, tree));
+  writeLock(target, lockFrom(version, ref, commit, adapters, packs, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
   nextSteps(target, adapters, armHook(target, log));
   const open = onboarding(target);
@@ -381,7 +422,17 @@ function update(target) {
   const baseTree = exportTree(lock.commit);
   const newTree = exportTree(commit);
   const version = versionOf(commit, newTree);
-  const p = plan(newTree, adapters);
+  let packs;
+  if (opt.packs !== undefined) packs = parsePacks(opt.packs, newTree);
+  else {
+    const have = packsIn(newTree);
+    packs = (Array.isArray(lock.packs) ? lock.packs : []).filter((n) => {
+      if (have.includes(n)) return true;
+      console.warn(`ssdd: the lock lists pack "${n}", which this release doesn't ship — its files are treated as removed upstream`);
+      return false;
+    });
+  }
+  const p = plan(newTree, adapters, packs);
   const targets = [...new Set([...Object.keys(lock.managed), ...Object.keys(p.managed)])].sort();
 
   if (tryGit(target, 'rev-parse', '--is-inside-work-tree') === 'true') {
@@ -446,8 +497,9 @@ function update(target) {
     }
   }
   linkAll(target, adapters, log);
-  writeLock(target, lockFrom(version, ref, commit, adapters, p, newTree));
+  writeLock(target, lockFrom(version, ref, commit, adapters, packs, p, newTree));
   armHook(target, log);
+  log(`packs     ${packs.join(', ') || 'none'}`);
 
   const label = { updated: 'updated', added: 'added', merged: 'merged (project edits kept)', kept: 'kept (project-only edit)',
     removed: 'removed', conflict: 'CONFLICT — resolve markers', sidecar: 'NEW VERSION BESIDE YOURS — reconcile, then delete', skipped: 'skipped' };
@@ -575,10 +627,12 @@ function gateWarnings(target) {
 }
 
 // ── status ───────────────────────────────────────────────────────────────────
-function status(target) {
+async function status(target) {
   const lock = readLock(target);
   if (!lock) die(`no ${LOCK} in ${target}`);
   console.log(`SSDD v${lock.ssdd} (${lock.ref} ${lock.commit.slice(0, 7)}) — adapters: ${lock.adapters.join(',')}`);
+  const installed = Array.isArray(lock.packs) ? lock.packs : [];
+  console.log(`packs: ${installed.join(', ') || 'none'}`);
   const custom = []; const missing = []; const conflicted = []; const sidecars = [];
   for (const [t, { sha256 }] of Object.entries(lock.managed)) {
     const local = read(join(target, t));
@@ -599,6 +653,14 @@ function status(target) {
   } else if (latest) {
     console.log(`up to date with the newest release in ${SRC} (${latest})`);
   }
+  if (latest) {
+    const commit = tryGit(SRC, 'rev-parse', '--verify', `${latest}^{commit}`);
+    for (const d of commit ? await detectPacks(exportTree(commit), target) : []) {
+      if (installed.includes(d.name)) continue;
+      console.log(`NOTE: this repo matches the ${d.name} pack (${d.evidence}), which isn't installed — run: ` +
+        `node ${join(SRC, 'bin/ssdd.mjs')} update '${target}' --packs ${[...installed, d.name].join(',')}`);
+    }
+  }
   gateWarnings(target);
   for (const l of onboarding(target)) console.log(l);
   if (opt.skills) skillsDrift(target);
@@ -612,4 +674,4 @@ if (!existsSync(target)) die(`no such directory: ${target}`);
 if (!existsSync(join(SRC, '.git'))) die(`${SRC} is not an ssdd git checkout`);
 const run = { install, update, adopt, status }[cmd];
 if (!run) usage();
-run(target);
+await run(target);

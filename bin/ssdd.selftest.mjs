@@ -798,3 +798,108 @@ describe('migrate-plans skill', () => {
     assert.match(upgrade, /SessionStart/);
   });
 });
+
+describe('packs', () => {
+  // v2.1.0 adds a Supabase pack: a stub guard and a detect.mjs that reads
+  // supabase/config.toml and package.json.
+  const DETECT = `import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+export function detect(root) {
+  if (existsSync(join(root, 'supabase', 'config.toml'))) return 'supabase/config.toml';
+  try { const p = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')); if (p.dependencies?.['@supabase/supabase-js']) return 'package.json: @supabase/supabase-js'; } catch {}
+  return '';
+}
+`;
+  beforeEach(() => {
+    put(src, 'packs/supabase/guard.mjs', 'export const name = "supabase";\n');
+    put(src, 'packs/supabase/detect.mjs', DETECT);
+    put(src, 'packs/supabase/README.md', 'pack\n');
+    put(src, 'VERSION', '2.1.0\n');
+    commitAll(src, 'v2.1.0');
+    git(src, 'tag', 'v2.1.0');
+  });
+  const lock = () => JSON.parse(get('.ssdd/ssdd.lock.json'));
+
+  it('install detects supabase/config.toml', () => {
+    put(tgt, 'supabase/config.toml', 'project_id = "x"\n');
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /packs: supabase \(supabase\/config\.toml\)/);
+    assert.deepEqual(lock().packs, ['supabase']);
+    assert.ok(existsSync(join(tgt, '.ssdd/packs/supabase/guard.mjs')));
+    assert.equal(lock().managed['.ssdd/packs/supabase/detect.mjs'].src, 'packs/supabase/detect.mjs');
+  });
+
+  it('install detects @supabase/supabase-js', () => {
+    put(tgt, 'package.json', JSON.stringify({ dependencies: { '@supabase/supabase-js': '^2' } }));
+    assert.equal(ssdd('install', tgt).code, 0);
+    assert.deepEqual(lock().packs, ['supabase']);
+  });
+
+  it('a repo without Supabase gets no pack', () => {
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /packs: none detected/);
+    assert.deepEqual(lock().packs, []);
+    assert.ok(!existsSync(join(tgt, '.ssdd/packs')));
+  });
+
+  it('--packs none and --packs supabase override detection', () => {
+    put(tgt, 'supabase/config.toml', 'x\n');
+    assert.equal(ssdd('install', tgt, '--packs', 'none').code, 0);
+    assert.deepEqual(lock().packs, []);
+    rmSync(join(tgt, '.ssdd'), { recursive: true, force: true });
+    rmSync(join(tgt, 'supabase'), { recursive: true, force: true });
+    assert.equal(ssdd('install', tgt, '--packs', 'supabase').code, 0);
+    assert.deepEqual(lock().packs, ['supabase']);
+  });
+
+  it('--packs with an unknown name is an error', () => {
+    const r = ssdd('install', tgt, '--packs', 'supabase,nope');
+    assert.equal(r.code, 2);
+    assert.match(r.out, /unknown pack: nope/);
+  });
+
+  it("update keeps the lock's packs and never detects; --packs adds and removes", () => {
+    assert.equal(ssdd('install', tgt).code, 0);
+    commitAll(tgt, 'ssdd');
+    put(tgt, 'supabase/config.toml', 'x\n');
+    commitAll(tgt, 'supabase');
+    let r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(lock().packs, []);
+    assert.ok(!existsSync(join(tgt, '.ssdd/packs')));
+    commitAll(tgt, 'update');
+    r = ssdd('update', tgt, '--packs', 'supabase');
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(lock().packs, ['supabase']);
+    assert.ok(existsSync(join(tgt, '.ssdd/packs/supabase/guard.mjs')));
+    commitAll(tgt, 'add pack');
+    r = ssdd('update', tgt, '--packs', 'none');
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(lock().packs, []);
+    assert.ok(!existsSync(join(tgt, '.ssdd/packs/supabase/guard.mjs')));
+  });
+
+  it('status names a pack the repo now matches', () => {
+    assert.equal(ssdd('install', tgt).code, 0);
+    put(tgt, 'supabase/config.toml', 'x\n');
+    const r = ssdd('status', tgt);
+    assert.match(r.out, /packs: none/);
+    assert.match(r.out, /matches the supabase pack \(supabase\/config\.toml\), which isn't installed/);
+    assert.match(r.out, /--packs supabase/);
+  });
+
+  it('a lock from before packs updates with none', () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v2.0.0').code, 0);
+    const l = lock();
+    delete l.packs; // as a v3.1.1 installer wrote it
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(l, null, 2) + '\n');
+    commitAll(tgt, 'ssdd');
+    put(tgt, 'supabase/config.toml', 'x\n');
+    commitAll(tgt, 'supabase');
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(lock().packs, []);
+  });
+});
