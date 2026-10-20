@@ -2652,8 +2652,14 @@ Selftest counts at `79f7c62`: `review-gate` 78, `review-gate.shapes` 191,
   - **No API newer than Node 18:** a grep of the diff for `toSorted`,
     `findLast`, `Object.groupBy`, `.union(`, `globSync`, `fromAsync` and
     `.at(` finds none. `fs.realpathSync.native` is Node 9.2.
-- **AC25, Node 18 CI** — DEFERRED (operator). There's no Node 18 on this
-  machine, and CI runs on a push, which waits for the owner's go-ahead.
+- **AC25, Node 18 CI** — failed, then fixed in 3.1.1 (unreleased). CI run
+  https://github.com/shaked-shlomo/ssdd/actions/runs/39480911438 on
+  `c5d600c` (`v3.1.0`) failed on Node 18 and 24, 826/827, on one test-only
+  guard. "a routed file named in another case is routed by its spelling on
+  disk" read `core.ignorecase` with a throwing `git config`. Linux's `git
+  init` leaves that key unset, so the read exited 1 and the test threw
+  instead of skipping. The hooks were fine; macOS passed because its `git
+  init` sets the key.
 
 ### Deviations & discoveries
 

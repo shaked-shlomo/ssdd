@@ -25,6 +25,9 @@ The five minor issues Part 3's final review deferred. Nothing to do by hand.
 - The delta command cut blob ids to 12 characters; it prints the full ids.
 - When nothing is owed during a merge, `--check` now prints the merge line
   the block message has.
+- A selftest threw on Linux, where `git init` leaves `core.ignorecase`
+  unset, so `git config` exits 1. CI failed on `v3.1.0` for that reason
+  alone; the hooks were unaffected.
 
 ## [3.1.0] — 2026-10-20
 
