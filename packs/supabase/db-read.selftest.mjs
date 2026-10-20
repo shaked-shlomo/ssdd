@@ -134,6 +134,8 @@ describe('db-read paths the guard must still read (final review)', () => {
     for (const c of [
       'cd tmp && node ../.ssdd/packs/supabase/db-read.mjs --personal "select phone from auth.users"',
       'node $PWD/.ssdd/packs/supabase/db-read.mjs --personal "select phone from auth.users"',
+      'cd .ssdd/packs/supabase && node db-read.mjs --personal "select phone from auth.users"',
+      'cd .ssdd/packs/supabase && node ./db-read.mjs --personal "select phone from auth.users"',
     ]) {
       const r = L.claude(c);
       assert.equal(r.decision, 'ask', c);

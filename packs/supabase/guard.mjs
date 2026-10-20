@@ -27,10 +27,10 @@
 // psql (and pg_restore) aimed at a Supabase host is judged like db query:
 //   -c / -f reads pass, writes ask, interactive or stdin use and a target
 //   that isn't literal ask "can't tell". pg_dump is a read.
-// db-read (node .ssdd/packs/supabase/db-read.mjs, this pack's own file by its
-//   real path) never asks: it enforces the read itself. With --personal it
-//   asks, as a personal read; with a variable set on it (SSDD_SUPABASE_BIN,
-//   NODE_OPTIONS …) it asks "can't tell".
+// db-read (node .ssdd/packs/supabase/db-read.mjs) never asks: it enforces the
+//   read itself. Any script named db-read.mjs asks with --personal (a personal
+//   read) or a variable set on it (SSDD_SUPABASE_BIN, NODE_OPTIONS …: "can't
+//   tell"); only this pack's own file, by its real path, skips the script checks.
 // MCP (judgeMcp): a call is Supabase's when its server's name has
 //   `supabase`, its URL is Supabase's, its tool is one only Supabase has, or
 //   its project_id is a project ref. Known reads pass; execute_sql is judged
@@ -483,9 +483,10 @@ export function judgeShell(ctx) {
     const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
     if (pv) out.push(pv);
     const n = words.findIndex((w) => INTERPRETER.test(base(w)));
-    // db-read by any spelling of its path asks on --personal or a variable set
-    // on it; only the installed file, by realpath, skips the script checks.
-    if (n >= 0 && /(^|\/)packs\/supabase\/db-read\.mjs$/.test(words[n + 1] ?? '')) {
+    // db-read by any path (cd'd into, $PWD/…, ../…) asks on --personal or a
+    // variable set on it; only the installed file, by realpath, skips the
+    // script checks.
+    if (n >= 0 && (/(^|\/)db-read\.mjs$/.test(words[n + 1] ?? '') || isDbRead(words[n + 1], ctx))) {
       if (words.slice(0, n).some((w) => /^[A-Za-z_]\w*=/.test(w))) out.push(unclear('db-read', 'a variable set on it can change what it runs'));
       else if (words.includes('--personal')) out.push({ decision: 'ask', kind: 'personal', what: 'db-read --personal', why: 'it was run with --personal' });
       if (isDbRead(words[n + 1], ctx)) continue;
