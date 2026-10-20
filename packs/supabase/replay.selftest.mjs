@@ -76,9 +76,28 @@ describe('the Hatedate replay', () => {
       assert.equal(r.decision, entry.expect, `${entry.id}: ${r.reason}`);
       if (entry.kind === 'writes') assert.match(r.reason, /writes to production outside the merge path/);
       if (entry.kind === 'unclear') assert.match(r.reason, /can't tell what/);
-      if (entry.why) assert.ok(r.reason.includes(entry.why.replace(/the file/g, '').split(':')[0]), `${entry.id}: ${r.reason}`);
+      if (entry.why) {
+        // the whole reason, with the file's name where the fixture says "the file"
+        const why = entry.why.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/the file/g, '\\S+');
+        assert.match(r.reason.replace(/^\[ssdd-prod-guard\] /, ''), new RegExp(`^${why}`), entry.id);
+      }
     });
   }
+
+  it('the fixture keeps only shapes: no paths, refs, ids, printed text or search patterns', () => {
+    const text = JSON.stringify(FIXTURE.entries);
+    assert.doesNotMatch(text, /\/Users\/|\/private\/|\/home\//, 'a real path');
+    assert.doesNotMatch(text, /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/, 'a UUID');
+    assert.doesNotMatch(text, /(?<![\w<])[a-z]{20}(?![\w>])/, 'a project ref');
+    for (const e of FIXTURE.entries) {
+      for (const m of String(e.command ?? '').matchAll(/\becho\b([^;&|\n>]*)/g)) {
+        assert.match(m[1].trim(), /^(?:-[ne]\s+)?(?:x|"x"|'x')?$/, `${e.id}: echo prints only x`);
+      }
+      for (const m of String(e.command ?? '').matchAll(/\bgrep((?:\s+-[A-Za-z]+\d*(?:\s+\d+)?)*)\s+([^\s;&|)]+)/g)) {
+        assert.match(m[2], /^(?:x|"x"|'x')$/, `${e.id}: grep searches only for x`);
+      }
+    }
+  });
 
   it('asks on exactly the 2 writes, the 2 rollback probes and the calls it can\'t tell', () => {
     const judged = FIXTURE.entries.filter((e) => !e.unreplayable);

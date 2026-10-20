@@ -247,7 +247,7 @@
    "id": "h14",
    "date": "2026-10-08",
    "tool": "Bash",
-   "command": "S=<SP> && cat > $S/f1.sql <<'EOF'\nx\nEOF\nsupabase db query --linked -f $S/f1.sql 2>&1 | tail -8; echo --- mig; grep -rl \"x\" supabase/migrations; grep -rl \"x\" supabase/migrations; echo --- confirm callers; grep -rn \"x\" src app --include=*.tsx | grep -v test | head; echo --- invalid tokens; echo \"x\" > $S/f2.sql; supabase db query --linked -f $S/f2.sql 2>&1 | tail -3; echo --- voice max; grep -rn \"x\" src/app --include=*.ts | grep -iv test | grep -i voice | head -3; echo --- defaults; echo \"x\" > $S/f3.sql; supabase db query --linked -f $S/f3.sql 2>&1 | tail -12",
+   "command": "S=<SP> && cat > $S/f1.sql <<'EOF'\nx\nEOF\nsupabase db query --linked -f $S/f1.sql 2>&1 | tail -8; echo x; grep -rl \"x\" supabase/migrations; grep -rl \"x\" supabase/migrations; echo x; grep -rn \"x\" src app --include=*.tsx | grep -v x | head; echo x; echo \"x\" > $S/f2.sql; supabase db query --linked -f $S/f2.sql 2>&1 | tail -3; echo x; grep -rn \"x\" src/app --include=*.ts | grep -iv x | grep -i x | head -3; echo x; echo \"x\" > $S/f3.sql; supabase db query --linked -f $S/f3.sql 2>&1 | tail -12",
    "sql": [
     {
      "ref": "file:f1.sql",
@@ -281,7 +281,7 @@
    "id": "h15",
    "date": "2026-10-08",
    "tool": "Bash",
-   "command": "S=<SP>; supabase db query --linked -f $S/f1.sql -o json 2>&1 | grep -A2 current_user; supabase db query --linked -f $S/f2.sql -o json 2>/dev/null | grep count; supabase db query --linked -f $S/f3.sql -o json 2>/dev/null | grep -B1 -A1 column_name | grep -v is_null; grep -n \"x\" supabase/migrations/m1.sql supabase/migrations/m2.sql; grep -rn \"x\" src app --include='x' | grep -v test | head; grep -rn \"x\" src/app --include='x' | grep -v test | head -3",
+   "command": "S=<SP>; supabase db query --linked -f $S/f1.sql -o json 2>&1 | grep -A2 x; supabase db query --linked -f $S/f2.sql -o json 2>/dev/null | grep x; supabase db query --linked -f $S/f3.sql -o json 2>/dev/null | grep -B1 -A1 x | grep -v x; grep -n \"x\" supabase/migrations/m1.sql supabase/migrations/m2.sql; grep -rn \"x\" src app --include='x' | grep -v x | head; grep -rn \"x\" src/app --include='x' | grep -v x | head -3",
    "sql": [
     {
      "ref": "file:f1.sql",
@@ -315,7 +315,7 @@
    "id": "h16",
    "date": "2026-10-08",
    "tool": "Bash",
-   "command": "S=<SP>; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep _user; supabase db query --linked -f $S/f2.sql -o json 2>/dev/null | grep count; supabase db query --linked -f $S/f3.sql -o json 2>/dev/null | grep -E 'x'",
+   "command": "S=<SP>; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep x; supabase db query --linked -f $S/f2.sql -o json 2>/dev/null | grep x; supabase db query --linked -f $S/f3.sql -o json 2>/dev/null | grep -E 'x'",
    "sql": [
     {
      "ref": "file:f1.sql",
@@ -398,7 +398,7 @@
    "id": "h20",
    "date": "2026-10-08",
    "tool": "Bash",
-   "command": "S=<SP>; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep -E 'x'; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep req; grep -n \"x\" supabase/migrations/m1.sql | tail -4",
+   "command": "S=<SP>; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep -E 'x'; echo \"x\" > $S/f1.sql; supabase db query --linked -f $S/f1.sql -o json 2>/dev/null | grep x; grep -n \"x\" supabase/migrations/m1.sql | tail -4",
    "sql": [
     {
      "ref": "file:f1.sql",
