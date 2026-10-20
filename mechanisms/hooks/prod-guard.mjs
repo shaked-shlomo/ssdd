@@ -109,6 +109,9 @@ const claimed = (mod, call, subject) =>
 // a message or a script, not part of the command, so it's blanked. A quoted
 // single word (`"vercel"`, `'--prod'`) is read as the shell reads it.
 const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] && /\s/.test(w) ? '""' : w)).join(' ');
+// echo / printf only print their words: text, not a command.
+const PRINTS = new Set(['echo', 'printf']);
+const prints = (words) => PRINTS.has(String(words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '').split('/').pop());
 
 async function main() {
   const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -159,7 +162,7 @@ async function main() {
       for (const r of rules) {
         const re = tryRegex(r.match);
         for (const words of ctx.commands) {
-          if (re?.test(ruleText(words))) verdicts.push({ decision: r.decision, kind: 'rule', what: words.join(' '), why: r.reason ?? `matches /${r.match}/` });
+          if (!prints(words) && re?.test(ruleText(words))) verdicts.push({ decision: r.decision, kind: 'rule', what: words.join(' '), why: r.reason ?? `matches /${r.match}/` });
         }
         for (const text of ctx.unparsed) {
           if (re?.test(text)) verdicts.push({ decision: 'ask', kind: 'unclear', what: 'this command', why: `it can't be parsed, and it matches productionGuard.extraRules /${r.match}/` });

@@ -137,7 +137,8 @@ describe('prod-guard', () => {
     assert.equal(v.decision, 'ask');
     assert.match(v.reason, /deploys to production/);
     assert.equal(verdict(cursor(repo, 'npx vercel deploy --prod')).decision, 'deny');
-    for (const cmd of ['git commit -m "vercel deploy --prod"', "echo 'vercel deploy --prod'", 'vercel deploy']) {
+    for (const cmd of ['git commit -m "vercel deploy --prod"', "echo 'vercel deploy --prod'", 'vercel deploy',
+      'echo vercel deploy --prod', "printf '%s\\n' run vercel deploy --prod"]) {
       assert.equal(verdict(claude(repo, cmd)).decision, 'allow', cmd);
     }
   });

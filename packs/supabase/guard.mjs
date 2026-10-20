@@ -38,6 +38,7 @@
 // A call naming supabase that the shell view can't parse asks "can't tell".
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
+import { lexSql } from './sql-lex.mjs';
 import { classifySql } from './sql-readonly.mjs';
 
 export const name = 'supabase';
@@ -70,6 +71,11 @@ export function validate(o) {
 export const mentions = (text) => /supabase/i.test(String(text ?? ''));
 
 const base = (w) => String(w ?? '').split('/').pop();
+// echo / printf only print their words: `echo Run supabase db push` is text.
+const prints = (words) => ['echo', 'printf'].includes(base(words.find((w) => !/^[A-Za-z_]\w*=/.test(w))));
+// A psql backslash command outside strings and comments (\gexec, \gset, \i …):
+// the client runs it, and the SQL check can't see what it does.
+const metaCommand = (sql) => /\\[A-Za-z!?]/.test(lexSql(String(sql)).code);
 const isCli = (w) => base(w).toLowerCase().replace(/@.*$/, '') === 'supabase';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', 'host.docker.internal', '0.0.0.0']);
 // Global and subcommand flags that take the next word as their value.
@@ -445,12 +451,13 @@ function judgePsql(words, i, ctx) {
   if (unknown) return unclear(tool, `it has an option the guard doesn't know (${unknown})`);
   if ((!commands.length && !files.length) || readsStdin(words)) return unclear(tool, 'it reads SQL interactively or from stdin');
   const verdicts = [];
+  const judgePsqlSql = (sql) => (metaCommand(sql) ? unclear(tool, 'it runs a psql meta-command (\\gexec, \\gset, \\i …), which the SQL check can\'t see into') : judgeSql(sql, tool, ctx));
   for (const sql of commands) {
-    verdicts.push(/`|\$[({A-Za-z_]/.test(sql) ? unclear(tool, "the -c SQL isn't literal") : judgeSql(sql, tool, ctx));
+    verdicts.push(/`|\$[({A-Za-z_]/.test(sql) ? unclear(tool, "the -c SQL isn't literal") : judgePsqlSql(sql));
   }
   for (const f of files) {
     const file = readSqlFile(f, ctx);
-    verdicts.push(file.why ? unclear(tool, file.why) : judgeSql(file.sql, tool, ctx));
+    verdicts.push(file.why ? unclear(tool, file.why) : judgePsqlSql(file.sql));
   }
   return verdicts.find((v) => v?.kind === 'writes') ?? verdicts.find(Boolean) ?? null;
 }
@@ -465,6 +472,7 @@ function isDbRead(script, ctx) {
 export function judgeShell(ctx) {
   const out = [];
   for (const [k, words] of ctx.commands.entries()) {
+    if (prints(words)) continue;
     const i = words.findIndex(isCli);
     const v = i >= 0 ? judgeCli(words, i, ctx, k) : null;
     if (v) out.push(v);

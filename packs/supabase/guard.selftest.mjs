@@ -576,3 +576,19 @@ describe('found by the replay', () => {
     expectPass(L, `supabase db query --linked -f ${F.ro} 2> err.txt`);
   });
 });
+
+describe('found by the final review', () => {
+  it('a psql meta-command asks', () => {
+    expectAsk(L, 'psql -h db.x.supabase.co -c "select format(\'drop table %I\', tablename) from pg_tables \\gexec"', /psql meta-command/);
+    const f = L.file('gset.sql', "select 'delete from t' as q \\gset\n:q;\n");
+    expectAsk(L, `psql -h db.x.supabase.co -f ${f}`, /psql meta-command/);
+    const i = L.file('incl.sql', 'select 1;\n\\i /tmp/other.sql\n');
+    expectAsk(L, `psql -h db.x.supabase.co -f ${i}`, /psql meta-command/);
+    expectPass(L, "psql -h db.x.supabase.co -c \"select E'a\\\\nb', '\\\\x'\"");
+  });
+  it('echo and printf are text, not commands', () => {
+    expectPass(L, 'echo Run supabase db push after merge');
+    expectPass(L, "printf '%s\\n' run supabase functions deploy x");
+    expectAsk(L, 'echo hi && supabase db push', WRITES);
+  });
+});
