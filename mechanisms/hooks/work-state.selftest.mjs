@@ -800,6 +800,27 @@ describe('onboarding', () => {
   });
 });
 
+describe('plan numbers', () => {
+  it('sub-plan numbers are not duplicates (Hatedate: 14d-1, 14d-1-1, 14d-2)', () => {
+    for (const n of ['14d-1-routing', '14d-1-1-followups', '14d-2-onboarding', '14f.2-monetization', '28-a', '28-b']) {
+      put(`.ssdd/plans/${n}.md`, planText({ status: 'DRAFT' }));
+    }
+    commitAll('sub-plans');
+    const { out } = run();
+    assert.doesNotMatch(out, /plans numbered 14d/);
+    assert.match(out, /! plans numbered 28: 28-a\.md \(main\), 28-b\.md \(main\)/);
+    assert.match(out, /^ {2}14d-1-1 followups\s+DRAFT/m);
+    assert.match(out, /^ {2}14f\.2 monetization\s+DRAFT/m);
+  });
+
+  it('sub-numbered plans are not strays', () => {
+    for (const n of ['14d-1-routing', '14d-1-1-followups', '14f.2-monetization']) put(`.ssdd/plans/${n}.md`, planText());
+    put('.ssdd/plans/notes.md', 'n\n');
+    const { out } = run(['--next-plan']);
+    assert.equal(out, 'next plan: .ssdd/plans/15-<slug>.md\nstray in .ssdd/plans: notes.md (not NN-*.md)\n');
+  });
+});
+
 describe('next plan', () => {
   it('reads paths.plans and counts other branches', () => {
     put('.ssdd/config.json', '{"paths":{"plans":".claude/plans"}}\n');

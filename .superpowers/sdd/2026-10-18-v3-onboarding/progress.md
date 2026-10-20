@@ -58,3 +58,7 @@ Final: Ruling: declined "status/update run the full collect()" — about 0.1 s o
 Final: Ruling: declined "install prints onboarding lines" — stands (Task 8 ruling); the duplicate mention is a deferred minor — cost if wrong: one extra line.
 Final: Ruling: declined "em-dash runs, upper-case suffixes, top-level criteria under ### subgroups" — none seen in prizma or the Hatedate survey; the grammar is AC<n>[a-z] — cost if wrong: such a plan migrates with a to-do the agent resolves by hand.
 Final: Ruling: declined "Node 18 CI and the 3.0.0 tag" — DEFERRED to the owner, as recorded in SPEC — cost if wrong: none.
+
+Hatedate scratch-copy test (2026-10-20, owner's request; the real Hatedate untouched at 8563f3c):
+- Clone at scratchpad/hatedate-test, config added (paths.plans .claude/plans, paths.specs .claude/specs). 90 plans: 77 have no "## Acceptance criteria" section, 63 no **Status:** line (others write "## Status: …" headings or "> **STATUS (date): …**" blockquotes), many are Superpowers implementation plans. --migrate: 13 changed, 77 unchanged, 103 to-dos (63 "no Status line", 19 Status outside the six).
+- Fixed by test first: Hatedate numbers sub-plans 14d-1, 14d-1-1, 14d-2; planNum read them all as 14d (false "plans numbered 14d" warnings) and --next-plan listed 34 false strays — "sub-plan numbers are not duplicates", "sub-numbered plans are not strays" RED→GREEN, suite 631/631.
