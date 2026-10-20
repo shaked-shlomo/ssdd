@@ -305,6 +305,8 @@ const short = (key) => {
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
 const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
+const mergeLine = (merged) =>
+  `  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`;
 function blockMessage({ owed, unrouted, warning, merged }, repoHint = '', mode = 'manual') {
   const lines = [];
   for (const { name, files, missing, refused } of owed) {
@@ -326,7 +328,7 @@ function blockMessage({ owed, unrouted, warning, merged }, repoHint = '', mode =
     }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
-  if (merged) lines.push(`  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`);
+  if (merged) lines.push(mergeLine(merged));
   if (mode === 'hooks') {
     return (
       warning +
@@ -449,7 +451,10 @@ if (process.argv[2] === '--check') {
   repo = cfg.root;
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
-    process.stdout.write(verdict.warning + triageNote(cfg) + '[ssdd-review-gate] nothing owed\n');
+    process.stdout.write(
+      verdict.warning + triageNote(cfg) + '[ssdd-review-gate] nothing owed\n' +
+      (verdict.merged ? `${mergeLine(verdict.merged)}\n` : ''),
+    );
     process.exit(0);
   }
   process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${repo}` : '', stampingMode(cfg)));

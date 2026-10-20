@@ -767,6 +767,20 @@ describe('merges', () => {
       rmSync(origin, { recursive: true, force: true });
     }
   });
+  it('--check names the merge when nothing is owed', () => {
+    git(dir, 'branch', '-M', 'main');
+    git(dir, 'branch', 'feat');
+    write(dir, 'src/b.ts', 'b\n');
+    git(dir, 'commit', '-qm', 'main');
+    git(dir, 'checkout', '-q', 'feat');
+    write(dir, 'docs/feat.md', 'f\n');
+    git(dir, 'commit', '-qm', 'feat');
+    assert.strictEqual(spawnSync('git', ['-C', dir, 'merge', '-q', '--no-commit', '--no-ff', 'main'], { encoding: 'utf8' }).status, 0);
+    const c = run(dir, ['--check']);
+    assert.strictEqual(c.status, 0, c.stdout + c.stderr);
+    assert.match(c.stdout, /nothing owed/);
+    assert.match(c.stdout, /merge: 1 staged path\(s\) match git's own merge with [0-9a-f]{7} — owed by no one/);
+  });
   it('the oversize warning doesn\'t count merged paths', () => {
     const d = makeRepo({ ...CONFIG, reviewGate: { maxRoutedFiles: 1 } });
     try {
