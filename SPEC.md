@@ -1154,9 +1154,9 @@ and the D13 `if` filter tested and included (item 9).
 # v3 — SSDD knows where the work is
 
 **Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
-Parts 1 and 2 SHIPPED as 3.0.0, tagged 2026-10-20 (Node 18 CI and the
-after-`/compact` check DEFERRED, see their Verification sections) ·
-**Branch:** `v3`
+Parts 1 and 2 SHIPPED as 3.0.0, tagged and pushed 2026-10-20 (the
+after-`/compact` check is DEFERRED to the first real repo migration, see
+Part 1 → Verification) · **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
 - where each plan stands, what's verified and what's next
@@ -1732,10 +1732,10 @@ Selftest counts after the fix pass: `work-state` 45, `plan-parse` 22,
     worktree, and warnings under the cap.
   - On prizma, `--session-start` keeps its three `!` lines within 12 lines
     and 1,173 bytes.
-- **AC12, Node 18** — DEFERRED (operator). There's no Node 18 on this
-  machine. CI runs both versions on a push, and pushing waits for the
-  owner's go-ahead. I checked by hand for APIs newer than Node 18: there
-  are none (`Array.prototype.at` is 16.6+; no `findLast`, no `globSync`).
+- **AC12, Node 18** — CI run 39416354787 on `722bc60` (`v3.0.0`, pushed
+  2026-10-20): `selftest (18)` success, `selftest (24)` success,
+  https://github.com/shaked-shlomo/ssdd/actions/runs/39416354787. It was DEFERRED until the push, since this machine has no
+  Node 18.
 
 ### Deviations & discoveries
 
@@ -2061,13 +2061,13 @@ at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
     Phase N", Verification lists). The skill leaves these alone, by design:
     it never writes criteria. 42 is SHIPPED with 2 of its 5 checks recorded
     nowhere.
-- **Node 18** — DEFERRED (operator). There's no Node 18 on this machine, and
-  CI runs on a push, which waits for the owner. No API newer than Node 18
-  was added (`Array.prototype.at` is 16.6+).
+- **Node 18** — CI run 39416354787 on `722bc60` (`v3.0.0`, pushed
+  2026-10-20): `selftest (18)` success, `selftest (24)` success,
+  https://github.com/shaked-shlomo/ssdd/actions/runs/39416354787.
 - **Tagging 3.0.0** (Scope) — tagged `v3.0.0` on 2026-10-20 at the owner's
   go-ahead: VERSION `3.0.0`, the CHANGELOG entry dated, and its `### Upgrade`
-  section names the migration and the `SessionStart` entry. It wasn't
-  pushed, so CI hasn't run on it.
+  section names the migration and the `SessionStart` entry. Pushed with
+  `main` the same day.
 
 ### Deviations & discoveries
 
