@@ -169,6 +169,22 @@ describe('a visible chained git add passes', () => {
   });
 });
 
+describe('a malformed route fails closed, never open', () => {
+  for (const [label, route] of [['a string paths', { reviewer: 'alpha', paths: '^src/' }], ['a bad regex', { reviewer: 'alpha', paths: ['src/[a'] }]]) {
+    for (const [name, h] of BOTH) {
+      it(`${name}: ${label} denies a chained add`, () => {
+        writeFileSync(join(repo, '.ssdd/config.json'), JSON.stringify({ routing: [route] }));
+        mkdirSync(join(repo, 'docs'), { recursive: true });
+        writeFileSync(join(repo, 'docs', 'notes.md'), 'n\n');
+        stage(repo, 'src/a.ts');
+        const r = h('git add docs/notes.md && git commit -m x', repo);
+        assert.equal(r.status, 2, r.stderr);
+        assert.match(r.stderr, /config\.json/);
+      });
+    }
+  }
+});
+
 describe('a repo without .ssdd/config.json judges no shapes', () => {
   let plain;
   beforeEach(() => {

@@ -8,7 +8,11 @@
 // Absent → null (not an SSDD repo). Unreadable, not valid JSON, not a JSON
 // object, or a section of the wrong type → `error` set: callers fail closed.
 // A wrong-type section is dropped and the rest still builds, so git-guard
-// (which reads cfg, not error) keeps the rules that are well-formed.
+// (which reads cfg, not error) keeps the rules that are well-formed. Routing
+// is checked to the regex: each route needs a reviewer name and `paths` (and
+// any `exclude`, and reviewGate.exclude) as lists of sources that compile, or
+// the routing (or that exclude) is dropped with an error. A hook that built
+// the regexes itself could throw, and a harness reads a throw as "allow".
 //
 // The returned cfg keeps the shape callers read:
 //   routing                 each route with reviewGate.exclude baked into its
@@ -53,6 +57,24 @@ function buildPaths(paths) {
   return out;
 }
 const broken = (root, error) => ({ root, cfg: { root }, error });
+
+// '' when every entry is a string that compiles as a regex, else why not.
+function regexListError(v) {
+  if (!Array.isArray(v) || !v.every((p) => typeof p === 'string')) return 'must be a list of regex sources';
+  for (const p of v) { try { new RegExp(p); } catch { return `"${p}" isn't a valid regex`; } }
+  return '';
+}
+function routingError(routing) {
+  for (const [i, r] of routing.entries()) {
+    if (typeof r.reviewer !== 'string' || !r.reviewer.trim()) return `routing[${i}]: "reviewer" must be a name`;
+    for (const key of ['paths', 'exclude']) {
+      if (key === 'exclude' && r.exclude === undefined) continue;
+      const why = regexListError(r[key]);
+      if (why) return `routing[${i}]: ${why.startsWith('must') ? `"${key}" ${why}` : why}`;
+    }
+  }
+  return '';
+}
 
 const gitText = (repo, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 16 * 1024 * 1024 });
@@ -99,9 +121,16 @@ export function loadSsddConfig(repo) {
   }
   const bad = SECTIONS.filter(([key, ok]) => key in config && !ok(config[key]));
   for (const [key] of bad) delete config[key];
+  const errors = bad.map(([key, , type]) => `"${key}" must be ${type}`);
+  const routing = Array.isArray(config.routing) ? routingError(config.routing) : '';
+  if (routing) { errors.push(routing); delete config.routing; }
+  if (config.reviewGate && 'exclude' in config.reviewGate) {
+    const why = regexListError(config.reviewGate.exclude);
+    if (why) { errors.push(`reviewGate.exclude: ${why}`); delete config.reviewGate.exclude; }
+  }
   const cfg = build(root, config);
-  if (!bad.length) return { root, cfg };
-  return { root, cfg, error: `${PATH}: ${bad.map(([key, , type]) => `"${key}" must be ${type}`).join('; ')}` };
+  if (!errors.length) return { root, cfg };
+  return { root, cfg, error: `${PATH}: ${errors.join('; ')}` };
 }
 
 // The portable pre-commit layer runs only while core.hooksPath points at a

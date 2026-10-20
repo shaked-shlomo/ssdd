@@ -132,6 +132,28 @@ describe('loadSsddConfig', () => {
     assert.deepEqual(r.cfg.paths, { plans: '.ssdd/plans', specs: '.ssdd/specs', ledgers: '.ssdd/ledgers' });
   });
 
+  it('a route that is not a reviewer with a list of regex sources is a config error', () => {
+    const bad = [
+      [{ reviewer: 'a', paths: '^src/' }, /routing\[0\]: "paths" must be a list of regex sources/],
+      [{ reviewer: 'a', paths: ['src/[a'] }, /routing\[0\]: "src\/\[a" isn't a valid regex/],
+      [{ reviewer: 'a', paths: ['^src/'], exclude: [42] }, /routing\[0\]: "exclude" must be a list of regex sources/],
+      [{ paths: ['^src/'] }, /routing\[0\]: "reviewer" must be a name/],
+    ];
+    for (const [route, why] of bad) {
+      putConfig({ routing: [{ reviewer: 'ok', paths: ['^lib/'] }, route].reverse() });
+      const r = loadSsddConfig(dir);
+      assert.match(r.error ?? '', why, JSON.stringify(route));
+      assert.deepEqual(r.cfg.routing, []);
+    }
+  });
+
+  it('a reviewGate.exclude that is not a list of regex sources is a config error', () => {
+    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }], reviewGate: { exclude: ['('] } });
+    const r = loadSsddConfig(dir);
+    assert.match(r.error, /reviewGate\.exclude: "\(" isn't a valid regex/);
+    assert.deepEqual(r.cfg.routing.map((x) => x.exclude), [[]]);
+  });
+
   it('preCommit.blockUntracked defaults to false and reads true', () => {
     putConfig({});
     assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: false });
