@@ -200,6 +200,26 @@ describe("Part 4's changes", () => {
     ]) assert.equal(classifySql(sql, {}).verdict, 'read', sql);
   });
 
+  it('pure functions the corpora use (Task 10)', () => {
+    for (const sql of [
+      'select percentile_cont(0.5) within group (order by x), percentile_disc(0.9) within group (order by x) from t',
+      "select jsonb_array_elements_text(j), jsonb_array_elements(j) from t",
+      "select regexp_matches(s, 'a(b)')",
+      'select vector_dims(embedding) from articles limit 1',
+    ]) assert.equal(classifySql(sql, {}).verdict, 'read', sql);
+  });
+
+  it('EXPLAIN options and ORDER BY / GROUP BY / PARTITION BY (…) are not calls', () => {
+    for (const sql of [
+      'EXPLAIN (COSTS OFF) SELECT id FROM t',
+      'select a from t order by (a + 1)',
+      'select a, count(*) from t group by (a)',
+      'select row_number() over (partition by (a) order by (b)) from t',
+    ]) assert.equal(classifySql(sql, {}).verdict, 'read', sql);
+    assert.notEqual(classifySql('select by(1)', {}).verdict, 'read');
+    assert.notEqual(classifySql('select x from t where explain(1)', {}).verdict, 'read');
+  });
+
   it('writes are named', () => {
     assert.deepEqual(classifySql('BEGIN; INSERT INTO t VALUES (1); COMMIT;', {}), { verdict: 'writes', rule: 'INSERT statement' });
     const probe = classifySql('BEGIN; ALTER POLICY p ON t TO authenticated; UPDATE t SET a = 1; ROLLBACK;', {});

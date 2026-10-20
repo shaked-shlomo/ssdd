@@ -193,7 +193,8 @@ const READ_ONLY_FNS = new Set(words(`count sum min max avg bool_and bool_or ever
   quote_literal version numeric decimal varchar char character bit varbit timestamp timestamptz time
   timetz interval float
   to_regprocedure to_regproc to_regclass to_regtype to_regnamespace to_regrole aclexplode acldefault
-  enum_range power sqrt sin cos tan asin acos atan atan2 radians degrees ln log exp sign trunc`));
+  enum_range power sqrt sin cos tan asin acos atan atan2 radians degrees ln log exp sign trunc
+  percentile_cont percentile_disc jsonb_array_elements jsonb_array_elements_text regexp_matches vector_dims`));
 const AUTH_FNS = new Set(['uid', 'role', 'jwt']);
 
 // The first call t makes that a read may not, as written ('public.f', 'f'), or ''.
@@ -205,6 +206,9 @@ function badCall(t) {
     if (t[k - 2] !== '.') {
       if (PAREN_KEYWORDS.has(upName) || READ_ONLY_FNS.has(name)) continue;
       if ((upName === 'FILTER' || upName === 'OVER') && t[k - 2] === ')') continue;
+      // EXPLAIN's option list, and ORDER / GROUP / PARTITION BY (expr): keywords here, not calls.
+      if (upName === 'EXPLAIN' && k === 1) continue;
+      if (upName === 'BY' && ['ORDER', 'GROUP', 'PARTITION'].includes(String(t[k - 2]).toUpperCase())) continue;
       return t[k - 1];
     }
     if (!isIdent(t[k - 3]) || t[k - 4] === '.') return `${t[k - 3] ?? ''}.${t[k - 1]}`; // `(…).f(`, a.b.c(
