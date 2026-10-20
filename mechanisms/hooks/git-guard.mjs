@@ -71,20 +71,36 @@ if (filePath && STAMP_FILES.test(filePath)) {
 //
 // Reads are allowed. Each `git config … core.hooksPath` in the call is
 // judged on its own (a read must not cover a write after it):
-//   read   --get* / --list / -l, or the `get` / `list` subcommand; or no
-//          write option and nothing after the key but redirections (the
-//          scan stops at `)`, so `"$(git config core.hooksPath)"` reads)
-//   write  a value after the key (`""` too), --unset*, --add,
-//          --replace-all, -e / --edit, or the `set` / `unset` subcommand
+//   read   --get* / --list / -l, or `get` / `list` as the first word after
+//          `config`; or no write option and nothing after the key but exact
+//          redirections (the scan stops at `)`, so `"$(git config core.hooksPath)"`
+//          reads)
+//   write  a write option (--unset*, --add, --replace-all, -e / --edit, or
+//          `set` / `unset` first), or any other word after the key: a value,
+//          `""`, a process substitution
 // Arming (`git config core.hooksPath .githooks`) is a write: it stays the user's.
-const READ_OPT = /(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l|get|list)(?=\s|$)/;
-const WRITE_OPT = /(?:^|\s)(?:--unset(?:-all)?|--add|--replace-all|-e|--edit|set|unset)(?=\s|$)/;
-// The words after the key, once redirections are dropped: none → no value.
-function hasValue(tail) {
-  const words = tail.trim().split(/\s+/).filter(Boolean);
+const READ_FLAG = /^(?:--get(?:-all|-regexp|-urlmatch)?|--list|-l)$/;
+const WRITE_FLAG = /^(?:--unset(?:-all)?|--add|--replace-all|-e|--edit|--rename-section|--remove-section)$/;
+const VALUE_OPT = /^(?:-f|--file|--blob|--default|--type|--comment|--value|--url)$/; // takes the next word
+const REDIRECT = String.raw`\d*(?:>>?|<|>&|<&|&>>?|>\|)`;
+const REDIRECT_BARE = new RegExp(`^${REDIRECT}$`);              // its target is the next word
+const REDIRECT_ATTACHED = new RegExp(`^${REDIRECT}[^(<>&|]\\S*$`); // `2>/dev/null`, `2>&1`
+function configWrites(before, after) {
+  const words = before.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/['"]/g, ''));
+  let read = false;
   for (let i = 0; i < words.length; i++) {
-    if (/^\d*[<>]+&?$/.test(words[i])) { i++; continue; } // `>` / `2>` and its target
-    if (/^\d*[<>]/.test(words[i])) continue;              // `2>/dev/null`, `>&2`
+    const w = words[i];
+    if (i === 0 && /^(?:set|unset|rename-section|remove-section|edit)$/.test(w)) return true;
+    if (i === 0 && /^(?:get|list)$/.test(w)) read = true;
+    else if (WRITE_FLAG.test(w)) return true;
+    else if (READ_FLAG.test(w)) read = true;
+    else if (VALUE_OPT.test(w)) i++;
+  }
+  if (read) return false;
+  const tail = after.trim().split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tail.length; i++) {
+    if (REDIRECT_BARE.test(tail[i])) { i++; continue; }
+    if (REDIRECT_ATTACHED.test(tail[i])) continue;
     return true;
   }
   return false;
@@ -93,11 +109,11 @@ if (guard.blockHooksPath !== false) {
   const RUNNER = String.raw`(?:\S*\/)?(?:sudo|command|env|nohup|time|exec|nice|builtin)(?:\s+-\S+)*`;
   const START = String.raw`(?:^|[;&|(\n]\s*)(?:(?:[A-Za-z_]\w*=\S*|${RUNNER})\s+)*(?:\S*\/)?git\s+(?:(?:-[cC]\s*(?:'[^']*'|"[^"]*"|\S+)|--?[\w-]+(?:=\S*)?)\s+)*`;
   const viaFlag = new RegExp(START + String.raw`-c\s*['"]?core\.hookspath\b`, 'i');
-  const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)(['"]?)\bcore\.hookspath\b\2([^;&|\n)]*)`, 'gi');
+  // The tail runs to a separator or `)`; `&` and `|` inside a redirection (`2>&1`, `>|`) don't end it.
+  const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)(['"]?)\bcore\.hookspath\b\2((?:[<>]&|&>|>\||[^;&|\n)])*)`, 'gi');
   const viaEnv = /\bGIT_CONFIG_(?:PARAMETERS=[^;&|\n]*core\.hookspath|KEY_\d+=['"]?core\.hookspath\b)/i;
   const quoted = stripHeredocs(cmd);
-  const writes = [...quoted.matchAll(viaConfig)].some(([, before, , after]) =>
-    !READ_OPT.test(before) && (WRITE_OPT.test(before) || hasValue(after)));
+  const writes = [...quoted.matchAll(viaConfig)].some(([, before, , after]) => configWrites(before, after));
   if (viaFlag.test(quoted) || viaEnv.test(quoted) || writes) {
     deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');
   }

@@ -143,6 +143,12 @@ const BLOCKED = [
   ['a read, then a write', 'git config --get core.hooksPath && git config core.hooksPath /x'],
   ['Hatedate 08-09: read in $(…), write on the next line', `echo "hooksPath = '$(git config core.hooksPath)'"\ngit config core.hooksPath .githooks`],
   ['arming is a write too', 'git config core.hooksPath .githooks'],
+  // Anything after the key that isn't an exact redirection is a value.
+  ['a value after 2>&1', 'git config core.hooksPath 2>&1 /dev/null'],
+  ['a value after >&2', 'git config core.hooksPath >&2 /x'],
+  ['a process substitution is a value', 'git config core.hooksPath <(true)'],
+  ['a quoted write option', "git config '--unset' core.hooksPath"],
+  ['get after an option is not the subcommand', 'git config --file .git/config get core.hooksPath /x'],
 ];
 
 const ALLOWED = [
