@@ -19,6 +19,18 @@
 //            anywhere else in the call (the hook runs before the call, so it
 //            would read the file as it was), stdin, two SQL sources, an
 //            expansion in inline SQL, and a PG* variable set on the command.
+// HTTP: curl / wget to api.supabase.com or a project's *.supabase.co API
+//   passes GET and HEAD and asks "writes" on any other method (-X, data,
+//   form and upload flags); a non-literal URL naming supabase asks "can't
+//   tell" for a non-GET; an interpreter (node, python3 …) naming one of those
+//   hosts asks "can't tell". grep / echo naming them pass.
+// psql (and pg_restore) aimed at a Supabase host is judged like db query:
+//   -c / -f reads pass, writes ask, interactive or stdin use and a target
+//   that isn't literal ask "can't tell". pg_dump is a read.
+// MCP (judgeMcp): a call is Supabase's when its server's name has
+//   `supabase`, its URL is Supabase's, its tool is one only Supabase has, or
+//   its project_id is a project ref. Known reads pass; execute_sql is judged
+//   by its SQL; every other tool asks (owner ruling, 2026-10-21).
 // A call naming supabase that the shell view can't parse asks "can't tell".
 import { readFileSync, statSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
@@ -161,18 +173,149 @@ function judgeCli(words, i, ctx) {
   return null;
 }
 
+// ── HTTP ───────────────────────────────────────────────────────────────────
+const isSupabaseHost = (h) => /(^|\.)supabase\.(co|com)$/i.test(String(h ?? ''));
+// The hosts of the URLs (or bare api.supabase.com / *.supabase.co paths) in a word.
+function hostsIn(word) {
+  const out = [];
+  for (const m of String(word).matchAll(/(?:\b[a-z][a-z0-9+.-]*:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?=[/:?#'"\s]|$)/gi)) out.push(m[1]);
+  return out;
+}
+const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'ruby', 'perl', 'php']);
+const CURL_DATA = new Set(['-d', '--data', '--data-binary', '--data-raw', '--data-urlencode', '--data-ascii', '--json',
+  '-F', '--form', '--form-string', '-T', '--upload-file']);
+const WGET_DATA = ['--post-data', '--post-file', '--body-data', '--body-file'];
+
+function httpMethod(tool, rest) {
+  let method = '';
+  let data = false;
+  let head = false;
+  let get = false;
+  for (let k = 0; k < rest.length; k++) {
+    const w = rest[k];
+    if (tool === 'wget') {
+      if (w === '--method') method = rest[++k] ?? '';
+      else if (w.startsWith('--method=')) method = w.slice(9);
+      else if (WGET_DATA.some((f) => w === f || w.startsWith(`${f}=`))) data = true;
+      continue;
+    }
+    if (w === '--request' || w === '-X') method = rest[++k] ?? '';
+    else if (w.startsWith('--request=')) method = w.slice(10);
+    else if (CURL_DATA.has(w) || [...CURL_DATA].some((f) => f.startsWith('--') && w.startsWith(`${f}=`))) data = true;
+    else if (w === '--head' || w === '-I') head = true;
+    else if (w === '--get' || w === '-G') get = true;
+    else if (/^-[a-zA-Z]+$/.test(w)) {
+      const x = w.indexOf('X');
+      if (x > 0) { method = w.slice(x + 1) || rest[++k] || ''; continue; }
+      if (/[dFT]$/.test(w)) data = true;
+      if (w.includes('I')) head = true;
+      if (w.includes('G')) get = true;
+    }
+  }
+  if (method) return method.toUpperCase();
+  if (get) return 'GET';
+  if (head) return 'HEAD';
+  return data ? 'POST' : 'GET';
+}
+
+function judgeHttp(words, i) {
+  const tool = base(words[i]);
+  const rest = words.slice(i + 1);
+  const method = httpMethod(tool, rest);
+  if (method === 'GET' || method === 'HEAD') return null;
+  const host = rest.flatMap(hostsIn).find(isSupabaseHost);
+  if (host) return writes(`${tool} ${method} ${host}`);
+  if (/\$/.test(method) || rest.some((w) => w.includes('$') && mentions(w))) {
+    return unclear(`${tool} ${method}`, "its URL or method isn't literal, and it names supabase");
+  }
+  return null;
+}
+
+// ── psql ───────────────────────────────────────────────────────────────────
+const PSQL_VALUE = new Set(['-h', '--host', '-p', '--port', '-U', '--username', '-d', '--dbname', '-c', '--command',
+  '-f', '--file', '-v', '--variable', '--set', '-o', '--output', '-P', '--pset', '-L', '--log-file', '-T', '-F', '-R']);
+function hostOf(target) {
+  const t = String(target);
+  if (/^postgres(?:ql)?:\/\//i.test(t)) { try { return new URL(t).hostname; } catch { return ''; } }
+  const m = /(?:^|\s)host=(\S+)/.exec(t);
+  return m ? m[1] : t;
+}
+
+function judgePsql(words, i, ctx) {
+  const tool = base(words[i]);
+  const rest = words.slice(i + 1);
+  const targets = [...values(rest, ['-h', '--host', '-d', '--dbname'])];
+  for (const w of words.slice(0, i)) if (/^PGHOST=/.test(w)) targets.push(w.slice(7));
+  for (let k = 0; k < rest.length; k++) {
+    if (PSQL_VALUE.has(rest[k])) { k++; continue; }
+    if (rest[k].startsWith('-') || /^\d*[<>]/.test(rest[k])) continue;
+    targets.push(rest[k]); // the dbname (a URL or conninfo) or the user name
+  }
+  if (targets.some((t) => t.includes('$'))) return unclear(tool, "its target isn't literal");
+  if (!targets.some((t) => isSupabaseHost(hostOf(t)))) return null;
+  if (tool === 'pg_dump' || tool === 'pg_dumpall') return null;
+  if (tool === 'pg_restore') return writes(`pg_restore to ${targets.map(hostOf).find(isSupabaseHost)}`);
+  const commands = values(rest, ['-c', '--command']);
+  const files = values(rest, ['-f', '--file']);
+  if (!commands.length && !files.length) return unclear(tool, 'it reads SQL interactively or from stdin');
+  const verdicts = [];
+  for (const sql of commands) verdicts.push(judgeSql(sql, tool, ctx));
+  for (const f of files) {
+    const file = readSqlFile(f, ctx);
+    verdicts.push(file.why ? unclear(tool, file.why) : judgeSql(file.sql, tool, ctx));
+  }
+  return verdicts.find((v) => v?.kind === 'writes') ?? verdicts.find(Boolean) ?? null;
+}
+
 export function judgeShell(ctx) {
   const out = [];
   for (const words of ctx.commands) {
     const i = words.findIndex(isCli);
-    if (i < 0) continue;
-    const v = judgeCli(words, i, ctx);
+    const v = i >= 0 ? judgeCli(words, i, ctx) : null;
     if (v) out.push(v);
+    const h = words.findIndex((w) => ['curl', 'wget'].includes(base(w)));
+    const hv = h >= 0 ? judgeHttp(words, h) : null;
+    if (hv) out.push(hv);
+    const p = words.findIndex((w) => ['psql', 'pg_dump', 'pg_dumpall', 'pg_restore'].includes(base(w)));
+    const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
+    if (pv) out.push(pv);
+    const n = words.findIndex((w) => INTERPRETERS.has(base(w)));
+    if (n >= 0 && words.slice(n + 1).some((w) => hostsIn(w).some(isSupabaseHost))) {
+      out.push(unclear(base(words[n]), 'it calls a Supabase API host from a script'));
+    }
   }
   if (ctx.unparsed.some(mentions)) out.push(unclear('a command naming supabase', "it can't be parsed"));
   return out;
 }
 
-export function judgeMcp() {
-  return null;
+// ── MCP ────────────────────────────────────────────────────────────────────
+const list = (s) => new Set(s.trim().split(/\s+/));
+export const READ_TOOLS = list(`confirm_cost generate_typescript_types get_advisors get_anon_key get_cost
+  get_edge_function get_logs get_organization get_project get_project_url get_publishable_keys get_storage_config
+  list_branches list_edge_functions list_extensions list_migrations list_organizations list_projects
+  list_storage_buckets list_tables query_logs search_docs`);
+export const SUPABASE_ONLY_TOOLS = list(`apply_migration execute_sql deploy_edge_function create_branch delete_branch
+  merge_branch reset_branch rebase_branch list_branches list_migrations list_extensions list_tables
+  list_edge_functions get_edge_function generate_typescript_types get_advisors get_publishable_keys get_anon_key
+  get_project_url confirm_cost get_cost list_storage_buckets get_storage_config update_storage_config`);
+const NAMED_WRITES = list(`apply_migration deploy_edge_function merge_branch reset_branch rebase_branch create_branch
+  delete_branch pause_project restore_project create_project update_storage_config`);
+const PROJECT_REF = /^[a-z]{20}$/;
+
+function isSupabaseCall(call) {
+  if (/supabase/i.test(call.server)) return true;
+  try { if (isSupabaseHost(new URL(call.url).hostname)) return true; } catch { /* no URL */ }
+  if (SUPABASE_ONLY_TOOLS.has(call.tool)) return true;
+  return typeof call.input?.project_id === 'string' && PROJECT_REF.test(call.input.project_id);
+}
+
+export function judgeMcp(call, ctx) {
+  if (!isSupabaseCall(call) || READ_TOOLS.has(call.tool)) return null;
+  const what = `MCP ${call.tool}`;
+  if (call.tool === 'execute_sql') {
+    const q = call.input?.query;
+    return typeof q === 'string' ? judgeSql(q, what, ctx) : unclear(what, 'no query');
+  }
+  if (NAMED_WRITES.has(call.tool)) return writes(what);
+  return unclear(what, "it isn't one of Supabase's known read tools");
 }

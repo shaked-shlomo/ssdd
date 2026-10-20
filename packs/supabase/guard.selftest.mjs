@@ -245,3 +245,101 @@ describe('detect', () => {
     assert.equal(detect(repo({})), '');
   });
 });
+
+describe('MCP', () => {
+  const UUID = 'ba176f8c-ba86-458b-b61a-71583c653bd4';
+  const REF = 'abcdefghijklmnopqrst';
+  const mcp = (tool, input = {}, server = UUID) => L.claudeMcp(`mcp__${server}__${tool}`, input);
+  const expectMcp = (r, decision, re) => {
+    assert.equal(r.decision, decision, r.reason);
+    if (re) assert.match(r.reason, re);
+  };
+
+  it('a Supabase call is recognized by its server name, URL, tool name or project ref', () => {
+    expectMcp(mcp('pause_project', {}, 'supabase-personal'), 'ask', WRITES);
+    expectMcp(L.cursorMcp('pause_project', '{}', 'mine', 'https://mcp.supabase.com/mcp'), 'deny', WRITES);
+    expectMcp(mcp('apply_migration', { project_id: REF, name: 'x', query: 'create table t ()' }), 'ask', /MCP apply_migration writes/);
+    expectMcp(mcp('pause_project', { project_id: REF }), 'ask', WRITES);
+  });
+
+  it("Vercel's pause_project (a projectId, a UUID server) is not Supabase's", () => {
+    expectMcp(mcp('pause_project', { projectId: 'prj_x' }, '639420f9-b3d0-4316-8c54-0d01f4f795f9'), 'allow');
+  });
+
+  it('known reads pass', () => {
+    for (const t of ['list_tables', 'get_advisors', 'list_migrations', 'get_project_url', 'confirm_cost']) expectMcp(mcp(t, { project_id: REF }), 'allow');
+    expectMcp(mcp('search_docs', { graphql_query: '{ x }' }, 'claude_ai_Supabase'), 'allow');
+  });
+
+  it('execute_sql is judged by its SQL', () => {
+    expectMcp(mcp('execute_sql', { project_id: REF, query: 'select 1' }), 'allow');
+    expectMcp(mcp('execute_sql', { project_id: REF, query: 'insert into t values (1)' }), 'ask', /MCP execute_sql \(INSERT statement\) writes/);
+    expectMcp(mcp('execute_sql', { project_id: REF, query: 'select public.f()' }), 'ask', /can't tell what MCP execute_sql does: calls public\.f/);
+    expectMcp(L.cursorMcp('execute_sql', `{"query":"select 1","project_id":"${REF}"}`, UUID), 'allow');
+    expectMcp(mcp('execute_sql', { project_id: REF }), 'ask', /no query/);
+  });
+
+  it('every other tool asks', () => {
+    for (const t of ['apply_migration', 'deploy_edge_function', 'merge_branch', 'create_branch', 'delete_branch', 'reset_branch', 'rebase_branch']) {
+      expectMcp(mcp(t, { project_id: REF }), 'ask', WRITES);
+    }
+    expectMcp(mcp('restore_project', { project_id: REF }), 'ask', WRITES);
+    expectMcp(mcp('brand_new_tool', { project_id: REF }), 'ask', /can't tell what MCP brand_new_tool does/);
+  });
+});
+
+describe('the HTTP APIs', () => {
+  for (const c of [
+    "curl -s -H \"Authorization: Bearer $TOKEN\" https://api.supabase.com/v1/projects/abc/advisors/security | python3 -c 'import json,sys; json.load(sys.stdin)'",
+    'for t in security performance; do curl -s -H "Authorization: Bearer $TOKEN" https://api.supabase.com/v1/projects/abc/advisors/$t; done',
+    'curl -I https://abc.supabase.co/rest/v1/t',
+    'curl -G -d select=id https://abc.supabase.co/rest/v1/t',
+    'curl -X POST https://example.com/x -d a',
+    'wget -qO- https://api.supabase.com/v1/projects',
+    'grep -rn api.supabase.com docs',
+    'echo https://api.supabase.com/v1/projects/abc/database/query',
+  ]) it(`passes: ${c}`, () => expectPass(L, c));
+
+  for (const c of [
+    'curl -X POST https://api.supabase.com/v1/projects/abc/database/query -d \'{"query":"select 1"}\'',
+    'curl -XDELETE https://api.supabase.com/v1/projects/abc/functions/f',
+    'curl --request PATCH https://api.supabase.com/v1/projects/abc',
+    'curl -d a=b https://abc.supabase.co/rest/v1/t',
+    'curl -sd a=b https://abc.supabase.co/rest/v1/t',
+    'curl --data-binary @f https://abc.supabase.co/rest/v1/t',
+    "curl --json '{}' https://abc.supabase.co/functions/v1/f",
+    'curl -F a=@x https://abc.supabase.co/storage/v1/object/b/x',
+    'curl -T x https://abc.supabase.co/storage/v1/object/b/x',
+    'wget --method=POST https://api.supabase.com/v1/x',
+    'wget --post-data=x https://abc.supabase.co/rest/v1/t',
+  ]) it(`asks "writes": ${c}`, () => expectAsk(L, c, WRITES));
+
+  for (const c of [
+    'curl -X POST "$SUPABASE_URL/rest/v1/t"',
+    'node -e "fetch(\'https://api.supabase.com/v1/x\',{method:\'POST\'})"',
+    "python3 -c 'import urllib.request; urllib.request.urlopen(\"https://abc.supabase.co/rest/v1/t\")'",
+  ]) it(`asks "can't tell": ${c}`, () => expectAsk(L, c, UNCLEAR));
+});
+
+describe('psql', () => {
+  const URL_ = '"postgresql://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres"';
+  it('-c reads pass, writes ask', () => {
+    expectPass(L, `psql ${URL_} -c "select 1"`);
+    expectAsk(L, `psql ${URL_} -c "delete from t"`, /psql \(DELETE statement\) writes/);
+  });
+  it('-f is judged like db query', () => {
+    expectPass(L, `psql -h aws-0-eu.pooler.supabase.com -f ${F.ro}`);
+    expectAsk(L, `psql -h aws-0-eu.pooler.supabase.com -f ${F.write}`, WRITES);
+  });
+  it('interactive or stdin use asks', () => {
+    expectAsk(L, 'psql "host=db.x.supabase.co dbname=postgres"', /interactively or from stdin/);
+    expectAsk(L, `psql ${URL_} < ${F.ro}`, /interactively or from stdin/);
+  });
+  it("a target it can't read asks", () => expectAsk(L, 'psql "$DATABASE_URL" -c "select 1"', /isn't literal/));
+  it('local psql and pg_dump pass', () => {
+    expectPass(L, 'psql -h localhost -c "delete from t"');
+    expectPass(L, 'psql postgres -c "drop table t"');
+    expectPass(L, `pg_dump ${URL_} > dump.sql`);
+  });
+  it('pg_restore to a Supabase host asks', () => expectAsk(L, `pg_restore -d ${URL_} dump.tar`, WRITES));
+});
