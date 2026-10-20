@@ -1,6 +1,6 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-20 at v3.0.0. The
+The single list of remaining SSDD work. Updated 2026-10-20 at v3.0.0 (Part 3 built since). The
 next work is the rest of v3 (`SPEC.md` → v3): five parts, one plan each, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
@@ -15,15 +15,13 @@ that incident.
 
 | # | Part (SPEC.md → v3) | Plan | Ships as |
 |---|---|---|---|
-| 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads | not written | 3.1.0 |
+| 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads, lint on added lines | `docs/superpowers/plans/2026-10-20-v3-cheaper-gate.md` — built on its branch, not merged | 3.1.0 |
 | 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |
 | 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test, the Node floor to 22 | not written | 3.3.0 |
 
 - **End of v3:** the real migrations of prizma and Hatedate (owner,
   2026-10-20: none until all five parts land; scratch clones only before
   then), with Part 1's after-`/compact` session-start check.
-- **Open owner decision:** how to prevent plan-number collisions (Part 3,
-  decision 7).
 - **Hatedate adoption is parked** (owner, 2026-10-17). The prompt to start
   it is `docs/handovers/HANDOVER-hatedate-adoption.md`.
 
@@ -62,6 +60,9 @@ re-discovered as new.
   layer is the backstop while `-n` isn't used.
 - `--stamp` in `manual` mode (the default, and the only mode in Cursor) is
   an attestation the gate can't verify, including which model reviewed.
+- git-guard blocks writes to `core.hooksPath` that name the key. `git config
+  --remove-section core`, `--rename-section core` and `--edit` clear it
+  without naming it (no agent was seen doing this; v3 Part 3).
 - Completion stamps cover the repo at the session's cwd. A `git -C <other>`
   commit from elsewhere needs manual mode.
 - A re-stage that changes nothing keeps its stamps (by design since v2).

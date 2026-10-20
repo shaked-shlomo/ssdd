@@ -42,7 +42,9 @@ existing `NN-` prefix + 1 (check with a command, not memory:
 `node .ssdd/hooks/work-state.mjs --next-plan`) — across `main` **and open
 branches/PRs**, since parallel worktrees race for the same number.
 Never reuse, skip, or backfill numbers; never add unnumbered files to the
-plans directory.
+plans directory. Work this checkout can't see (an unfetched branch, another
+machine) can still take the same number; the session view reports two plans
+with one number, and the later one is renumbered, with its references.
 
 **The clarify pass comes before the criteria.** List the assumptions the
 design makes; the kinds that have bitten before are empty/error/loading

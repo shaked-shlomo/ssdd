@@ -10,6 +10,63 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.1.0] — unreleased
+
+v3 Part 3, a cheaper gate: keep every block that catches a real mistake and
+stop charging for the ones that don't; see `SPEC.md` → v3 → Part 3. Nothing
+to do by hand: a repo that wants the untracked-file block back sets
+`preCommit.blockUntracked`.
+
+### Changed
+- **A merge of the default branch owes only its resolutions.** While such a
+  merge is stopped (a conflict, or `--no-commit`), a staged file equal to
+  git's own merge of the two sides (`git merge-tree --write-tree`, git 2.38
+  or later) owes no review. Conflict resolutions and edits made during the
+  merge are owed as usual. Merging another branch, an octopus merge, or older
+  git judges every file, as before. On prizma's four SKIP'd merges, the
+  routed files owed go from 120 to 1.
+- **A re-review gets the change, not the file.** When a file changed after a
+  reviewer stamped it, the block message gives `git diff <stamped blob>
+  <staged blob>` under that reviewer, and that diff is the reviewer's input.
+  The stamp format doesn't change.
+- **`review-gate.mjs --check [--repo <path>]`** prints what the index owes
+  without committing, and exits 1 when a commit would be blocked. It writes
+  nothing and runs in both stamping modes. Use it instead of a probe commit.
+- **A chained `git add` of unrouted files passes.** `git add docs/x.md &&
+  git commit` is allowed when every path is a file that exists now (or a
+  tracked file being deleted) inside the repo, and no reviewer is routed to
+  it. A path is routed by its spelling on disk. Still refused: options
+  other than `-f` / `-v`, directories, globs, pathspec magic, expansions, a
+  subshell, another git command before the commit other than a read
+  (`status`, `diff`, `log`, `show`, `rev-parse`, `ls-files`), and chained
+  `rm`, `mv`, `restore` and `update-index`. Of Hatedate's chained docs
+  commits, 70 of 88 would now pass; none that added a routed file would.
+- **Command shapes are judged only in an SSDD repo.** The harness gate
+  resolves the target repo and loads its config first, so a scratch repo
+  with no `.ssdd/config.json` passes chained staging, `commit -a` and `commit
+  <path>`. An unresolvable target (`$VAR`, `pushd`, `cd -`) still fails
+  closed.
+- **Untracked files are a warning.** The pre-commit lists them, at most 10,
+  and the commit lands. `preCommit.blockUntracked: true` in
+  `.ssdd/config.json` restores the block; a `preCommit` that isn't an object
+  is a config error. The check moved from the shell into `work-state.mjs
+  --staged`.
+- **git-guard lets a read of `core.hooksPath` through.** `git config
+  core.hooksPath`, with `--get`, a scope or the `get` subcommand, and inside
+  `$(…)`, passes. A value after the key, a write option or its abbreviation,
+  and anything the shell expands before the key are still writes. Each `git
+  config` in a call is judged on its own.
+- **convention-lint lints the lines a change adds.** `--staged` lints the
+  `+` lines of the staged diff, with renames detected. The edit hook lints
+  the lines added since `HEAD`. A new file and files named on the command
+  line are linted whole.
+
+### Fixed
+- `convention-lint --staged` read the file on disk, not the staged content,
+  and skipped a staged file whose name has non-ASCII letters.
+- git-guard judged only the first `git config … core.hooksPath` in a call.
+- The command tokenizer split `2>&1` and `&>file` at the `&`.
+
 ## [3.0.0] — 2026-10-20
 
 v3 Parts 1 (work state) and 2 (onboarding existing repos); see `SPEC.md` →

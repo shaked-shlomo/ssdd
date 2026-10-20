@@ -65,7 +65,10 @@ flowchart TB
 Before a plan exists, a **clarify pass** interrogates every assumption;
 unresolved ones block implementation. Each task is recorded in a **ledger**
 (commit hash, spec compliance, quality, findings triaged). The gate's stamps
-are per reviewer × per file, so a fix round re-reviews only what changed.
+are per reviewer × per file, so a fix round re-reviews only what changed, and
+the block message hands each reviewer the diff since its stamp.
+`review-gate.mjs --check` says what's owed without a commit. A merge of the
+default branch owes only its conflict resolutions.
 Gotchas found along the way are promoted to rules or memory so they bite
 once. Full lifecycle: [process/SDD.md](process/SDD.md).
 
@@ -233,10 +236,18 @@ an agent was seen using it in a real project.
 - The pre-commit layer judges git's own cwd, not `SSDD_PROJECT_DIR`; the
   harness layer starts from the tool call's cwd.
 - A re-stage that changes nothing keeps its stamps, by design.
-- The harness gate refuses commits whose content it can't see
-  (`git add … && git commit`, `commit -a/-i/-o`, `commit <pathspec>`) and
-  judges the repo a commit targets (`cd`, `git -C`, worktrees), failing
-  closed on `$VAR` / `$(…)`. It can't see git run from a script *file*, a
+- The merge rule needs git 2.38 (`merge-tree --write-tree`); older git
+  judges every file of a merge. Only a merge of the default branch counts:
+  another branch's commits weren't necessarily reviewed.
+- Untracked files are a warning at commit; `preCommit.blockUntracked: true`
+  makes them a block.
+- The harness gate judges the repo a commit targets (`cd`, `git -C`,
+  worktrees), failing closed on `$VAR` / `$(…)` / `pushd`. In an SSDD repo it
+  refuses commits whose content it can't see (`git add … && git commit`,
+  `commit -a/-i/-o`, `commit <pathspec>`). A chained `git add` of existing
+  files no reviewer is routed to is allowed, unless another git command
+  that can change the index runs before the commit. A repo without
+  `.ssdd/config.json` isn't gated at all. It can't see git run from a script *file*, a
   variable, an alias, `xargs` / `find -exec`, another language's subprocess,
   or a `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets
   `core.hooksPath`. For those the pre-commit layer is the backstop, while
