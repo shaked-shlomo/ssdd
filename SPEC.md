@@ -1174,7 +1174,7 @@ parts, each with its own plan:
 | 1 | Work state: where the work is, at session start; the close check; tracked ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md` | 3.0.0, with Part 2 |
 | 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | `docs/superpowers/plans/2026-10-18-v3-onboarding.md` | 3.0.0 |
 | 3 | A cheaper gate | `docs/superpowers/plans/2026-10-20-v3-cheaper-gate.md` | 3.1.0 |
-| 4 | The production guard and the Supabase pack | Plan 4, not written yet | 3.2.0 |
+| 4 | The production guard and the Supabase pack | `docs/superpowers/plans/2026-10-21-v3-prod-guard.md` | 3.2.0 |
 | 5 | Trimming | Plan 5, not written yet | 3.3.0 |
 
 Parts 1 and 2 carry acceptance criteria. Parts 3–5 record the evidence,
@@ -2870,15 +2870,353 @@ My calls.
 
 ### Open
 
-- Whether Cursor supports `ask` on `beforeShellExecution`.
-- Whether Hatedate's 07-27 note ("a rejected `apply_migration` still ran")
-  reproduces on today's Supabase MCP. If it does, `ask` can't stop an MCP
-  write, and the pack should `deny` MCP writes and point at the merge path
-  instead.
-- **Redaction:** SSDD is a public repo, and the replay inputs come from
-  private transcripts. Keep only the command shapes, with SQL bodies
-  reduced to their statement kinds. Bringing Hatedate's guard code into
-  SSDD was approved on 2026-10-17 (ruling 2).
+All resolved by the owner on 2026-10-21 (Clarify 28–30, 32–35):
+- Cursor doesn't enforce `ask`, so it gets `deny`, and the owner runs the
+  command in their own terminal (Clarify 28).
+- The 07-27 note was an interrupt, not a rejected prompt. MCP writes keep
+  `ask` (Clarify 29).
+- **Redaction:** command shapes, and SQL bodies reduced to their statement
+  kinds with the classifier's verdict on the real SQL (Clarify 31).
+  Bringing Hatedate's guard code into SSDD was approved on 2026-10-17
+  (ruling 2).
+
+### Clarify pass
+
+Sources: Hatedate's Claude Code transcripts (read-only, 14 project folders
+under `~/.claude/projects`, 5,852 Bash and Supabase MCP calls from 09-28 to
+10-17, 20,519 from 07-01), prizma's (19 folders, 43,764 calls), Hatedate's
+guard at `577e964f`, `77137120` and `41d1f8f4` (`git archive` into the
+scratchpad), Cursor's hook docs and forum, and the code at `v3.1.1`. All
+checked 2026-10-20 and 2026-10-21. Replay scripts and their outputs stay in
+the session scratchpad: they hold private paths, SQL and commit text.
+
+28. **Cursor ignores `ask`.** Its docs list `allow | deny | ask` for
+    `beforeShellExecution` and `beforeMCPExecution`. Cursor staff confirmed
+    on the forum (2026-03-21, 2.6.19): "The `ask` permission in hooks isn't
+    enforced right now … in all shell execution paths. Only `deny` works."
+    No fix date; this machine runs 3.25.6.
+    - **Ruling** (owner, 2026-10-21): where Claude Code asks, Cursor gets
+      `deny` with the same reason, plus: Cursor can't ask, so the owner runs
+      the command in their own terminal. That makes the guard a hard block
+      in Cursor until Cursor enforces `ask`.
+    - `beforeMCPExecution` isn't wired in the Cursor adapter today. Its
+      `tool_input` is a JSON *string*, and it names the server
+      (`mcp_server_name`, `url`).
+29. **"A rejected `apply_migration` still ran" (07-27).** The transcript
+    settles it:
+    - The call went out at 12:59:10 with no prompt (auto mode). At 12:59:13
+      the user pressed Esc: `[Request interrupted by user for tool use]`.
+    - The server recorded the migration as `20260727125914`, a second
+      after the interrupt. The retry at 13:01 made the duplicate history
+      row, which the agent deleted through `execute_sql`.
+    - So it was an interrupt of a call already sent. A PreToolUse `ask`
+      fires before the call is sent; no hook can stop a call in flight.
+    - **Ruling** (owner, 2026-10-21): MCP writes keep `ask`. No live repro:
+      an `apply_migration` can't be read-only.
+30. **The replay corpus.** The handover's 79 came from a survey whose
+    method isn't recorded. Here:
+    - Every Bash and Supabase MCP call from 09-28 to 10-17, deduped by
+      tool-use id, ran through the Hatedate guard on `main` at its time
+      (`577e964f`, then `77137120` from #130, then `41d1f8f4` from #131).
+      That's an approximation: a session's hook ran from its own worktree.
+      **89 asks** (85 Bash, 4 MCP); median wait 37 s; the owner rejected 6.
+    - A `-f` file that's gone was rebuilt from the session's own `Write`, or
+      `cat >` / `echo >` in an earlier call. 20 stay lost, mostly helper
+      proofs (`*.proof.sql`); they're counted as unreplayable, not as asks.
+    - 1 is the guard testing itself (a `for c in "supabase …"` loop), and
+      it's left out.
+    - With Hatedate's own classifier standing in for the pack's, the rest
+      fall roughly into:
+      - **writes:** 2, the 10-15 fixture seed and cleanup (`BEGIN; INSERT …;
+        COMMIT`), which the owner had approved in chat
+      - **rollback probes:** 2, 10-08's `BEGIN; ALTER POLICY …; UPDATE …;
+        ROLLBACK` and its re-run
+      - **reads:** about 45 (READ ONLY transactions, plain SELECT files,
+        inline SQL, 4 MCP reads, 6 proofs, 1 dry run)
+      - **can't tell:** a file written earlier in the same call (16), a
+        `$VAR` or relative path (2), and SQL naming `client_encoding` or
+        `standard_conforming_strings` (3)
+    - The exact counts come from the pack itself, in Verification.
+31. **Redaction** (owner ruling, 2026-10-21): kinds and verdicts.
+    - Each entry keeps its command's shape. Scratchpad and worktree paths,
+      the project ref and session ids become placeholders, and heredoc
+      bodies become their kind.
+    - Each SQL body becomes its ordered statement kinds, plus the
+      classifier's verdict on the real SQL and the rule that decided it
+      (e.g. `client_encoding`).
+    - The committed test builds synthetic SQL from the kinds, checks that
+      the classifier gives it the recorded verdict, and then checks the
+      guard's decision on the command.
+    - The classifier's own tests are synthetic: Hatedate's two suites,
+      ported. Full bodies stay in the scratchpad, as in Part 3.
+32. **Reads Postgres doesn't hold to READ ONLY** (owner ruling,
+    2026-10-21): they pass when the static read check passes.
+    - That's inline `db query "select …"`, a plain SELECT file, a `BEGIN …
+      ROLLBACK` file with only reads, and MCP `execute_sql`, which can't be
+      wrapped.
+    - The check is the READ ONLY path's: only `SELECT` / `WITH` / `TABLE` /
+      `VALUES` / `SHOW` / `EXPLAIN` statements, no write words, and only
+      allowlisted read-only builtins.
+    - **Residue:** a view or an RLS policy that calls a writing function.
+      `db-read` stays the preferred path, since Postgres enforces its READ
+      ONLY.
+    - The corpus adds builtins it calls that only look up or compute
+      (`to_regprocedure`, `to_regclass`, `aclexplode`, `enum_range`, the
+      math functions …). Each is checked against the Postgres docs.
+33. **Proofs and extensions are project facts** (owner ruling, 2026-10-21).
+    - Hatedate's classifier imports its proof frame from its own
+      `check-migration` skill, and hardcodes the extensions live on
+      2026-10-13.
+    - In the pack, both come from config: `productionGuard.supabase.
+      proofFrame` (`{ prologue: [...], epilogue: [...] }`) and
+      `liveExtensions`.
+    - Unset, a proof asks ("can't tell"). Hatedate sets its frame when it
+      adopts the pack.
+34. **MCP: everything but known reads asks** (owner ruling, 2026-10-21).
+    - **A call is Supabase's** when the server's name has `supabase`, its
+      URL is Supabase's (Cursor), the tool's name is one only Supabase uses
+      (`apply_migration`, `execute_sql`, `deploy_edge_function`, `*_branch`,
+      `list_migrations` …), or `project_id` is a project ref (20 lowercase
+      letters).
+    - That last test keeps Vercel's `pause_project` (a `projectId`, on a
+      UUID-named connector) out.
+    - **Known reads pass:** a fixed list of Supabase's read tools (its
+      `list_*` and `get_*` tools, `search_docs`, `query_logs`,
+      `generate_typescript_types`, `confirm_cost`). A prefix alone isn't
+      enough.
+    - **`execute_sql`** passes a read (Clarify 32), asks "writes" when the
+      SQL has write statements, and otherwise asks "can't tell".
+    - **Every other tool asks,** named or not.
+    - **Residue:** a new Supabase tool on a UUID-named connector, with no
+      `project_id`, isn't recognized.
+35. **psql** (owner ruling, 2026-10-21): guarded.
+    - Neither repo has used psql against production; Hatedate's 4 uses are
+      `which psql`.
+    - `psql` aimed at a Supabase host (`*.supabase.co`, `*.supabase.com`,
+      in a URL, `-h` or `host=`) is judged like `db query --linked`: `-c` /
+      `-f` SQL that passes the read check passes, and anything else asks.
+    - A target the guard can't read (`$DATABASE_URL`) asks "can't tell".
+    - `pg_dump` is a read.
+36. **A file written earlier in the same call.** The hook runs before any of
+    the call, so it reads the file as it was. 16 corpus calls write the SQL
+    and run it in one call (`cat > $S/q.sql <<EOF … EOF; supabase db query
+    -f $S/q.sql`).
+    - **The rule:** when the `-f` file's path or name appears anywhere else
+      in the call, the answer is "can't tell".
+    - **Cost:** those 16 asks stay, with an accurate reason. `db-read`
+      replaces them.
+37. **What reaches production, besides the CLI and MCP.**
+    - **The Management API.** 13 calls, all `curl` GETs to
+      `api.supabase.com` with the CLI's Keychain token. A `curl` / `wget`
+      to `api.supabase.com` or a project's `*.supabase.co` API passes a GET
+      or HEAD. Any other method asks "writes".
+    - **Interpreters.** `node`, `python3` and the like naming one of those
+      hosts in their arguments ask "can't tell". `grep` / `echo` naming
+      them pass. Cost in the corpus: 0.
+    - **Out:** the Keychain recipe is in Hatedate's memory, not SSDD. A
+      script *file* that calls the API is the documented limit, as for git.
+38. **What the CLI judges.**
+    - **Asks:** Hatedate's write list: `db push`, `migration repair`,
+      `functions deploy|delete`, `config push`, `secrets set|unset`,
+      `storage rm|mv`.
+    - **Asks on a remote target:** `db reset`, `migration up|down` and `db
+      query` with `--linked`, or `--db-url` to a host that isn't local.
+    - **Fixed from Hatedate's version:**
+      - `--help` / `-h` and `db push --dry-run` pass.
+      - `db reset` without `--linked` is local. prizma ran it 16 times, and
+        Hatedate's guard would ask on all 16.
+      - `storage cp` asks only when its destination is `ss://`; a download
+        passes.
+    - **Management commands:** a write verb (`create`, `delete`, `update`,
+      `restore`, `pause` …) under `projects`, `branches`, `backups`,
+      `domains`, `sso` and the like asks "writes".
+    - `--local` makes any of them local.
+    - **Wrapped invocations** keep asking: `npx` / `bunx` / `pnpm dlx`,
+      version pins, runners, `bash -c`, `eval`, `$(…)`, backticks, a heredoc
+      fed to a shell, upper case (Hatedate's suite).
+    - **Not commands:** heredoc bodies that are data (`git commit -F -
+      <<'EOF'`, `gh pr create --body`).
+    - **Can't tell:** a command naming `supabase` that can't be parsed (an
+      unbalanced quote, an unterminated heredoc or substitution).
+39. **Output, and what each harness reads.**
+    - **Claude Code:** `ask` and `deny` are `hookSpecificOutput.
+      permissionDecision`, exit 0. Allow prints nothing, so the user's own
+      permission rules still apply: an `allow` would approve the call.
+    - **Cursor:** `{"permission": …}` every time, with `failClosed`.
+    - The harness is read from `hook_event_name`.
+    - **Wiring:** prod-guard runs on every `Bash` and every `mcp__.*` call,
+      and allows quickly when no rule or pack claims the call.
+      `.claude/settings.json` is project-owned, so its matcher can't change
+      when packs do. That costs a node start per MCP call (accepted).
+    - Existing installs merge the new hook entries by hand (a CHANGELOG
+      upgrade step); `.cursor/hooks.json` updates itself.
+40. **Fail closed, but only where it matters** (Part 3's lesson: a hook that
+    throws exits 1, and Claude Code reads that as allow).
+    - Every path to a verdict runs inside a `try`.
+    - **A guard error** asks (Cursor: denies) when the call names something
+      a rule or pack claims (`supabase`, a Supabase host). Otherwise it
+      allows: a guard bug mustn't ask on every `ls`.
+    - **A bad `productionGuard`:** `loadSsddConfig` checks it — an object;
+      a string `writePath`; `extraRules` with a compiling `match`, a
+      `decision` of `ask` or `deny`, and a string `reason`. A bad section
+      makes every call ask, with the error as the reason.
+    - **A pack** that won't load, or whose own options are bad, asks on
+      every call it would judge.
+    - **An unreadable payload** is refused: exit 2, which both harnesses
+      read as a block, since the harness can't be told.
+41. **Packs.**
+    - **Layout:** a pack lives in `packs/<name>/` and installs as managed
+      files in `.ssdd/packs/<name>/`. prod-guard loads each
+      `../packs/*/guard.mjs` beside its own file, so no git call is needed.
+      Pack modules import only their own siblings: the hook passes in the
+      shell grammar.
+    - **Detection:** `install` runs each `packs/*/detect.mjs` from the
+      release it installs. For Supabase: `supabase/config.toml`, or
+      `@supabase/supabase-js` / `supabase` in the root `package.json`.
+    - **The lock** records `packs`. A lock from before 3.2.0 has none.
+    - **`update`** installs what the lock lists, and never detects.
+    - **`status`** detects with the newest release and says when the repo
+      matches a pack it doesn't have.
+    - **`--packs a,b|none`** on `install` or `update` overrides both. An
+      unknown name is an error.
+    - **Tests:** `packs/*/*.selftest.mjs` join the suite and CI.
+42. **prizma, as real data.** 96 MCP `execute_sql` calls (08-27 to 09-16),
+    no other Supabase MCP tool, and no production CLI use.
+    - With Hatedate's classifier standing in: 66 static reads, 10 writes
+      (DDL and a `truncate`, which the owner rejected), and 20 reads the
+      allowlist misses (`to_regclass`, pgvector's `vector_dims`, and the
+      like).
+    - Its 16 `db reset` and its `start` / `stop` / `status` are local.
+    - Verification records what the pack does with each.
+43. **Out, recorded so they aren't raised again:**
+    - **Changes in Hatedate** (its adoption is parked). That includes its
+      memory's Keychain recipe.
+    - **A call already in flight** (Clarify 29): no hook sees it.
+    - **A Vercel pack:** a project rule covers prizma (`extraRules`).
+    - **Service-role scripts:** a script that writes with a key and names
+      no Supabase host on its command line. That's the script-file limit.
+    - **Release guards and branch protection** (ruling 3).
+    - **`supabase db pull`,** which can offer to update the remote
+      migration history: never seen in either corpus.
+
+### Acceptance criteria
+
+- **AC26 — Decisions and reasons.** Under both harness payloads:
+  - prod-guard judges each command segment.
+    `grep`, `tail`, `jq`, `> file` and `2>&1` beside a production segment
+    don't change the verdict, and a call with no production segment passes.
+  - An ask says which case it is: "writes to production outside the merge
+    path (<writePath>)" or "can't tell what this does: <why>". A read is
+    never called a write.
+  - Claude Code gets `permissionDecision: "ask"` (or `"deny"` from a deny
+    rule), exit 0. An allow prints nothing.
+  - Cursor gets `deny` for an ask, with the reason and the line that the
+    owner runs it in their own terminal; an allow gets `allow`.
+- **AC27 — Config and project rules.**
+  - `loadSsddConfig` validates `productionGuard`. A non-object section, a
+    non-string `writePath`, or an `extraRules` entry whose `match` doesn't
+    compile, whose `decision` isn't `ask` or `deny`, or whose `reason` isn't
+    a string is a config error. Under it, every call asks (Cursor: denies),
+    naming the error.
+  - A project rule (`vercel deploy --prod`, `decision: "ask"`) asks on the
+    command, and not on a commit message or `echo` that mentions it. A
+    `deny` rule denies. A rule matches an MCP call by its tool name.
+  - `writePath` appears in the writes reason.
+- **AC28 — Fail closed.**
+  - A guard that throws exits 0 with a verdict: ask (Cursor: deny) when
+    the call names a pack's marker, allow when it doesn't.
+  - An unreadable payload is refused with exit 2.
+  - A pack whose `guard.mjs` won't load asks on every call, naming it.
+  - A pack's bad options ask on the calls that pack judges.
+- **AC29 — The Supabase pack: the CLI.** Hatedate's `supabase-guard`
+  suites, ported, pass with their decisions, except these fixes:
+  - `--help`, `-h`, `db push --dry-run`, `db push --local`, a local `db
+    reset`, and a `storage cp` download pass.
+  - A heredoc commit message or PR body naming a write passes.
+  - **`db query --linked`, by its SQL:**
+    - a READ ONLY transaction, a static read (inline, a plain file, or
+      `BEGIN … ROLLBACK` with only reads), or a proof in the configured
+      frame passes
+    - SQL with write statements asks "writes"
+    - `client_encoding` / `standard_conforming_strings` / `U&` /
+      `set_config`, a user function, a proof without a configured frame,
+      and unparseable SQL ask "can't tell"
+    - so do a `-f` file that's missing, oversized, given as a `$VAR`, or
+      named elsewhere in the same call
+  - Hatedate's write list, a remote `db reset`, `migration up|down` and a
+    management write verb ask "writes". Its wrapped invocations ask.
+- **AC30 — MCP.** Under both payloads, Cursor's `tool_input` string
+  included:
+  - A Supabase call to a known read passes. `execute_sql` passes a read,
+    asks "writes" on a write, and asks "can't tell" otherwise.
+  - `apply_migration`, `deploy_edge_function`, `merge_branch`,
+    `create_branch` and a tool name never seen before ask.
+  - Each way of recognizing a Supabase call works: the server's name, its
+    URL, a Supabase-only tool name, a project ref. A Vercel `pause_project`
+    with a `projectId` passes.
+- **AC31 — HTTP and psql.**
+  - `curl` / `wget` to `api.supabase.com` or `<ref>.supabase.co` passes
+    GET and HEAD. It asks "writes" on `-X POST`, `-d`, `--data*`,
+    `--json`, `-F`, `-T`, `--method` and `--post-data`.
+  - `node -e` / `python3 -c` naming those hosts asks "can't tell".
+    `grep` / `echo` naming them pass.
+  - `psql` to a Supabase host passes `-c` / `-f` reads, asks on writes and
+    on interactive or stdin use, and asks "can't tell" on a `$VAR` target.
+    A local `psql` and `pg_dump` pass.
+- **AC32 — `db-read`.**
+  - `node .ssdd/packs/supabase/db-read.mjs "<sql>"` wraps the SQL in
+    `BEGIN READ ONLY; … ROLLBACK;`. It refuses SQL that doesn't classify as
+    a read, exits non-zero, and runs nothing.
+  - On a read it runs `supabase db query --linked -f <temp file>` (a fake
+    CLI records the call and the file) and removes the temp file.
+  - The guard allows the helper's call without asking.
+- **AC33 — `personalReads`.** Off by default.
+  - With `tables` / `columns` set, a read naming one asks "reads personal
+    data: <names>", both through `db query` and through MCP.
+  - `db-read` refuses it unless given `--personal`, and the guard asks on
+    `--personal`.
+- **AC34 — Packs in install, update and status.** In scratch repos:
+  - `install` into a repo with `supabase/config.toml` (and, separately,
+    `@supabase/supabase-js` in `package.json`) records `"packs":
+    ["supabase"]` and writes `.ssdd/packs/supabase/`. A repo with neither
+    records `[]` and gets no pack files.
+  - `--packs none` and `--packs supabase` override detection. An unknown
+    pack is an error.
+  - `update` keeps the lock's packs. A `config.toml` added between updates
+    changes nothing, and `--packs` on `update` adds or removes a pack.
+  - `status` names a pack the repo now matches but lacks.
+  - A `v3.1.1` lock (no `packs`) updates with none.
+- **AC35 — Wiring, end to end.**
+  - `settings-hooks.json` runs prod-guard on `Bash` and `mcp__.*`. Cursor's
+    `hooks.json` runs it on `beforeShellExecution` and `beforeMCPExecution`,
+    with `failClosed`.
+  - In an installed scratch repo with the pack, through the installed
+    files: `supabase db push` asks under Claude Code's payload and is denied
+    under Cursor's; `supabase db query --linked -f <READ ONLY file> 2>&1 |
+    tail -5` passes under both.
+- **AC36 — The replay.**
+  - The fixture holds every corpus entry (Clarify 30), redacted as in
+    Clarify 31, with the owner's recorded outcome.
+  - The committed test passes. On the real SQL in the scratchpad, the pack
+    asks on exactly the 2 writes, the 2 rollback probes, and the calls it
+    can't tell, each listed with its reason.
+  - Unreplayable entries are counted, not judged.
+  - **prizma:** its 96 `execute_sql` calls are replayed. The 10 writes ask
+    "writes"; what passes and what asks "can't tell" is recorded.
+- **AC37 — Docs.**
+  - **README:** the production guard and packs; Known limitations (Cursor
+    denies, interrupts, the residues above).
+  - Also: the adapters' READMEs, the pack's README, SDD.md where it names
+    the hooks, `config.example.json` with `productionGuard`.
+  - **CHANGELOG:** `## [3.2.0] — unreleased`, with an Upgrade step for
+    `.claude/settings.json`.
+  - **BACKLOG:** its "ask" item retired.
+- **AC38 — Existing tests and update.**
+  - The suite passes: 835 at `v3.1.1`, plus the new cases and the pack's.
+  - An installed layout's selftests pass, the pack's included.
+  - `update` from a `v3.1.1` install to this branch is clean.
+  - No API newer than Node 18 is added; CI runs the pack's tests on 18 and
+    24.
 
 ## Part 5 — trimming
 
