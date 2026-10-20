@@ -65,10 +65,20 @@ Write `**Status:** <WORD> — migrated <YYYY-MM-DD>; was: <the old Status text, 
 or `was: (no Status line)` when the plan had none.
 
 **A plan with no criteria** (no `## Acceptance criteria` section, or one
-with no items) gets its Status and nothing else: never write criteria for
-it. List these plans for the user, saying which have a checklist elsewhere
-(a Verification list, "Verify Phase N") that its record doesn't fully
-close.
+with no items), once its Status is set:
+- **Closed** (SHIPPED, SUPERSEDED, ABANDONED): its Status only.
+- **Open** (DRAFT, IN PROGRESS, BUILT): if the plan has its own checklist of
+  what done means (a Verification list, "Verify Phase N" items, a
+  gauntlet), copy that one list's items, in order and word for word, into a
+  new `## Acceptance criteria` section just before its `## Verification`
+  (else at the end), as `- **AC1** — <the item's text>`. The original list
+  stays where it is. Then give entries as below: an item the plan records
+  as done points at that record.
+- **No such checklist:** leave it.
+
+Never write criteria of your own: no merged lists, reworded items or added
+ones. List every plan with no criteria for the user, saying which got a
+copied checklist.
 
 **Entries.** These IDs need one: every ID of a BUILT or SHIPPED plan; in an
 open plan, the IDs the report says were ticked and the ones the plan's text
