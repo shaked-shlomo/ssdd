@@ -14,7 +14,9 @@
 //     ask|deny, reason}, tested against each command with each quoted word
 //     that holds whitespace blanked (a commit message that mentions a command
 //     isn't the command; a quoted `"vercel"` or `'--prod'` is still read), or
-//     against an MCP call as `mcp__<server>__<tool>` under both harnesses. A
+//     against an MCP call as `mcp__<server>__<tool>` under both harnesses
+//     (Cursor's server is mcp_server_name, else the URL's host) or as the
+//     bare tool name. A
 //     rule that matches text the shell view can't parse asks.
 //   - every pack installed beside this file (../packs/<name>/guard.mjs), with
 //     its options from productionGuard.<name>. A pack exports name,
@@ -141,7 +143,8 @@ async function main() {
     if (call) {
       if (call.inputError) verdicts.push({ decision: 'ask', kind: 'unclear', what: `MCP ${call.tool}`, why: call.inputError });
       for (const r of rules) {
-        if (tryRegex(r.match)?.test(mcpName)) {
+        const re = tryRegex(r.match);
+        if (re?.test(mcpName) || re?.test(call.tool)) {
           verdicts.push({ decision: r.decision, kind: 'rule', what: `MCP ${call.tool}`, why: r.reason ?? `matches /${r.match}/` });
         }
       }

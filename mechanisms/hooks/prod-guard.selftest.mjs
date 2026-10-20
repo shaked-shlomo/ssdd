@@ -164,6 +164,17 @@ describe('prod-guard', () => {
     assert.equal(verdict(cursorMcp(repo, 'deploy', '{}', 'other')).decision, 'allow');
   });
 
+  it('an MCP rule may name the bare tool, and Cursor without a server name uses the URL host', () => {
+    const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [
+      { match: '^deploy$', decision: 'ask', reason: 'deploys' },
+      { match: '^mcp__mcp\\.example\\.com__push$', decision: 'ask', reason: 'pushes' },
+    ] } } });
+    assert.equal(verdict(claudeMcp(repo, 'mcp__srv__deploy')).decision, 'ask');
+    assert.equal(verdict(cursorMcp(repo, 'deploy', '{}', 'srv')).decision, 'deny');
+    const noName = run(repo, { hook_event_name: 'beforeMCPExecution', tool_name: 'push', tool_input: '{}', url: 'https://mcp.example.com/mcp', workspace_roots: [repo] });
+    assert.equal(verdict(noName).decision, 'deny');
+  });
+
   it('a deny rule denies', () => {
     const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [{ match: '^rm -rf /$', decision: 'deny', reason: 'no' }] } } });
     const v = verdict(claude(repo, 'rm -rf /'));

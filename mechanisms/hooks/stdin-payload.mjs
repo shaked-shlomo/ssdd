@@ -42,7 +42,7 @@ export function hookHarness(payload) {
 // other tool. Claude Code: tool_name `mcp__<server>__<tool>`, tool_input an
 // object. Cursor (beforeMCPExecution): the bare tool name, the server in
 // mcp_server_name / url, and tool_input as a JSON *string*; one that won't
-// parse sets inputError.
+// parse sets inputError. Without mcp_server_name, the server is the URL's host.
 export function hookMcpCall(payload) {
   const name = String(payload?.tool_name ?? '');
   const parts = name.split('__');
@@ -50,8 +50,9 @@ export function hookMcpCall(payload) {
   const cursor = payload?.hook_event_name === 'beforeMCPExecution';
   if (!prefixed && !cursor) return null;
   const tool = prefixed ? parts[parts.length - 1] : name;
-  const server = cursor ? String(payload?.mcp_server_name ?? '') : parts.slice(1, -1).join('__');
   const url = String(payload?.url ?? payload?.mcp_server_url ?? '');
+  let server = cursor ? String(payload?.mcp_server_name ?? '') : parts.slice(1, -1).join('__');
+  if (!server && url) { try { server = new URL(url).hostname; } catch { /* not a URL: no server name */ } }
   let input = payload?.tool_input ?? null;
   let inputError = '';
   if (typeof input === 'string') {
