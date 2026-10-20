@@ -4,7 +4,7 @@
 // suites are ported with their decisions, except where Part 4 changed them
 // (SPEC v3 Part 4, Clarify 32 and 36–38).
 // Run: node --test packs/supabase/guard.selftest.mjs
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -342,4 +342,53 @@ describe('psql', () => {
     expectPass(L, `pg_dump ${URL_} > dump.sql`);
   });
   it('pg_restore to a Supabase host asks', () => expectAsk(L, `pg_restore -d ${URL_} dump.tar`, WRITES));
+});
+
+describe('differentials the commit review found', () => {
+  it('a flag value is not a flag', () => {
+    expectAsk(L, 'supabase db push --password --dry-run', WRITES);
+    expectAsk(L, 'supabase db push -p -h', WRITES);
+    expectAsk(L, 'supabase db reset --linked --workdir --local', WRITES);
+  });
+  it('a --db-url is local only when every host in it is', () => {
+    for (const url of [
+      'postgres://u@localhost/db?host=db.abc.supabase.co',
+      'postgres://u@localhost/db?hostaddr=1.2.3.4',
+      'postgres://u@localhost,db.abc.supabase.co/db',
+      'postgres://u@localhost/db?service=prod',
+    ]) expectAsk(L, `supabase db query --db-url "${url}" "delete from t"`, WRITES);
+    expectPass(L, 'supabase db query --db-url "postgres://u@localhost:54322/postgres?sslmode=disable" "delete from t"');
+  });
+  it('a command before the query may change its file', () => {
+    expectAsk(L, `python3 gen.py && supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectAsk(L, `cp x y; supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectAsk(L, `echo hi > other.txt; supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectPass(L, `cd /tmp && echo start && supabase db query --linked -f ${F.ro} | tail -3`);
+  });
+  it('a symlinked or hard-linked -f file asks', () => {
+    const link = join(L.tmp, 'link.sql');
+    symlinkSync(F.ro, link);
+    expectAsk(L, `supabase db query --linked -f ${link}`, /a link/);
+    const hard = join(L.tmp, 'hard.sql');
+    linkSync(F.plain, hard);
+    expectAsk(L, `supabase db query --linked -f ${hard}`, /a link/);
+  });
+  it('an upload is any cp whose destination is ss://, flags or not', () => {
+    expectAsk(L, 'supabase storage cp ./a ss:///b/a --content-type text/plain', WRITES);
+    expectAsk(L, 'supabase storage cp -r ./dir ss:///b/dir --cache-control 3600', WRITES);
+    expectPass(L, 'supabase storage cp ss:///b/a ./a --cache-control 3600');
+  });
+  it('a remote command that is not a known read asks', () => {
+    expectAsk(L, 'supabase test db --linked', UNCLEAR);
+    expectAsk(L, 'supabase brand-new thing --project-ref abc', UNCLEAR);
+    expectAsk(L, 'supabase db pull', /remote migration history/);
+    for (const c of [
+      'supabase inspect db locks --linked',
+      'supabase gen types typescript --linked',
+      'supabase migration fetch --linked',
+      'supabase functions download f --project-ref abc',
+      'supabase db dump --linked -f schema.sql',
+      'supabase test db',
+    ]) expectPass(L, c);
+  });
 });

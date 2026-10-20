@@ -32,7 +32,7 @@
 //   its project_id is a project ref. Known reads pass; execute_sql is judged
 //   by its SQL; every other tool asks (owner ruling, 2026-10-21).
 // A call naming supabase that the shell view can't parse asks "can't tell".
-import { readFileSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { classifySql } from './sql-readonly.mjs';
 
@@ -76,10 +76,40 @@ const MANAGEMENT = new Set(['projects', 'branches', 'backups', 'domains', 'sso',
   'network-bans', 'postgres-config', 'ssl-enforcement', 'vanity-subdomains', 'snippets', 'encryption', 'seed']);
 const WRITE_VERBS = new Set(['create', 'delete', 'update', 'remove', 'add', 'activate', 'restore', 'pause', 'unpause',
   'set', 'unset', 'reverify', 'update-root-key', 'buckets']);
+// Commands that may run before a `db query -f` in the same call: none of them
+// writes a file (a redirection makes any of them unsafe).
+const SAFE_BEFORE = new Set(['cd', 'echo', 'printf', 'ls', 'cat', 'pwd', 'true', 'sleep', 'date', 'export', 'which',
+  'test', '[', 'grep', 'head', 'tail', 'wc', 'jq', 'sort', 'uniq']);
+// A command that targets the remote project passes only when it's one of these reads.
+const READ_GROUPS = new Set(['inspect', 'gen', 'link', 'unlink', 'status', 'services', 'login', 'logout', 'init', 'start', 'stop']);
+const READ_VERBS = new Set(['list', 'get', 'show', 'info', 'ls', 'download', 'fetch', 'diff', 'dump', 'lint', 'api-keys',
+  'get-root-key', 'new']);
 const MAX_SQL = 1024 * 1024;
 
 const writes = (what) => ({ decision: 'ask', kind: 'writes', what });
 const unclear = (what, why) => ({ decision: 'ask', kind: 'unclear', what, why });
+
+// A CLI's words after `supabase` → { positionals, flags, values(names) }: the
+// value of a VALUE_FLAGS flag is neither a positional nor a flag, so
+// `--password --dry-run` is a password.
+function parseArgs(rest) {
+  const positionals = [];
+  const flags = [];
+  const vals = [];
+  for (let k = 0; k < rest.length; k++) {
+    const w = rest[k];
+    if (VALUE_FLAGS.has(w)) { vals.push([w, rest[k + 1] ?? '']); k++; continue; }
+    if (w.startsWith('-')) {
+      flags.push(w);
+      const eq = w.indexOf('=');
+      if (eq > 0) vals.push([w.slice(0, eq), w.slice(eq + 1)]);
+      continue;
+    }
+    if (/^\d*[<>]/.test(w)) continue;
+    positionals.push(w);
+  }
+  return { positionals, flags, values: (names) => vals.filter(([f]) => names.includes(f)).map(([, v]) => v) };
+}
 
 // The value of a flag in words (`--f v` or `--f=v`), all occurrences.
 function values(words, flags) {
@@ -93,14 +123,19 @@ function values(words, flags) {
   return out;
 }
 
+// Local only when every host in it is (`postgres://u@a,b/db` names two) and
+// no host / hostaddr / service parameter can point elsewhere.
 function dbUrlIsLocal(url) {
-  try { return LOCAL_HOSTS.has(new URL(url).hostname); } catch { return false; }
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  if (['host', 'hostaddr', 'service'].some((k) => u.searchParams.has(k))) return false;
+  return u.hostname.split(',').every((h) => LOCAL_HOSTS.has(h.replace(/:\d+$/, '')));
 }
 
 // --linked (not =false), or a --db-url that isn't local.
-function targetsRemote(rest) {
-  if (rest.some((w) => w === '--linked' || (w.startsWith('--linked=') && w !== '--linked=false'))) return true;
-  return values(rest, ['--db-url']).some((u) => !dbUrlIsLocal(u));
+function targetsRemote(args) {
+  if (args.flags.some((w) => w === '--linked' || (w.startsWith('--linked=') && w !== '--linked=false'))) return true;
+  return args.values(['--db-url']).some((u) => !dbUrlIsLocal(u));
 }
 
 // The SQL a command runs: { sql } or { why } when it can't be read.
@@ -114,7 +149,8 @@ function readSqlFile(path, ctx) {
   const name = basename(path);
   if (ctx.raw.split(name).length - 1 > 1) return { why: `${name} is named elsewhere in this call, so it may change before this runs` };
   let st;
-  try { st = statSync(full); } catch { return { why: `the -f file is missing (${path})` }; }
+  try { st = lstatSync(full); } catch { return { why: `the -f file is missing (${path})` }; }
+  if (st.isSymbolicLink() || (st.isFile() && st.nlink > 1)) return { why: 'the -f file is a link, so another name can change it' };
   if (!st.isFile()) return { why: "the -f path isn't a regular file" };
   if (st.size > MAX_SQL) return { why: 'the -f file is over 1 MiB' };
   try { return { sql: readFileSync(full, 'utf8') }; } catch (e) { return { why: `the -f file can't be read (${e.code ?? e.message})` }; }
@@ -130,12 +166,24 @@ export function judgeSql(sql, what, ctx) {
   return unclear(what, c.rule);
 }
 
-function judgeQuery(words, i, positionals, ctx) {
+// A command before ctx.commands[k] (any top-level one, for a nested k) that
+// may write a file: not SAFE_BEFORE, or with an output redirection.
+function writerBefore(ctx, k) {
+  const before = ctx.commands[k].depth > 0 ? ctx.commands.filter((w) => w.depth === 0) : ctx.commands.slice(0, k).filter((w) => w.depth === 0);
+  return before.find((w) => {
+    if (w.every((x) => /^[A-Za-z_]\w*=/.test(x))) return false;
+    if (w.some((x, j) => !w.quoted[j] && /^\d*(?:>|>>|&>|>\|)/.test(x) && !/^\d*>&\d$/.test(x))) return true;
+    return !SAFE_BEFORE.has(base(w[0]));
+  });
+}
+
+function judgeQuery(words, i, args, ctx, k) {
   const what = 'supabase db query';
+  const { positionals } = args;
   const pg = words.slice(0, i).find((w) => /^PG[A-Z_]+=/.test(w));
   if (pg) return unclear(what, `it sets ${pg.split('=')[0]}`);
   const rest = words.slice(i + 1);
-  const files = values(rest, ['-f', '--file']);
+  const files = args.values(['-f', '--file']);
   const q = positionals.indexOf('query');
   const inline = q >= 0 ? positionals.slice(q + 1) : [];
   if (rest.some((w) => /^\d*<(?!<)/.test(w))) return unclear(what, 'it reads SQL from stdin');
@@ -146,30 +194,35 @@ function judgeQuery(words, i, positionals, ctx) {
     return judgeSql(inline[0], what, ctx);
   }
   const file = readSqlFile(files[0], ctx);
-  return file.why ? unclear(what, file.why) : judgeSql(file.sql, what, ctx);
+  if (file.why) return unclear(what, file.why);
+  const writer = writerBefore(ctx, k);
+  if (writer) return unclear(what, `\`${writer.slice(0, 3).join(' ')}\` runs before it in this call and may change the file`);
+  return judgeSql(file.sql, what, ctx);
 }
 
-// One command with a `supabase` word at i → a verdict, or null.
-function judgeCli(words, i, ctx) {
-  const rest = words.slice(i + 1);
-  if (rest.includes('--help') || rest.includes('-h') || rest[0] === 'help') return null;
-  if (rest.includes('--local')) return null;
-  const positionals = [];
-  for (let k = 0; k < rest.length; k++) {
-    if (VALUE_FLAGS.has(rest[k])) { k++; continue; }
-    if (rest[k].startsWith('-') || /^\d*[<>]/.test(rest[k])) continue;
-    positionals.push(rest[k]);
-  }
+// ctx.commands[k] has a `supabase` word at i → a verdict, or null.
+function judgeCli(words, i, ctx, k) {
+  const args = parseArgs(words.slice(i + 1));
+  const { positionals, flags } = args;
+  if (flags.includes('--help') || flags.includes('-h') || positionals[0] === 'help') return null;
+  if (flags.includes('--local')) return null;
   const p = ` ${positionals.join(' ')} `;
   const has = (s) => p.includes(` ${s} `);
-  if (has('db push')) return rest.includes('--dry-run') ? null : writes('supabase db push');
-  if (has('db query')) return targetsRemote(rest) ? judgeQuery(words, i, positionals, ctx) : null;
-  if (has('db reset')) return targetsRemote(rest) ? writes('supabase db reset (remote)') : null;
-  for (const dir of ['up', 'down']) if (has(`migration ${dir}`)) return targetsRemote(rest) ? writes(`supabase migration ${dir} (remote)`) : null;
+  const remote = targetsRemote(args);
+  if (has('db push')) return flags.includes('--dry-run') ? null : writes('supabase db push');
+  if (has('db query')) return remote ? judgeQuery(words, i, args, ctx, k) : null;
+  if (has('db reset')) return remote ? writes('supabase db reset (remote)') : null;
+  if (has('db pull')) return unclear('supabase db pull', 'it may update the remote migration history');
+  for (const dir of ['up', 'down']) if (has(`migration ${dir}`)) return remote ? writes(`supabase migration ${dir} (remote)`) : null;
   for (const s of ['migration repair', 'functions deploy', 'functions delete', 'config push', 'secrets set',
     'secrets unset', 'storage rm', 'storage mv']) if (has(s)) return writes(`supabase ${s}`);
-  if (has('storage cp')) return String(positionals[positionals.length - 1] ?? '').startsWith('ss://') ? writes('supabase storage cp (an upload)') : null;
+  const cp = positionals.findIndex((w, j) => w === 'cp' && positionals[j - 1] === 'storage');
+  if (cp >= 0) return positionals.slice(cp + 2).some((w) => w.startsWith('ss://')) ? writes('supabase storage cp (an upload)') : null;
   if (MANAGEMENT.has(positionals[0]) && WRITE_VERBS.has(positionals[1])) return writes(`supabase ${positionals[0]} ${positionals[1]}`);
+  const flagged = remote || args.values(['--project-ref']).length > 0;
+  if (flagged && !READ_GROUPS.has(positionals[0]) && !READ_VERBS.has(positionals[1])) {
+    return unclear(`supabase ${positionals.slice(0, 2).join(' ')}`.trim(), "it targets the remote project, and isn't a known read");
+  }
   return null;
 }
 
@@ -269,9 +322,9 @@ function judgePsql(words, i, ctx) {
 
 export function judgeShell(ctx) {
   const out = [];
-  for (const words of ctx.commands) {
+  for (const [k, words] of ctx.commands.entries()) {
     const i = words.findIndex(isCli);
-    const v = i >= 0 ? judgeCli(words, i, ctx) : null;
+    const v = i >= 0 ? judgeCli(words, i, ctx, k) : null;
     if (v) out.push(v);
     const h = words.findIndex((w) => ['curl', 'wget'].includes(base(w)));
     const hv = h >= 0 ? judgeHttp(words, h) : null;
