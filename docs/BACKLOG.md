@@ -1,7 +1,7 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-20 at v3.0.0 (Part 3 built since). The
-next work is the rest of v3 (`SPEC.md` → v3): five parts, one plan each, agreed
+The single list of remaining SSDD work. Updated 2026-10-20 at v3.1.0. The
+next work is the rest of v3 (`SPEC.md` → v3), Parts 4 and 5, one plan each, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
 is planned, it gets a `SPEC.md` section first.
@@ -15,7 +15,6 @@ that incident.
 
 | # | Part (SPEC.md → v3) | Plan | Ships as |
 |---|---|---|---|
-| 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads, lint on added lines | `docs/superpowers/plans/2026-10-20-v3-cheaper-gate.md` — built on its branch, not merged | 3.1.0 |
 | 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |
 | 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test, the Node floor to 22 | not written | 3.3.0 |
 

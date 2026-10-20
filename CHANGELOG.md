@@ -10,7 +10,7 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.1.0] — unreleased
+## [3.1.0] — 2026-10-20
 
 v3 Part 3, a cheaper gate: keep every block that catches a real mistake and
 stop charging for the ones that don't; see `SPEC.md` → v3 → Part 3. Nothing

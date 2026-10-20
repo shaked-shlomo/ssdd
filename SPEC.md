@@ -1156,8 +1156,8 @@ and the D13 `if` filter tested and included (item 9).
 **Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
 Parts 1 and 2 SHIPPED as 3.0.0, tagged and pushed 2026-10-20 (the
 after-`/compact` check is DEFERRED to the first real repo migration, see
-Part 1 → Verification); Part 3 BUILT 2026-10-20 on branch
-`claude/v3-cheaper-gate-cc1697`, unreleased (3.1.0) · **Branch:** `v3`
+Part 1 → Verification); Part 3 SHIPPED as 3.1.0, tagged and pushed
+2026-10-20 · **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
 - where each plan stands, what's verified and what's next
