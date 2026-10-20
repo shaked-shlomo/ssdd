@@ -4,7 +4,7 @@
 //   node .ssdd/hooks/work-state.mjs                    the full view
 //   node .ssdd/hooks/work-state.mjs --session-start    capped, for a session-start hook
 //   node .ssdd/hooks/work-state.mjs --session-start=cursor   the same, as Cursor JSON
-//   node .ssdd/hooks/work-state.mjs --staged           the close check (pre-commit)
+//   node .ssdd/hooks/work-state.mjs --staged           the close check and the untracked-file note (pre-commit)
 //   node .ssdd/hooks/work-state.mjs --migrate          rewrite this checkout's plans for v3
 //   node .ssdd/hooks/work-state.mjs --migrate-check <ref>   what the migration lost or left
 //   node .ssdd/hooks/work-state.mjs --next-plan        the next free plan number
@@ -439,11 +439,28 @@ function needsAdd(root, pathspecs) {
   return out;
 }
 
+// Untracked files the commit leaves behind, Superpowers ledgers excepted
+// (they get the reminder below). A warning that lists them, or, with
+// preCommit.blockUntracked, a block. → true when it blocks.
+const UNTRACKED_SHOWN = 10;
+function untrackedCheck(root, block) {
+  const files = (gitOut(root, 'ls-files', '--others', '--exclude-standard', '-z') ?? '')
+    .split('\0').filter((p) => p && !/^\.superpowers\/sdd\/[^/]*\/progress\.md$/.test(p));
+  if (!files.length) return false;
+  const list = files.slice(0, UNTRACKED_SHOWN).map((p) => `  • ${p}\n`).join('') +
+    (files.length > UNTRACKED_SHOWN ? `  +${files.length - UNTRACKED_SHOWN} more\n` : '');
+  process.stderr.write(block
+    ? `[ssdd-pre-commit] untracked files exist — stage them or clean up before committing (preCommit.blockUntracked):\n${list}`
+    : `[ssdd-pre-commit] note: ${files.length === 1 ? "1 untracked file isn't" : `${files.length} untracked files aren't`} in this commit (preCommit.blockUntracked: true refuses this):\n${list}`);
+  return block;
+}
+
 function stagedCheck(repo) {
   const loaded = loadSsddConfig(repo);
   if (!loaded) return 0;
   const { root } = loaded;
   const paths = loaded.cfg.paths ?? DEFAULT_PATHS;
+  let blocked = untrackedCheck(root, loaded.cfg.preCommit?.blockUntracked === true);
   const z = gitOut(root, 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--', paths.plans) ?? '';
   let staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
   const mergeFile = (gitOut(root, 'rev-parse', '--git-path', 'MERGE_HEAD') ?? '').trim();
@@ -462,7 +479,6 @@ function stagedCheck(repo) {
   const rules = ignoreRules(root, ledgersOnDisk);
   const pending = needsAdd(root, [SP_DIR, paths.ledgers]);
   const texts = catBatch(root, staged.map((p) => `:${p}`));
-  let blocked = false;
   const handled = new Set();
   staged.forEach((plan, i) => {
     const p = parsePlan(texts[i] ?? '');

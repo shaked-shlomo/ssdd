@@ -19,6 +19,9 @@
 //   gitGuard.extraRules     as given
 //   paths.plans / .specs / .ledgers  repo-relative; defaults .ssdd/plans,
 //                           .ssdd/specs, .ssdd/ledgers
+//   preCommit.blockUntracked  true only when the config says true: the
+//                           pre-commit then refuses while an untracked file
+//                           exists (otherwise it lists them as a warning)
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -35,6 +38,7 @@ const SECTIONS = [
   ['gitGuard', isObject, 'an object'],
   ['routing', (v) => Array.isArray(v) && v.every(isObject), 'a list of objects'],
   ['paths', isObject, 'an object'],
+  ['preCommit', isObject, 'an object'],
 ];
 
 // Where plans, specs and ledgers live, repo-relative. A key that isn't a
@@ -72,6 +76,7 @@ function build(root, config) {
     },
     gitGuard: { ...(config.gitGuard ?? {}), ...gitGuard },
     paths: buildPaths(config.paths),
+    preCommit: { ...(config.preCommit ?? {}), blockUntracked: config.preCommit?.blockUntracked === true },
     root,
   };
 }

@@ -8,24 +8,14 @@
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 
-# 1. Block committing while ANY untracked file exists — strays (new plan docs,
-#    generated files) must be staged or cleaned up deliberately, never left to
-#    silently drift. Comment this block out if the project doesn't want it.
-#    A Superpowers ledger (.superpowers/sdd/<plan>/progress.md) is exempt:
-#    Superpowers creates it before the first task's commit; step 2b reminds.
-#    core.quotePath=false keeps a non-ASCII name unquoted, so the exemption matches.
-UNTRACKED="$(git -c core.quotePath=false -C "$ROOT" ls-files --others --exclude-standard | grep -Ev '^\.superpowers/sdd/[^/]*/progress\.md$' || true)"
-if [ -n "$UNTRACKED" ]; then
-  echo "[ssdd-pre-commit] untracked files exist — stage them or clean up before committing:" >&2
-  echo "$UNTRACKED" | sed 's/^/  • /' >&2
-  exit 1
-fi
-
-# 2. Convention lint over the staged files (rules: .ssdd/config.json → lint).
+# 1. Convention lint over the staged files (rules: .ssdd/config.json → lint).
 node "$ROOT/.ssdd/hooks/convention-lint.mjs" --staged
 
-# 2b. Work state: a plan marked BUILT/SHIPPED needs a Verification entry per AC
-#     ID and its ledger staged (rules: .ssdd/hooks/work-state.mjs).
+# 2. Work state: a plan marked BUILT/SHIPPED needs a Verification entry per AC
+#    ID and its ledger staged (rules: .ssdd/hooks/work-state.mjs). It also
+#    lists untracked files as a warning, or refuses the commit while one
+#    exists when .ssdd/config.json sets preCommit.blockUntracked. A Superpowers
+#    ledger (.superpowers/sdd/<plan>/progress.md) is exempt: it gets a reminder.
 node "$ROOT/.ssdd/hooks/work-state.mjs" --staged
 
 # 3. Review gate: staged paths → required reviewers → stamp check.

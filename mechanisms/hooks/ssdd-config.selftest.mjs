@@ -132,6 +132,22 @@ describe('loadSsddConfig', () => {
     assert.deepEqual(r.cfg.paths, { plans: '.ssdd/plans', specs: '.ssdd/specs', ledgers: '.ssdd/ledgers' });
   });
 
+  it('preCommit.blockUntracked defaults to false and reads true', () => {
+    putConfig({});
+    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: false });
+    putConfig({ preCommit: { blockUntracked: true } });
+    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: true });
+    putConfig({ preCommit: { blockUntracked: 'yes' } });
+    assert.equal(loadSsddConfig(dir).cfg.preCommit.blockUntracked, false);
+  });
+
+  it('a non-object preCommit is a config error', () => {
+    putConfig({ preCommit: true });
+    const r = loadSsddConfig(dir);
+    assert.match(r.error, /"preCommit" must be an object/);
+    assert.equal(r.cfg.preCommit.blockUntracked, false);
+  });
+
   it('a "root" key does not move the repo root', () => {
     putConfig({ root: '/elsewhere' });
     const r = loadSsddConfig(dir);

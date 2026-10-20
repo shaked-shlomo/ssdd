@@ -602,7 +602,7 @@ describe('the pre-commit layer is the backstop for shell hand-offs', () => {
     }
     writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
     git(dir, 'config', 'core.hooksPath', '.githooks');
-    git(dir, 'add', '.ssdd/config.json'); // the hook refuses while anything is untracked
+    git(dir, 'add', '.ssdd/config.json');
     write(dir, 'src/a.ts', 'a\n');
     const head = git(dir, 'rev-parse', 'HEAD');
 

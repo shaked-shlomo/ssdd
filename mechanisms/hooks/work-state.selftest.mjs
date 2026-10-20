@@ -614,21 +614,45 @@ describe('close check (--staged)', () => {
     assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/07-עמוד מחיר\/progress\.md/);
   });
 
-  it('pre-commit: ledger exempt from the untracked block', { skip: !PRE_COMMIT }, () => {
+  it('pre-commit: an untracked file is a warning; the commit lands', { skip: !PRE_COMMIT }, () => {
     armPreCommit();
+    put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
+    put('notes.txt', 'stray\n');
+    put('README.md', 'z\n');
+    stage('README.md');
+    const ok = commit('x');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stderr, /1 untracked file isn't in this commit[\s\S]*• notes\.txt/);
+    assert.match(ok.stderr, /preCommit\.blockUntracked/);
+    assert.doesNotMatch(ok.stderr, /• \.superpowers/);
+    assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
+  });
+
+  it('pre-commit: preCommit.blockUntracked restores the block', { skip: !PRE_COMMIT }, () => {
+    armPreCommit();
+    put('.ssdd/config.json', JSON.stringify({ preCommit: { blockUntracked: true } }));
+    stage('.ssdd/config.json');
     put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
     put('README.md', 'z\n');
     stage('README.md');
-    const ok = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-qm', 'x'], { cwd: dir, encoding: 'utf8', env: env() });
-    assert.equal(ok.status, 0, ok.stderr);
-    assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
+    const ok = commit('x');
+    assert.equal(ok.status, 0, ok.stderr); // the ledger alone is exempt
     put('notes.txt', 'stray\n');
     put('README.md', 'w\n');
     stage('README.md');
-    const blocked = spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '-qm', 'y'], { cwd: dir, encoding: 'utf8', env: env() });
+    const blocked = commit('y');
     assert.equal(blocked.status, 1);
     assert.match(blocked.stderr, /untracked files exist[\s\S]*notes\.txt/);
     assert.doesNotMatch(blocked.stderr, /• \.superpowers/);
+  });
+
+  it('the untracked list stops at 10', () => {
+    for (let i = 1; i <= 12; i++) put(`stray-${String(i).padStart(2, '0')}.txt`, 'x\n');
+    const { code, err } = run(['--staged']);
+    assert.equal(code, 0);
+    assert.match(err, /12 untracked files aren't in this commit/);
+    assert.equal((err.match(/^ {2}• stray-/gm) ?? []).length, 10);
+    assert.match(err, /^ {2}\+2 more$/m);
   });
 });
 
