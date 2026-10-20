@@ -785,7 +785,8 @@ describe('migrate-plans skill', () => {
   it('names the procedure', () => {
     const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
     for (const s of ['--migrate', '--migrate-check HEAD', 'NOT RECORDED (migrated', 'refute-by-default', 'one commit',
-      'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep']) assert.ok(text.includes(s), s);
+      'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep',
+      '## Status:', 'STATUS (date):', 'was: (no Status line)', 'no criteria']) assert.ok(text.includes(s), s);
   });
 
   it("the real CHANGELOG's 3.0.0 Upgrade section names both steps", () => {

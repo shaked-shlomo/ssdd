@@ -43,9 +43,12 @@ restore or checkout of the folder. Do the References paragraph after them,
 in one agent, since it edits other files. Sources are the plan's own text,
 and git for Status. Nothing else.
 
-**Status.** A Status already from the six stays, even one git contradicts:
-the view flags an IN PROGRESS nothing is working on, and changing it is the
-owner's call. Otherwise find the plan's
+**Status.** A Status already from the six stays, in whatever form the plan
+writes it, even one git contradicts: the view flags an IN PROGRESS nothing
+is working on, and changing it is the owner's call. The view reads only a
+`**Status:**` line, so a status written another way (a `## Status:` heading,
+a `STATUS (date): SHIPPED` paragraph) gets that line added beside it, with
+the same word, and the original stays. Otherwise find the plan's
 merge in git (`git log --oneline <default> -- <plan>`, the commits and PRs
 the plan names, `git branch -a --contains <sha>`) and pick the least-done
 word the evidence supports:
@@ -58,7 +61,14 @@ word the evidence supports:
 | replaced by another plan | SUPERSEDED |
 | dropped | ABANDONED |
 
-Write `**Status:** <WORD> — migrated <YYYY-MM-DD>; was: <the old Status text, verbatim>`.
+Write `**Status:** <WORD> — migrated <YYYY-MM-DD>; was: <the old Status text, verbatim>`,
+or `was: (no Status line)` when the plan had none.
+
+**A plan with no criteria** (no `## Acceptance criteria` section, or one
+with no items) gets its Status and nothing else: never write criteria for
+it. List these plans for the user, saying which have a checklist elsewhere
+(a Verification list, "Verify Phase N") that its record doesn't fully
+close.
 
 **Entries.** These IDs need one: every ID of a BUILT or SHIPPED plan; in an
 open plan, the IDs the report says were ticked and the ones the plan's text
