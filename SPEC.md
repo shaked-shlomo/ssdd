@@ -2034,6 +2034,31 @@ at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
     and `onboarding: /skills-audit hasn't run here`
   - in that layout, `node --test .ssdd/hooks/*.selftest.mjs` → 546 tests,
     545 pass, 1 skipped, 0 fail
+- **The Hatedate copy test** (2026-10-20, at the owner's request). This ran
+  on a scratch clone of `~/Developer/Hatedate` at `8563f3c`; the real repo
+  is unchanged. Hatedate has never adopted SSDD, so the clone got a
+  `.ssdd/config.json` with `paths.plans: ".claude/plans"`.
+  - **What the plans are:** 90 files. 77 have no `## Acceptance criteria`
+    section, and 63 have no `**Status:**` line. Some write `## Status: …`
+    as a heading, and some write `> **STATUS (date): SHIPPED — …**`. Many
+    are Superpowers implementation plans.
+  - **The mechanical pass:** `--migrate` → `13 changed, 77 unchanged`, with
+    103 to-dos (63 "no Status line", 19 Status outside the six).
+  - **The agent pass** (2 sonnet agents) ran on 01, 22, 27, 42, 60 and 62,
+    followed by one refute-by-default verifier (opus). It found 1
+    refutation: 27's old status already said SHIPPED, so it keeps SHIPPED.
+    After the fix, `--migrate-check HEAD~1` lists none of the six.
+  - **Status:**
+    - 42 → SHIPPED (it had no Status line).
+    - 62 → SHIPPED (was "COMPLETE … PR pending"; #128 merged).
+    - 01 → BUILT (external setup is still listed as remaining).
+    - 22 keeps IN PROGRESS under the Status ruling, though `68634bb0` (#52)
+      shipped it.
+  - **Criteria:** 60 and 62 had AC IDs and were re-prefixed. 01, 22, 27 and
+    42 have none, but each has a checklist that reads as criteria ("Verify
+    Phase N", Verification lists). The skill leaves these alone, by design:
+    it never writes criteria. 42 is SHIPPED with 2 of its 5 checks recorded
+    nowhere.
 - **Node 18** — DEFERRED (operator). There's no Node 18 on this machine, and
   CI runs on a push, which waits for the owner. No API newer than Node 18
   was added (`Array.prototype.at` is 16.6+).
@@ -2112,6 +2137,22 @@ Each is in `.superpowers/sdd/2026-10-18-v3-onboarding/progress.md`.
   - The old-format count is the default branch's plans, which is where the
     migration lands. On real prizma it reads 42, not the 44 that included
     worktree-only plans.
+- **Found on the Hatedate copy and fixed:**
+  - Sub-plan numbers (`14d-1`, `14d-1-1`, `14e-3.1`) had all read as `14d`
+    or `14e`. That gave false duplicate warnings, and `--next-plan` listed 34
+    false strays. Fixed test-first; the duplicates left are real (two 28s,
+    two 14f.2s).
+  - The skill now covers three cases: a status word from the six written
+    another way keeps its word, with a `**Status:**` line added beside it;
+    a plan with no Status says `was: (no Status line)`; and a plan with no
+    criteria gets its Status only and is listed for the user.
+- **Open (owner):** what to do with plans that have no criteria. In
+  Hatedate that is 77 of 90, many of them closed. The choices:
+  - leave them as history
+  - have the agent copy a plan's own checklist into an `## Acceptance
+    criteria` section, so nothing is invented and what wasn't recorded
+    shows as NOT RECORDED
+  - only do that for open plans
 - **Status ruling.** A Status already from the six stays, even when git
   shows the plan merged. The migration formats; Part 1's view flags an IN
   PROGRESS nothing is working on, and Part 1's Scope leaves editing Status
