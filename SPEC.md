@@ -1157,7 +1157,9 @@ and the D13 `if` filter tested and included (item 9).
 Parts 1 and 2 SHIPPED as 3.0.0, tagged and pushed 2026-10-20 (the
 after-`/compact` check is DEFERRED to the first real repo migration, see
 Part 1 → Verification); Part 3 SHIPPED as 3.1.0, tagged and pushed
-2026-10-20, with its deferred minors and a Linux-only selftest fix in 3.1.1 ·
+2026-10-20, with its deferred minors and a Linux-only selftest fix in 3.1.1;
+Part 4 BUILT on `claude/v3-prod-guard-c3c7d0` as 3.2.0 (unreleased, not
+merged), 2026-10-21 ·
 **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
@@ -3217,6 +3219,235 @@ the session scratchpad: they hold private paths, SQL and commit text.
   - `update` from a `v3.1.1` install to this branch is clean.
   - No API newer than Node 18 is added; CI runs the pack's tests on 18 and
     24.
+
+### Verification
+
+*Verified 2026-10-21 on branch `claude/v3-prod-guard-c3c7d0`, cut from local
+`main` at `v3.1.1` (`f1cc647`). Every check below was re-run at `9c47f1f`,
+after the final review's fix pass. Node 24.15.0, git 2.54.0. Selftest counts
+at `9c47f1f`: `git-guard` 261, `review-gate` 81, `review-gate.shapes` 191,
+`review-stamp` 44, `work-state` 70, `plan-migrate` 35, `plan-parse` 29,
+`convention-lint` 22, `ssdd-config` 25, `prod-guard` 25, `shell-view` 17,
+`bin/ssdd` 65, `bin/skills-audit` 27, and the Supabase pack's `guard` 187,
+`sql` 101, `replay` 70, `db-read` 12, all passing.*
+
+- **AC26** — `node --test mechanisms/hooks/prod-guard.selftest.mjs` → 25
+  pass, each case under Claude Code's and Cursor's payload:
+  - "a pack's ask, beside pipes and redirections": `prodwrite x 2>&1 | tail
+    -5 > out.txt` gives Claude Code exactly `[ssdd-prod-guard] prodwrite x
+    writes to production outside the merge path (migrations on merge to
+    main). Approve only if the owner OK'd it.`; Cursor gets `deny`, ending
+    `Cursor can't ask, so this is refused: the owner runs it in their own
+    terminal.`
+  - "no rule, no pack: a command passes": Claude Code's stdout is empty;
+    Cursor's is `{"permission":"allow"}`.
+  - "an unclear reason says so", "a call no pack claims passes", and
+    "a deny rule denies" (`permissionDecision: "deny"`, no "Approve" line).
+- **AC27** — `ssdd-config` → 25 pass: its `productionGuard` cases
+  ("defaults", "keeps a valid section", "a bad section is a config error"
+  over 9 shapes, "another section's error doesn't name productionGuard",
+  "an unreadable file has no sectionErrors", "config.example.json's
+  productionGuard is valid"). prod-guard: "a project rule asks; a mention
+  doesn't" (`npx vercel deploy --prod` asks; a commit message, `echo 'vercel
+  deploy --prod'`, `echo vercel deploy --prod` and `printf` don't), "a quoted
+  command name or option still matches a rule", "a rule matches an MCP call
+  by its tool name", "an MCP rule matches the same name under both
+  harnesses", "writePath appears in the reason", "a bad productionGuard asks
+  on every call, naming the error".
+- **AC28** — prod-guard: "a guard error asks when the call names a pack
+  marker" / "…and allows when it doesn't", "a guard error on an MCP call the
+  pack claims asks", "a pack that won't load asks on every call, naming it",
+  "a pack's bad options ask on what it judges" and "…including an MCP call
+  the pack claims on a server whose name doesn't say so", "an unreadable
+  payload is refused with exit 2". The pack: "bad options ask on Supabase
+  MCP calls through a UUID-named connector".
+- **AC29** — `node --test packs/supabase/sql.selftest.mjs` → 101 pass
+  (Hatedate's two suites ported, plus Part 4's changes) and
+  `packs/supabase/guard.selftest.mjs` → 187 pass:
+  - "the CLI (ported)" and "wrapped and hidden invocations (ported)": 23 +
+    29 writes ask, 16 + 8 pass, including Part 4's `supabase db reset`,
+    `storage cp ss://… ./x` and `migration list --linked; db push --dry-run`
+  - "Part 4's fixes": `--help`, `-h`, `--dry-run 2>&1 | tail -5`, `--local`,
+    the heredoc commit message and the `gh pr create --body "$(cat <<'EOF' …
+    EOF)"` body pass; management writes ask
+  - "db query against production, by its SQL": a READ ONLY file piped and
+    redirected, a plain SELECT file, inline reads and a local `--db-url`
+    pass; a write asks `supabase db query (INSERT statement)`; a
+    `client_encoding` file asks `names client_encoding`; a configured proof
+    passes and an unconfigured one asks; a quoted path with a space is read;
+    a missing / 2 MB / directory / `$VAR` / same-call-written / edited file,
+    two sources, stdin, an expansion and `PGOPTIONS` ask "can't tell"
+  - the follow-up blocks from the commit-time reviews and the final review
+    ("differentials the … review found", "found by the replay", "found by
+    the final review")
+- **AC30** — the `MCP` block: recognized by server name, URL, a
+  Supabase-only tool on a UUID server, and a project ref; Vercel's
+  `pause_project` with `projectId` passes; known reads pass; `execute_sql`
+  passes `select 1`, asks `MCP execute_sql (INSERT statement) writes …` and
+  `calls public.f`; Cursor's string input passes; seven named writes and an
+  unknown tool ask.
+- **AC31** — the `the HTTP APIs` and `psql` blocks: 8 GET / HEAD / non-Supabase
+  shapes pass, 11 write methods ask "writes", a `$SUPABASE_URL` POST and
+  scripts naming a host ask "can't tell"; psql `-c` / `-f` reads pass,
+  writes ask, stdin and `$DATABASE_URL` ask, local psql and `pg_dump` pass,
+  `pg_restore` to Supabase asks; psql meta-commands ask.
+- **AC32** — `node --test packs/supabase/db-read.selftest.mjs` → 12 pass: "a
+  read runs wrapped in READ ONLY … ROLLBACK, and its temp file is removed"
+  (the fake CLI got `db query --linked -f <tmp>` and the file `BEGIN READ
+  ONLY;\nselect 1;\nROLLBACK;\n`), "a write is refused and nothing runs",
+  "a COMMIT can't break out", "db-read passes without asking", "only the
+  installed db-read, with nothing set on it, is the read path".
+- **AC33** — db-read: "personal reads need --personal", "--personal asks",
+  "--personal asks however the path is spelled…", "personalReads asks
+  through db query and MCP" (`supabase db query reads personal data:
+  auth.users, phone.`). sql: "personalReads".
+- **AC34** — `node --test bin/ssdd.selftest.mjs` → 65 pass; its `packs`
+  block: "install detects supabase/config.toml" (`packs: supabase
+  (supabase/config.toml)`), "install detects @supabase/supabase-js", "a
+  repo without Supabase gets no pack", "--packs none and --packs supabase
+  override detection", "--packs with an unknown name is an error", "update
+  keeps the lock's packs and never detects; --packs adds and removes",
+  "status names a pack the repo now matches", "a lock from before packs
+  updates with none".
+- **AC35** — "both adapters wire prod-guard: Claude Code on Bash and
+  mcp__.*, Cursor on shell and MCP with failClosed"; the pack's "installed
+  by bin/ssdd.mjs" block installs this branch's HEAD into a scratch repo
+  with `supabase/config.toml`: `supabase db push` asks under Claude Code and
+  is denied under Cursor, a READ ONLY file `-o json 2>&1 | tail -5` passes
+  both, `mcp__x__apply_migration` asks.
+- **AC36** — `node --test packs/supabase/replay.selftest.mjs` → 70 pass.
+  - **The fixture:** 88 entries (Hatedate's guard asked on 89 from 09-28 to
+    10-17; its self-test is left out), redacted per Clarify 31. "the fixture
+    keeps only shapes" checks for real paths, UUIDs, project refs, printed
+    text and search patterns.
+  - **On the real SQL** (scratchpad, `-f` files rebuilt from the sessions'
+    own writes), the pack asks on exactly 22. The 2 writes: 10-15's seed
+    (`INSERT statement`) and cleanup (`DELETE statement`). 20 "can't tell":
+    10 files written in the same call, 7 `$VAR` paths (the 2 rollback
+    probes among them; their SQL is a `rolled back ALTER statement`), and 3
+    lexing-mode probes (`standard_conforming_strings` once,
+    `client_encoding` twice). 46 pass: READ ONLY transactions, static reads
+    (inline, plain files, 4 MCP reads), 6 proofs in Hatedate's frame, a dry
+    run. 20 can't be replayed (their files are gone: 17 helper proofs, 3
+    others). The test rebuilds each from synthetic SQL and gets the same 68
+    decisions.
+  - **Sweep, every supabase / psql-naming Bash call and every MCP call:**
+    Hatedate 07-01..10-20: 4,620 pass, 74 writes, 95 can't tell, 51 files
+    gone; in 09-28..10-17 nothing asks that Hatedate's guard didn't. prizma's
+    history: 2,401 pass, 9 writes, 8 can't tell.
+  - **prizma's 96 `execute_sql`:** 83 pass, 9 ask "writes" (DDL and a
+    `truncate`, which the owner had rejected), 4 ask "can't tell" (a user
+    function twice, `EXPLAIN ANALYZE`, a column named `http_image_url`).
+  - The real prizma and Hatedate checkouts: `git status --porcelain` empty
+    for both, at `2712ab0` and `795188aa`; neither was written to.
+- **AC37** — updated: `packs/supabase/README.md` (new), README (how it
+  works, the box, quick start, updating, Known limitations), SDD.md
+  (Production), both adapter READMEs and the Claude adapter's `CLAUDE.md`,
+  `mechanisms/config.example.json` (`productionGuard`), CHANGELOG `## [3.2.0]
+  — unreleased` with `### Upgrade (optional)`, BACKLOG (the Part 4 row gone;
+  Hatedate and prizma follow-ups; the limit).
+- **AC38** — `node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs
+  packs/*/*.selftest.mjs` → 1262 tests, 1262 pass, 0 fail (835 at
+  `v3.1.1`).
+  - **Update:** a scratch repo installed at `v3.1.1` (adapters
+    `claude-code,cursor`) and committed, then `update --to HEAD`: exit 0,
+    "unchanged: 39 file(s)", "updated (5)", "added (4)", `packs none`, 0
+    conflict markers, 0 `.ssdd-new` files, `.claude/settings.json` with the
+    same sha256, the lock `3.1.1+9c47f1f` with `packs: []`. Then `update --to
+    HEAD --packs supabase`: exit 0, "added (12)", `packs supabase`.
+  - **Installed layout:** `node --test .ssdd/hooks/*.selftest.mjs
+    .ssdd/packs/*/*.selftest.mjs` → 1166 tests, 1164 pass, 2 skipped (the
+    source-tree-only checks), 0 fail.
+  - **No API newer than Node 18:** a grep of the diff's added lines for
+    `toSorted`, `toReversed`, `findLast`, `Object.groupBy`, `.union(`,
+    `globSync`, `fromAsync`, `.at(`, JSON import attributes, the regex `v`
+    flag, `Promise.withResolvers` and `isWellFormed` finds none.
+    `Object.hasOwn` is Node 16.9.
+  - **Node 18 CI:** not run; it needs a push (the owner's go-ahead). CI now
+    runs `packs/*/*.selftest.mjs` too.
+
+### Deviations & discoveries
+
+What shipped differs from Clarify 28–43 and the Design above in these ways.
+Each is in `.superpowers/sdd/2026-10-21-v3-prod-guard/progress.md` with its
+cost if wrong.
+
+- **An automated security review ran on every commit** (a Claude Code plugin
+  in this environment). It raised findings on ten commits, mostly parser
+  differentials; each round was fixed test-first (one finding was declined,
+  measured), and the rulings are in the ledger.
+  - **prod-guard's rules:** a quoted single word (`"vercel"`) is read as the
+    shell reads it, a rule also sees text the shell view can't parse, and an
+    MCP rule matches `mcp__<server>__<tool>` or the bare tool under both
+    harnesses (Cursor's server falls back to the URL's host).
+  - **The CLI:** a flag's value is never read as a flag (`--password
+    --dry-run`); `-f/x.sql` is `-f`'s value; a `--db-url` is local only when
+    every host is and no `host` / `hostaddr` / `service` parameter points
+    elsewhere; `storage cp` is an upload when any destination is `ss://`.
+  - **The `-f` file:** a symlink or hard link asks, and so does any command
+    that may write a file and runs first — a top-level one before the query,
+    or a nested one (a substitution) anywhere. Measured first: 0 of
+    Hatedate's 97 `-f` queries.
+  - **curl, wget, psql:** options are read as getopt reads them (short
+    groups, attached values). After the sixth round, the rule became: a
+    call naming supabase passes only when every option is one the guard
+    knows; any other option, a config file (`-K`, `wget -e`), a variable set
+    on the command, or `--next` asks. Any psql target naming supabase is
+    Supabase's, however libpq would spell it.
+  - **`db-read`** is recognized by its real path for the script checks; any
+    script named `db-read.mjs` asks on `--personal` or a variable set on it.
+  - **Declined, measured:** failing closed on a command *after* the query in
+    the same pipeline (`| python3`) would have asked on 60 of Hatedate's 162
+    `-f` queries. A pipeline consumer racing to rewrite its producer's file
+    is a deliberate evasion (the threat model).
+- **A remote command that isn't a known read asks** (Clarify 38 listed
+  writes only). It mirrors the owner's MCP ruling. `db pull` asks too
+  (Clarify 43 had it out): it may update the remote migration history.
+- **A redirection's target isn't an argument.** The real-corpus run found
+  `… -f q.sql -o json > out.json` asking ("two SQL sources"). Fixed in the
+  CLI, psql and HTTP parsers; a heredoc fed to `db query` or `psql` is stdin.
+- **The read allowlist grew from the corpora:** `to_regprocedure` and the
+  other `to_reg*` lookups, `aclexplode`, `acldefault`, `enum_range`, the math
+  functions, `percentile_cont` / `_disc`, `jsonb_array_elements[_text]`,
+  `regexp_matches`, pgvector's `vector_dims`. `EXPLAIN (options)` and `ORDER
+  / GROUP / PARTITION BY (expr)` are no longer read as calls.
+- **Kept from the source, at a measured cost:** `set_config` anywhere asks
+  (11 RLS probes in Hatedate's history set `request.jwt.claims`); an
+  `http_*` word asks (1 prizma column); a script naming a Supabase host asks
+  (3 prizma URL tests).
+- **prizma had 9 writes, not 10.** Clarify 42's count was a keyword
+  estimate; the 10th mentions `truncate` only in a comment of a read.
+- **The replay's numbers** (Clarify 30 estimated with Hatedate's classifier):
+  of 88 asks, 46 pass, 22 ask, 20 can't be replayed. The 2 rollback probes
+  ask "can't tell" for their `$S` path; their SQL classifies as a rolled-back
+  write.
+- **`status` detects with the newest release tag,** so a branch that isn't
+  tagged yet reports no new pack match. Verified through the installer's
+  tests on a tagged fixture.
+- **The adapter-wiring test** lives in `bin/ssdd.selftest.mjs` beside the
+  other adapter-template tests, not in the pack's suite.
+- **The final review** (opus) found 1 Critical, 2 Important and 10 Minor.
+  - **Critical, fixed:** a broken option in `productionGuard.supabase` (a
+    typo) let an `apply_migration` or a writing `execute_sql` through a
+    claude.ai connector pass silently: the connector is named by a UUID, so
+    the call never said "supabase". A pack now exports `claims(call)`, and
+    the broken-options ask and the guard-error fallback use it.
+  - **Important, fixed:** psql meta-commands (`\gexec`, `\gset`, `\i`)
+    passed as static reads, so `select format('drop table %I', …) \gexec`
+    passed; they now ask "can't tell". `echo` and `printf` are text: `echo
+    Run supabase db push` had asked "writes", and an unquoted echo matched a
+    project rule.
+  - **Two Minors re-graded Important and fixed:** `db-read --personal` from
+    another directory had stopped asking (a regression from the realpath
+    fix), and the fixture kept what `echo` printed and grep's patterns (a
+    test now checks it for shapes only).
+  - **Deferred** (in the ledger): a local `--db-url` on `db push` / `migration
+    repair` asks "writes to production"; CLI gaps (`branches disable`, `db
+    remote commit`, a local `seed buckets`); `COPY … TO STDOUT` is called a
+    write; `ssh host '…'` isn't unwrapped while a heredoc to ssh is;
+    `config.example.json`'s comment overstates the blanking rule; `adopt`
+    writes no `packs` key; whether the CLI resolves a relative `-f` against
+    `--workdir` is unverified.
 
 ## Part 5 — trimming
 

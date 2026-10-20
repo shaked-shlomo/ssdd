@@ -39,7 +39,8 @@ v3 → Part 4.
   Supabase packages are): the CLI by subcommand, `db query` on production
   by its SQL, Supabase MCP tools (every one but the known reads asks;
   `execute_sql` by its SQL), the HTTP APIs (GET passes), and `psql` to a
-  Supabase host. Ported from Hatedate's supabase-guard with its handover's
+  Supabase host (a psql meta-command such as `\gexec` asks). Ported from
+  Hatedate's supabase-guard with its handover's
   fixes: reads pass without READ ONLY when the static check vouches for
   them, `--help` and `db push --dry-run` pass, a local `db reset` passes,
   heredoc commit messages and PR bodies aren't commands. Proof frames and
