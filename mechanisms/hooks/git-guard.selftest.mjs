@@ -149,6 +149,9 @@ const BLOCKED = [
   ['a process substitution is a value', 'git config core.hooksPath <(true)'],
   ['a quoted write option', "git config '--unset' core.hooksPath"],
   ['get after an option is not the subcommand', 'git config --file .git/config get core.hooksPath /x'],
+  ['an abbreviated write option', 'git config --unset-a core.hooksPath'],
+  ['a read flag quoted inside an option value', 'git config --comment "x --get" core.hooksPath /x'],
+  ['a read flag as an option value', 'git config --comment --get core.hooksPath /x'],
 ];
 
 const ALLOWED = [

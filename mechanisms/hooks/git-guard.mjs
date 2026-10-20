@@ -28,7 +28,7 @@
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
 import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { cluster, collapseGlobalFlags, gitRule, skeleton, stripHeredocs } from './git-cmd.mjs';
+import { cluster, collapseGlobalFlags, gitRule, skeleton, splitCommands, stripHeredocs } from './git-cmd.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -70,33 +70,28 @@ if (filePath && STAMP_FILES.test(filePath)) {
 // never a bypass. Config keys are case-insensitive → /i.
 //
 // Reads are allowed. Each `git config … core.hooksPath` in the call is
-// judged on its own (a read must not cover a write after it):
-//   read   --get* / --list / -l, or `get` / `list` as the first word after
-//          `config`; or no write option and nothing after the key but exact
-//          redirections (the scan stops at `)`, so `"$(git config core.hooksPath)"`
-//          reads)
-//   write  a write option (--unset*, --add, --replace-all, -e / --edit, or
-//          `set` / `unset` first), or any other word after the key: a value,
-//          `""`, a process substitution
-// Arming (`git config core.hooksPath .githooks`) is a write: it stays the user's.
-const READ_FLAG = /^(?:--get(?:-all|-regexp|-urlmatch)?|--list|-l)$/;
-const WRITE_FLAG = /^(?:--unset(?:-all)?|--add|--replace-all|-e|--edit|--rename-section|--remove-section)$/;
-const VALUE_OPT = /^(?:-f|--file|--blob|--default|--type|--comment|--value|--url)$/; // takes the next word
+// judged on its own (a read must not cover a write after it), and it's a
+// write when:
+//   - its first word after `config` is `set`, `unset`, `edit`,
+//     `rename-section` or `remove-section`;
+//   - any word before the key, quotes removed, is `-e` or a long write
+//     option or a prefix of one, as git accepts (`--unset-a` is
+//     `--unset-all`);
+//   - anything but an exact redirection follows the key: a value, `""`, a
+//     process substitution, or a --get value pattern. The scan stops at `)`,
+//     so `"$(git config core.hooksPath)"` is a read.
+// Everything else (`git config [--local|--show-origin|get|--get] core.hooksPath`)
+// is a read. Arming (`git config core.hooksPath .githooks`) is a write: the user's.
+const WRITE_LONG = ['--unset', '--unset-all', '--add', '--replace-all', '--edit', '--rename-section', '--remove-section'];
+const isWriteOption = (w) => w === '-e' ||
+  (/^--[a-z]/.test(w) && WRITE_LONG.some((o) => o.startsWith(w.split('=')[0])));
 const REDIRECT = String.raw`\d*(?:>>?|<|>&|<&|&>>?|>\|)`;
 const REDIRECT_BARE = new RegExp(`^${REDIRECT}$`);              // its target is the next word
 const REDIRECT_ATTACHED = new RegExp(`^${REDIRECT}[^(<>&|]\\S*$`); // `2>/dev/null`, `2>&1`
 function configWrites(before, after) {
-  const words = before.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/['"]/g, ''));
-  let read = false;
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    if (i === 0 && /^(?:set|unset|rename-section|remove-section|edit)$/.test(w)) return true;
-    if (i === 0 && /^(?:get|list)$/.test(w)) read = true;
-    else if (WRITE_FLAG.test(w)) return true;
-    else if (READ_FLAG.test(w)) read = true;
-    else if (VALUE_OPT.test(w)) i++;
-  }
-  if (read) return false;
+  const words = splitCommands(before).flat();
+  if (/^(?:set|unset|edit|rename-section|remove-section)$/.test(words[0] ?? '')) return true;
+  if (words.some(isWriteOption)) return true;
   const tail = after.trim().split(/\s+/).filter(Boolean);
   for (let i = 0; i < tail.length; i++) {
     if (REDIRECT_BARE.test(tail[i])) { i++; continue; }
