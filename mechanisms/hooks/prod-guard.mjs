@@ -22,6 +22,8 @@
 //     its options from productionGuard.<name>. A pack exports name,
 //     validate(options) → '' | error, mentions(text) → boolean,
 //     judgeShell(ctx) → Verdict[] and judgeMcp(call, ctx) → Verdict | null,
+//     and optionally claims(call) → boolean (an MCP call it judges, whatever
+//     its server is called; a broken option or a guard error then asks),
 //     where Verdict = { decision: 'ask'|'deny', kind: 'writes'|'unclear'|
 //     'personal', what, why? }.
 //
@@ -99,6 +101,10 @@ async function loadPacks() {
 }
 
 const tryRegex = (src) => { try { return new RegExp(src); } catch { return null; } };
+// Does a pack claim this call? An MCP call it says it judges (a connector
+// named by a UUID never mentions the stack), or a call naming its markers.
+const claimed = (mod, call, subject) =>
+  Boolean((call && typeof mod.claims === 'function' && mod.claims(call)) || mod.mentions(subject));
 // A command's text for project rules: a quoted word with whitespace in it is
 // a message or a script, not part of the command, so it's blanked. A quoted
 // single word (`"vercel"`, `'--prod'`) is read as the shell reads it.
@@ -164,7 +170,7 @@ async function main() {
       const options = pg[name] ?? {};
       const bad = mod.validate(options);
       if (bad) {
-        if (mod.mentions(subject)) verdicts.push({ decision: 'ask', kind: 'broken', why: `productionGuard.${name}: ${bad}` });
+        if (claimed(mod, call, subject)) verdicts.push({ decision: 'ask', kind: 'broken', why: `productionGuard.${name}: ${bad}` });
         continue;
       }
       const packCtx = { ...ctx, options, packDir: join(PACKS, name) };
@@ -179,7 +185,9 @@ async function main() {
     return emit(harness, verdicts, writePath);
   } catch (e) {
     let named = rules.some((r) => tryRegex(r.match)?.test(subject));
-    for (const { mod } of packs) { try { named ||= Boolean(mod.mentions(subject)); } catch { named = true; } }
+    let call = null;
+    try { call = hookMcpCall(payload); } catch { /* judged by text alone */ }
+    for (const { mod } of packs) { try { named ||= claimed(mod, call, subject); } catch { named = true; } }
     const verdicts = named ? [{ decision: 'ask', kind: 'unclear', what: 'this call', why: `guard error: ${e?.message ?? e}` }] : [];
     return emit(harness, verdicts, writePath);
   }

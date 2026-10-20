@@ -29,7 +29,9 @@ export function judgeShell(ctx) {
   }
   return out;
 }
+export function claims(call) { return call.tool.startsWith('fake_'); }
 export function judgeMcp(call) {
+  if (call.tool === 'fake_throw') throw new Error('mcp boom');
   return call.tool === 'fake_write' ? { decision: 'ask', kind: 'writes', what: 'MCP ' + call.tool } : null;
 }
 `;
@@ -235,6 +237,21 @@ describe('prod-guard', () => {
     assert.equal(v.decision, 'ask');
     assert.match(v.reason, /bad option/);
     assert.equal(verdict(claude(repo, 'ls')).decision, 'allow');
+  });
+
+  it("…including an MCP call the pack claims on a server whose name doesn't say so", () => {
+    const repo = layout({ config: { productionGuard: { fake: { bad: true } } } });
+    const v = verdict(claudeMcp(repo, 'mcp__ba176f8c-ba86-458b-b61a-71583c653bd4__fake_write'));
+    assert.equal(v.decision, 'ask');
+    assert.match(v.reason, /bad option/);
+    assert.equal(verdict(claudeMcp(repo, 'mcp__ba176f8c-ba86-458b-b61a-71583c653bd4__other')).decision, 'allow');
+  });
+
+  it('a guard error on an MCP call the pack claims asks', () => {
+    const repo = layout();
+    const v = verdict(claudeMcp(repo, 'mcp__ba176f8c-ba86-458b-b61a-71583c653bd4__fake_throw'));
+    assert.equal(v.decision, 'ask');
+    assert.match(v.reason, /guard error: mcp boom/);
   });
 
   it('an unreadable payload is refused with exit 2', () => {

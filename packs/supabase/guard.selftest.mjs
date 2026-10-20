@@ -217,6 +217,18 @@ describe('the proof frame comes from config', () => {
       expectAsk(N, `supabase db query --linked -f ${p}`, /proof frame not configured/);
     } finally { N.cleanup(); }
   });
+  it('bad options ask on Supabase MCP calls through a UUID-named connector', () => {
+    const N = makeLayout({ config: { productionGuard: { supabase: { liveExtension: ['pg_net'] } } } });
+    try {
+      const uuid = 'mcp__ba176f8c-ba86-458b-b61a-71583c653bd4__';
+      for (const [tool, input] of [['apply_migration', { project_id: 'abcdefghijklmnopqrst', query: 'drop table t' }],
+        ['execute_sql', { project_id: 'abcdefghijklmnopqrst', query: 'delete from t' }]]) {
+        const r = N.claudeMcp(uuid + tool, input);
+        assert.equal(r.decision, 'ask', tool);
+        assert.match(r.reason, /liveExtension/);
+      }
+    } finally { N.cleanup(); }
+  });
   it('bad options ask on supabase calls only', () => {
     const N = makeLayout({ config: { productionGuard: { supabase: { proofFrame: 'x' } } } });
     try {

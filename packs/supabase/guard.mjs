@@ -511,6 +511,10 @@ function isSupabaseCall(call) {
   return typeof call.input?.project_id === 'string' && PROJECT_REF.test(call.input.project_id);
 }
 
+// The MCP calls this pack judges (prod-guard asks on them when an option is
+// broken or the guard errs, whatever the connector is named).
+export const claims = (call) => isSupabaseCall(call);
+
 export function judgeMcp(call, ctx) {
   if (!isSupabaseCall(call) || READ_TOOLS.has(call.tool)) return null;
   const what = `MCP ${call.tool}`;
