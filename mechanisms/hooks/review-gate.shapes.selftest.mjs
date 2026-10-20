@@ -160,7 +160,9 @@ describe('a visible chained git add passes', () => {
     });
   }
   it('a routed file named in another case is routed by its spelling on disk', () => {
-    if (git(repo, 'config', '--bool', 'core.ignorecase') !== 'true') return; // case-sensitive disk
+    // Linux's `git init` leaves the key unset, and `git config` then exits 1.
+    const ignoreCase = spawnSync('git', ['-C', repo, 'config', '--bool', 'core.ignorecase'], { encoding: 'utf8' }).stdout.trim();
+    if (ignoreCase !== 'true') return; // case-sensitive disk
     stage(repo, 'src/lib/a.ts');
     git(repo, 'reset', '-q');
     const r = claude('git add SRC/lib/a.ts && git commit -m x', repo);
