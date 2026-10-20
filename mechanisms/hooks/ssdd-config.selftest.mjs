@@ -1,9 +1,10 @@
 // Tests for the shared config loader: the working-tree config, and absent vs broken.
 // Run: node --test mechanisms/hooks/ssdd-config.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
@@ -187,6 +188,77 @@ describe('loadSsddConfig', () => {
     assert.notEqual(r, null);
     assert.match(r.error, /\.ssdd\/config\.json can't be read/);
     assert.equal(r.cfg.root, r.root);
+  });
+});
+
+describe('productionGuard', () => {
+  const DEFAULTS = { writePath: 'migrations on merge to main', extraRules: [] };
+
+  it('defaults', () => {
+    putConfig({});
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.cfg.productionGuard, DEFAULTS);
+  });
+
+  it('keeps a valid section', () => {
+    const pg = {
+      writePath: 'the CI deploy',
+      extraRules: [{ match: '\\bvercel\\b.*--prod', decision: 'ask', reason: 'deploys' }],
+      supabase: { liveExtensions: ['pg_net'] },
+    };
+    putConfig({ productionGuard: pg });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.equal(r.sectionErrors, undefined);
+    assert.deepEqual(r.cfg.productionGuard, pg);
+  });
+
+  it('a bad section is a config error', () => {
+    const rule = { match: 'x', decision: 'ask', reason: 'r' };
+    for (const pg of [
+      'x',
+      { writePath: 3 },
+      { extraRules: {} },
+      { extraRules: ['x'] },
+      { extraRules: [{ ...rule, match: '(' }] },
+      { extraRules: [{ ...rule, match: 5 }] },
+      { extraRules: [{ ...rule, decision: 'allow' }] },
+      { extraRules: [{ ...rule, reason: 5 }] },
+      { supabase: [] },
+    ]) {
+      putConfig({ productionGuard: pg });
+      const r = loadSsddConfig(dir);
+      const what = JSON.stringify(pg);
+      assert.match(r.error ?? '', /productionGuard/, what);
+      assert.ok(r.sectionErrors?.productionGuard, what);
+      assert.deepEqual(r.cfg.productionGuard, DEFAULTS, what);
+    }
+  });
+
+  it("another section's error doesn't name productionGuard", () => {
+    putConfig({ routing: 'x', productionGuard: { writePath: 'w' } });
+    const r = loadSsddConfig(dir);
+    assert.ok(r.sectionErrors?.routing);
+    assert.equal(r.sectionErrors.productionGuard, undefined);
+    assert.equal(r.cfg.productionGuard.writePath, 'w');
+  });
+
+  it('an unreadable file has no sectionErrors', () => {
+    putConfig('{ not json');
+    const r = loadSsddConfig(dir);
+    assert.ok(r.error);
+    assert.equal(r.sectionErrors, undefined);
+  });
+
+  const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', 'config.example.json');
+  it("config.example.json's productionGuard is valid", { skip: !existsSync(EXAMPLE) }, () => {
+    const { productionGuard } = JSON.parse(readFileSync(EXAMPLE, 'utf8'));
+    assert.ok(productionGuard, 'the example has a productionGuard section');
+    putConfig({ productionGuard });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.equal(r.cfg.productionGuard.writePath, 'migrations on merge to main');
   });
 });
 

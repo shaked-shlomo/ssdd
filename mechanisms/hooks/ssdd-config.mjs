@@ -26,6 +26,13 @@
 //   preCommit.blockUntracked  true only when the config says true: the
 //                           pre-commit then refuses while an untracked file
 //                           exists (otherwise it lists them as a warning)
+//   productionGuard         { writePath (default "migrations on merge to
+//                           main"), extraRules (default []), ...one object
+//                           per pack, which the pack validates }
+//
+// A section-scoped error is also in `sectionErrors[section]`, so a hook that
+// reads one section (prod-guard) can tell its own error from another's. A
+// file that can't be read or parsed has `error` alone.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -43,7 +50,9 @@ const SECTIONS = [
   ['routing', (v) => Array.isArray(v) && v.every(isObject), 'a list of objects'],
   ['paths', isObject, 'an object'],
   ['preCommit', isObject, 'an object'],
+  ['productionGuard', isObject, 'an object'],
 ];
+export const DEFAULT_WRITE_PATH = 'migrations on merge to main';
 
 // Where plans, specs and ledgers live, repo-relative. A key that isn't a
 // non-empty string keeps its default.
@@ -64,6 +73,28 @@ function regexListError(v) {
   for (const p of v) { try { new RegExp(p); } catch { return `"${p}" isn't a valid regex`; } }
   return '';
 }
+// '' when productionGuard is well-formed, else the first problem. A pack's
+// own section (any other key) only has to be an object here; the pack checks
+// the rest.
+function productionGuardError(pg) {
+  if ('writePath' in pg && typeof pg.writePath !== 'string') return '"writePath" must be a string';
+  if ('extraRules' in pg) {
+    if (!Array.isArray(pg.extraRules)) return '"extraRules" must be a list';
+    for (const [i, r] of pg.extraRules.entries()) {
+      if (!isObject(r)) return `extraRules[${i}] must be an object`;
+      if (typeof r.match !== 'string') return `extraRules[${i}]: "match" must be a regex source`;
+      try { new RegExp(r.match); } catch { return `extraRules[${i}]: "${r.match}" isn't a valid regex`; }
+      if (r.decision !== 'ask' && r.decision !== 'deny') return `extraRules[${i}]: "decision" must be "ask" or "deny"`;
+      if ('reason' in r && typeof r.reason !== 'string') return `extraRules[${i}]: "reason" must be a string`;
+    }
+  }
+  for (const [k, v] of Object.entries(pg)) {
+    if (['writePath', 'extraRules', '$comment'].includes(k)) continue;
+    if (!isObject(v)) return `"${k}" must be an object (a pack's options)`;
+  }
+  return '';
+}
+
 function routingError(routing) {
   for (const [i, r] of routing.entries()) {
     if (typeof r.reviewer !== 'string' || !r.reviewer.trim()) return `routing[${i}]: "reviewer" must be a name`;
@@ -99,6 +130,12 @@ function build(root, config) {
     gitGuard: { ...(config.gitGuard ?? {}), ...gitGuard },
     paths: buildPaths(config.paths),
     preCommit: { ...(config.preCommit ?? {}), blockUntracked: config.preCommit?.blockUntracked === true },
+    productionGuard: {
+      ...(config.productionGuard ?? {}),
+      writePath: typeof config.productionGuard?.writePath === 'string' && config.productionGuard.writePath.trim()
+        ? config.productionGuard.writePath.trim() : DEFAULT_WRITE_PATH,
+      extraRules: Array.isArray(config.productionGuard?.extraRules) ? config.productionGuard.extraRules : [],
+    },
     root,
   };
 }
@@ -119,18 +156,23 @@ export function loadSsddConfig(repo) {
   } catch (e) {
     return broken(root, `${PATH} is not valid JSON: ${e.message}`);
   }
-  const bad = SECTIONS.filter(([key, ok]) => key in config && !ok(config[key]));
-  for (const [key] of bad) delete config[key];
-  const errors = bad.map(([key, , type]) => `"${key}" must be ${type}`);
+  const sectionErrors = {};
+  const fail = (section, why) => { sectionErrors[section] ??= why; };
+  for (const [key, ok, type] of SECTIONS) {
+    if (key in config && !ok(config[key])) { fail(key, `"${key}" must be ${type}`); delete config[key]; }
+  }
   const routing = Array.isArray(config.routing) ? routingError(config.routing) : '';
-  if (routing) { errors.push(routing); delete config.routing; }
+  if (routing) { fail('routing', routing); delete config.routing; }
   if (config.reviewGate && 'exclude' in config.reviewGate) {
     const why = regexListError(config.reviewGate.exclude);
-    if (why) { errors.push(`reviewGate.exclude: ${why}`); delete config.reviewGate.exclude; }
+    if (why) { fail('reviewGate', `reviewGate.exclude: ${why}`); delete config.reviewGate.exclude; }
   }
+  const pg = isObject(config.productionGuard) ? productionGuardError(config.productionGuard) : '';
+  if (pg) { fail('productionGuard', `productionGuard: ${pg}`); delete config.productionGuard; }
   const cfg = build(root, config);
+  const errors = Object.values(sectionErrors);
   if (!errors.length) return { root, cfg };
-  return { root, cfg, error: `${PATH}: ${errors.join('; ')}` };
+  return { root, cfg, error: `${PATH}: ${errors.join('; ')}`, sectionErrors };
 }
 
 // The portable pre-commit layer runs only while core.hooksPath points at a

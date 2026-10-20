@@ -29,6 +29,12 @@
     "stamping": "manual"
   },
 
+  "productionGuard": {
+    "$comment": "prod-guard (.ssdd/hooks/prod-guard.mjs) asks before anything that would change production outside writePath, which its reasons quote. extraRules: {match (a regex source, tested against each shell command with its quoted words blanked, or against an MCP call's tool name), decision: \"ask\" | \"deny\", reason}. e.g. {\"match\": \"\\\\bvercel\\\\s+deploy\\\\b.*--prod\\\\b\", \"decision\": \"ask\", \"reason\": \"deploys to production\"}. A pack's options sit under its name: see .ssdd/packs/<name>/README.md.",
+    "writePath": "migrations on merge to main",
+    "extraRules": []
+  },
+
   "gitGuard": {
     "blockBulkAdd": true,
     "blockNoVerify": true,
