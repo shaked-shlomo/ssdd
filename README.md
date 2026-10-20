@@ -82,6 +82,18 @@ SHIPPED is refused while an `AC` ID has no Verification entry or the plan's
 ledger isn't staged. Superpowers' per-plan ledgers
 (`.superpowers/sdd/<plan>/progress.md`) are tracked in git.
 
+**Production changes go one way.** In both projects SSDD came from, that way
+is the integrations that deploy on merge to `main`. `prod-guard.mjs` asks a
+person before anything else that would change production, with a reason that
+says which case it is: "writes to production outside the merge path" or
+"can't tell what this does". Reads don't ask, and `| tail`, `2>&1` or `> file`
+beside a command change nothing. What production means for a stack lives in a
+**pack**, installed only where that stack is used: the
+[Supabase pack](packs/supabase/README.md) judges the CLI, `db query` by its
+SQL, MCP tools, the HTTP APIs and `psql`, and adds `db-read`, a read path that
+never asks. A project adds its own rules (`productionGuard.extraRules`, e.g.
+`vercel deploy --prod`).
+
 **Onboarding a repo that already has plans.** Plans written before v3 (checkbox
 criteria, criteria without IDs, Status words like DONE) are migrated once with
 `/migrate-plans`: `work-state.mjs --migrate` does the mechanical half, an agent
@@ -98,7 +110,8 @@ onboarding steps still open.
 | **Process** | [`process/`](process/) | The lifecycle, principles, and plan / spec / ledger / handover templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
 | **Skills** | [`skills/`](skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `docs-drift-audit`, installed into the harness-neutral `.agents/skills/`. |
-| **Mechanisms** | [`mechanisms/`](mechanisms/) | Config-driven enforcement (review gate, git-guard, convention lint). Each runs as a git hook/CLI anywhere, or from Claude Code / Cursor hook payloads for earlier interception. |
+| **Mechanisms** | [`mechanisms/`](mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). Each runs as a git hook/CLI anywhere, or from Claude Code / Cursor hook payloads for earlier interception. |
+| **Packs** | [`packs/`](packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](packs/supabase/README.md) (what reaches the production project, `db-read`). |
 | **Adapters** | [`adapters/`](adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
 | **Installer** | [`bin/ssdd.mjs`](bin/ssdd.mjs) | Installs a tagged release, writes a lock, and later three-way merges updates. |
 
@@ -118,15 +131,17 @@ Use `generic` instead of the adapter list for any other harness
 (`inject.sh /path/to/project claude-code,cursor` does the same). It installs
 the newest release: `process/`, `reviewers/` and the hooks into
 `<project>/.ssdd/`, the git pre-commit hook, the skills, and each adapter's
-wiring. It seeds the project-owned files (`.ssdd/config.json`,
+wiring, and each pack the repo matches (`--packs a,b` or `--packs none`
+overrides that). It seeds the project-owned files (`.ssdd/config.json`,
 `.ssdd/skills.json`, `AGENTS.md`, or `AGENTS.ssdd.md` to merge if one exists,
 `CLAUDE.md`, `.claude/settings.json`), writes the lock, and prints what's
 left. Then fill in the per-project half:
 
 1. **`.ssdd/config.json`**: reviewer routing (which staged paths need which
    reviewers; a route may carry a `$comment` saying why), lint rules,
-   git-guard toggles, `reviewGate.maxRoutedFiles`. The mechanism is the
-   framework, the regexes are the project. `gate-reviewer` is opt-in; its
+   git-guard toggles, `reviewGate.maxRoutedFiles`, and `productionGuard`
+   (the sanctioned `writePath`, the project's own `extraRules`, a pack's
+   options). The mechanism is the framework, the regexes are the project. `gate-reviewer` is opt-in; its
    route snippet is in [reviewers/gate-reviewer.md](reviewers/gate-reviewer.md).
 2. **`AGENTS.md`**: merge `AGENTS.ssdd.md` in, with a **Documentation Map**
    listing every canonical doc, its purpose, and when it must change.
@@ -179,6 +194,10 @@ framework file three ways (your locked version, yours, the new release):
 | both edited, same lines | conflict markers: resolve, then commit |
 | you added a file the release now ships | `<file>.ssdd-new` beside yours: reconcile, delete it |
 | removed upstream | deleted if you never edited it, else kept with a warning |
+
+`update` keeps the packs the lock lists and never detects new ones; `status`
+says when the repo now matches a pack it lacks, and `update --packs a,b`
+adds or removes one.
 
 Project-owned files are never touched; `update` prints how their templates
 changed so you can port what you need, and ends with the
@@ -257,6 +276,15 @@ an agent was seen using it in a real project.
   agent can't run `--stamp` or write stamp files. In `manual` mode (the
   default, and the only mode in Cursor) `--stamp` is an attestation the gate
   can't verify, including which model ran the review.
+- **The production guard asks; it isn't a sandbox.** It judges the command
+  line, so a script *file*, a variable holding a command, or a key used from
+  code goes unseen, as for git. A call already sent can't be stopped: an Esc
+  on an MCP call in flight doesn't undo it on the server. A read without
+  `READ ONLY` can write through a view or policy that calls a writing
+  function; `db-read` closes that. Cursor's hooks ignore `ask`, so in Cursor
+  the guard denies and the owner runs the command in their own terminal. In
+  Claude Code it runs on every MCP call (the settings can't follow which
+  packs are installed). Details in the [pack's README](packs/supabase/README.md).
 - **Copies, not a live link.** Each repo carries its own editable copy;
   updates arrive only when you run `update`. A release that moves a *target*
   path needs a move entry in `bin/ssdd.mjs`, or `update` sees a removal plus

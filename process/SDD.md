@@ -187,6 +187,13 @@ task from its ledger, the criteria verified, open questions, and a plan whose
 Status says IN PROGRESS while nothing is working on it. The harness hooks print
 it at session start. Read it before reading plans to find your place.
 
+**Production.** Production changes go one sanctioned way (the project's
+`productionGuard.writePath`, e.g. migrations merged to `main`). The
+production guard asks the owner before any other write, and the owner's OK
+in chat is what approves it; reads don't ask. Read production through a
+pack's read path (`node .ssdd/packs/supabase/db-read.mjs "<sql>"`) rather
+than an inline query, so the database enforces the read.
+
 ## Standing principles (apply at every step)
 
 1. **Evidence, not memory.** Before stating a fact or reporting progress,

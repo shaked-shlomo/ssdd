@@ -10,6 +10,61 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.2.0] — unreleased
+
+v3 Part 4, the production guard and the Supabase pack: production changes go
+one sanctioned way, anything else that would change production asks a
+person first with an accurate reason, and reads don't ask; see `SPEC.md` →
+v3 → Part 4.
+
+### Added
+- **`prod-guard.mjs`**, a harness hook on every shell command and MCP call.
+  It judges each command of a call (nested ones too: `bash -c`, `$(…)`, a
+  heredoc fed to a shell), never the call's shape, so `| tail`, `2>&1` and
+  `> file` change nothing. An ask says "writes to production outside the
+  merge path (<writePath>)" or "can't tell what this does: <why>". Claude
+  Code gets `ask` (and nothing on an allow, so the user's own permission
+  rules still apply). Cursor gets `deny` instead: its hooks don't enforce
+  `ask`, so the owner runs the command in their own terminal.
+- **`productionGuard`** in `.ssdd/config.json`: `writePath` (quoted in the
+  reasons), `extraRules` (`{match, decision: ask|deny, reason}`, e.g. `vercel
+  deploy --prod`), and a pack's options under its name. A bad section is a
+  config error, and prod-guard then asks on every call.
+- **Packs:** knowledge for one stack in `packs/<name>/`, installed as
+  managed files in `.ssdd/packs/<name>/`. `install` detects them and records
+  them in the lock's `packs`; `update` keeps the lock's list and never
+  detects; `status` names a pack the repo now matches but lacks; `--packs
+  a,b|none` overrides both.
+- **The Supabase pack** (installed where `supabase/config.toml` or the
+  Supabase packages are): the CLI by subcommand, `db query` on production
+  by its SQL, Supabase MCP tools (every one but the known reads asks;
+  `execute_sql` by its SQL), the HTTP APIs (GET passes), and `psql` to a
+  Supabase host. Ported from Hatedate's supabase-guard with its handover's
+  fixes: reads pass without READ ONLY when the static check vouches for
+  them, `--help` and `db push --dry-run` pass, a local `db reset` passes,
+  heredoc commit messages and PR bodies aren't commands. Proof frames and
+  live extensions come from config; `personalReads` (off by default) makes
+  reads of named tables or columns ask.
+- **`db-read`**, the read path that never asks: `node
+  .ssdd/packs/supabase/db-read.mjs "<sql>"` wraps the SQL in `BEGIN READ
+  ONLY … ROLLBACK`, refuses what isn't a read before anything runs, and
+  runs it with `supabase db query --linked`.
+- On Hatedate's 88 replayed asks, the pack asks on 22: the 2 writes, and 20
+  it can't tell (the 2 rollback probes among them); 46 now pass, and 20 are
+  unreplayable. The fixture and its test ship with the pack.
+
+### Upgrade (optional)
+- **Claude Code:** `.claude/settings.json` is project-owned, so `update`
+  doesn't wire prod-guard there. Add it under `PreToolUse`: a handler
+  `node "$CLAUDE_PROJECT_DIR/.ssdd/hooks/prod-guard.mjs"` in the `Bash`
+  entry, and an entry with `"matcher": "mcp__.*"` running the same command
+  (see `adapters/claude-code/settings-hooks.json`). Cursor's
+  `.cursor/hooks.json` updates itself.
+- **Packs:** `update` installs no pack by itself. Run `status`, then
+  `update --packs supabase` where it says the repo matches.
+- **Selftests:** `node --test .ssdd/hooks/*.selftest.mjs
+  .ssdd/packs/*/*.selftest.mjs`.
+
 ## [3.1.1] — 2026-10-20
 
 The five minor issues Part 3's final review deferred. Nothing to do by hand.

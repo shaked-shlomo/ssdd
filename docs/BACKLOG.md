@@ -1,7 +1,8 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-20 at v3.1.1. The
-next work is the rest of v3 (`SPEC.md` → v3), Parts 4 and 5, one plan each, agreed
+The single list of remaining SSDD work. Updated 2026-10-21 at v3.1.1, with
+Part 4 built (3.2.0, unreleased). The next work is the rest of v3 (`SPEC.md` →
+v3), Part 5, one plan, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
 is planned, it gets a `SPEC.md` section first.
@@ -15,14 +16,17 @@ that incident.
 
 | # | Part (SPEC.md → v3) | Plan | Ships as |
 |---|---|---|---|
-| 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |
 | 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test, the Node floor to 22 | not written | 3.3.0 |
 
 - **End of v3:** the real migrations of prizma and Hatedate (owner,
   2026-10-20: none until all five parts land; scratch clones only before
   then), with Part 1's after-`/compact` session-start check.
 - **Hatedate adoption is parked** (owner, 2026-10-17). The prompt to start
-  it is `docs/handovers/HANDOVER-hatedate-adoption.md`.
+  it is `docs/handovers/HANDOVER-hatedate-adoption.md`. Its supabase-guard
+  is replaced by the Supabase pack (3.2.0): set `productionGuard.supabase`
+  (its proof frame, live extensions) and retire its own copy.
+- **prizma's migration:** add its `vercel deploy --prod` rule to
+  `productionGuard.extraRules` (SPEC v3 Part 4, Scope).
 
 Also next:
 
@@ -65,5 +69,8 @@ re-discovered as new.
 - Completion stamps cover the repo at the session's cwd. A `git -C <other>`
   commit from elsewhere needs manual mode.
 - A re-stage that changes nothing keeps its stamps (by design since v2).
+- The production guard sees the command line, not what a script does; a
+  call already sent can't be stopped; Cursor denies where Claude Code asks
+  (its hooks ignore `ask`). See README → Known limitations.
 - Injection is copy-based. A release that moves a *target* path needs a
   move entry in `bin/ssdd.mjs`, or `update` sees a removal plus an addition.
