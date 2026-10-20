@@ -1171,7 +1171,7 @@ parts, each with its own plan:
 |---|---|---|---|
 | 1 | Work state: where the work is, at session start; the close check; tracked ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md` | 3.0.0, with Part 2 |
 | 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | `docs/superpowers/plans/2026-10-18-v3-onboarding.md` | 3.0.0 |
-| 3 | A cheaper gate | Plan 3, not written yet | 3.1.0 |
+| 3 | A cheaper gate | `docs/superpowers/plans/2026-10-20-v3-cheaper-gate.md` | 3.1.0 |
 | 4 | The production guard and the Supabase pack | Plan 4, not written yet | 3.2.0 |
 | 5 | Trimming | Plan 5, not written yet | 3.3.0 |
 
@@ -2211,7 +2211,7 @@ projects hit them.
   - Hatedate: 28 used twice, and 61 against 62.
 - **Already fine in SSDD:**
   - A repo with no `.ssdd/config.json` is a no-op (`review-gate.mjs:489`),
-    so scratch repos pass.
+    so scratch repos pass. *Only half true: see Clarify 21.*
   - Stamps have been per file since v2.
 
 ### Decisions
@@ -2238,32 +2238,259 @@ My calls, except item 7:
    block sets `preCommit.blockUntracked: true`.
 6. **git-guard treats `git config core.hooksPath` with no value as a
    read.**
-7. **Plan-number collisions: the owner decides** (still open). Part 1
-   already reports duplicates. The options:
-   - reserve a number by pushing an empty plan file first
-   - assign numbers at merge
-   - keep numbers as they are and rely on the duplicate report
+7. **Plan-number collisions: keep numbers and rely on the duplicate
+   report** (owner ruling, 2026-10-20). The other options were reserving a
+   number by pushing an empty plan file first, and assigning numbers at
+   merge. See Clarify 25.
+8. **Lint only the lines a change adds** (owner ruling, 2026-10-20, added
+   to Part 3's scope). See Clarify 26.
 
 ### Scope
 
 **In:**
 - review-gate: the merge rule, the delta message, `--check`, the
-  chained-staging rule
+  chained-staging rule, and shapes judged only in an SSDD repo
 - git-guard: the `core.hooksPath` read
 - pre-commit: the untracked-file warning, and
   `preCommit.blockUntracked`
-- SDD.md §4 and the tests
+- convention-lint: added lines only
+- SDD.md §2 and §4, README, the tests
 
 **Out:**
 - The stamp format, which stays as v2 made it.
 - New evasion shapes (the threat-model rule).
 - Hatedate's own gate (parked).
+- The rest of Clarify 27.
 
 ### Open
 
-- Decision 7.
-- Whether git 2.38 is an acceptable minimum. If not, a merge is judged as
-  it is today.
+Both resolved by the owner on 2026-10-20:
+- Decision 7: keep numbers (Clarify 25).
+- git 2.38 is acceptable; older git judges a merge as today (Clarify 18).
+
+### Clarify pass
+
+Sources: scratch clones of prizma (`2712ab0`) and Hatedate (`8563f3c`),
+Hatedate's Claude Code transcripts (read-only, 14 project folders under
+`~/.claude/projects`), and the code at `v3.0.0`. All checked 2026-10-20.
+
+18. **Clean merges, measured.**
+    - prizma's 4 SKIP'd merges are each `Merge origin/main into <branch>`.
+      Replayed in a scratch clone with `git merge-tree --write-tree <c>^1
+      <c>^2`, against the routing in each merge's own config:
+
+      | Merge | Staged | Routed (owed today) | Routed and unlike git's merge |
+      |---|---|---|---|
+      | `ebbd494` | 320 | 37 | 0 |
+      | `60da710` | 41 | 25 | 0 |
+      | `5597881` | 77 | 46 | 1 (`src/app/method/page.tsx`) |
+      | `1aa4cc6` | 22 | 12 | 0 |
+
+    - **Where it applies.** A merge with no conflicts commits through
+      `pre-merge-commit`, not `pre-commit` (checked in a scratch repo), and
+      the harness gate only sees `git commit`. So the gate meets a merge
+      only when the merge stopped, on a conflict or `--no-commit`. All four
+      conflicted (`merge-tree` exits 1). The rule makes those cost what a
+      clean merge costs.
+    - **How.** While `MERGE_HEAD` holds one commit, the gate asks git for
+      its own merge of `HEAD` and that commit. A staged path whose index
+      entry (mode and blob) equals the merged tree's owes no one. A
+      conflicted path holds markers in that tree, so its resolution differs
+      and is owed, and so is any edit made during the merge. Both layers and
+      `--check` apply it, and the oversize warning doesn't count those
+      paths.
+    - **Judged as today:** an octopus merge (several `MERGE_HEAD` lines), a
+      git that fails `merge-tree --write-tree` (older than 2.38, or any
+      error), a squash merge (no `MERGE_HEAD`), cherry-pick and revert (no
+      evidence they cost).
+    - **Ruling** (owner, 2026-10-20): git 2.38 is acceptable, and older git
+      falls back. SSDD gets no new git floor.
+19. **Delta re-review.** A stamp's key is `srcMode:srcBlob→dstMode:dstBlob`,
+    so the blob a reviewer last saw is already in the stamp, and the format
+    doesn't change.
+    - When a reviewer's stamp on a file is for another blob, its block line
+      gives `git diff <stamped blob> <staged blob>`, in both stamping modes.
+    - **No delta, the whole change owed as today:** a file never stamped, a
+      deletion on either side, or a stamped blob that's gone (`git cat-file
+      -e` fails; git prunes an unreachable blob after `gc.pruneExpire`, two
+      weeks by default).
+    - A mode-only change prints the modes, as today.
+    - When the base moved too (a different `srcBlob`, e.g. after a rebase),
+      the line says so.
+    - Reviewers already take "the named range" as input (each reviewer's
+      step 1), so the reviewer files don't change. SDD.md §4 says the delta
+      is the input.
+20. **`--check`.** Hatedate's 9 `-m "probe"` commits asked what was owed.
+    - `review-gate.mjs --check [--repo <path>]` prints what the commit would
+      get: the owed list with its deltas and the oversize warning, or
+      `nothing owed`.
+    - Exit 0 when nothing is owed, 1 when a commit would be blocked. It
+      writes nothing.
+    - It judges the index of git's cwd, or `--repo`. It doesn't judge a
+      command's shape or run the pre-commit's other steps.
+    - git-guard's hooks-mode rule matches `--stamp` only, so `--check` runs
+      in both stamping modes. The block message names it.
+21. **Shapes are judged only in an SSDD repo.** The Evidence line "scratch
+    repos pass" is half true. The harness gate refuses chained staging,
+    `commit -a/-i/-o` and `commit <path>` before it looks for a config
+    (`review-gate.mjs:385-438`, then `:488`). Checked: `git add notes.md &&
+    git commit -m x` in a fresh repo with no config exits 2. So the gate
+    resolves the target repo and loads its config first: no config allows.
+    An unresolvable target (`$VAR`, `$(…)`, `cd -`) still fails closed,
+    since the gate can't tell whether that repo uses SSDD.
+22. **Which chained `git add` is visible.** Hatedate's transcripts hold 209
+    Bash calls with a staging command and a commit. Classified with SSDD's
+    own tokenizer and Hatedate's routing (its gate's table):
+    - 99 add only files no route covers: 60 in the repo, 39 after a `cd` or
+      `-C`, many of those in other repos.
+    - 78 add at least one routed file.
+    - 14 stage after the commit, or only mention it.
+    - 13 use `-A` or `-u`, 3 a directory and 2 a glob (some overlap).
+
+    **Visible** means:
+    - The chained command is `git add`, with no option but `-f`,
+      `--force`, `-v`, `--verbose` and `--`.
+    - Each path has no glob character (`*?[`), no pathspec magic (a
+      leading `:`), no `$` or backtick, and isn't `.` or a directory on
+      disk.
+    - Each path resolves inside the commit's repo. It's routed by its real
+      spelling on disk (`realpath`), so `SRC/a.ts` on a case-insensitive
+      disk is `src/a.ts`.
+    - No path is routed.
+
+    Chained `rm`, `mv`, `restore` and `update-index` stay refused (decision
+    4 names `git add`).
+    - **Why it's safe:** the added paths route to no reviewer, so the index
+      the gate judges and the one the commit records owe the same reviews.
+      The pre-commit layer judges the real index anyway.
+23. **The untracked check becomes a warning.**
+    - It moves from the shell into `work-state.mjs --staged`, which already
+      lists untracked ledgers, because a shell can't read the config.
+    - Without `preCommit.blockUntracked: true` it lists the files (at most
+      10, then `+N more`) and passes. With it, it blocks as v3.0.0 does.
+    - A Superpowers ledger stays exempt, with its own reminder.
+    - `preCommit` is a config section: anything but an object is a config
+      error, and the gate fails closed on it.
+24. **`core.hooksPath` reads.** 4 Bash calls in Hatedate's transcripts name
+    the key: one plain read (`…; git config core.hooksPath`), one read inside
+    `$(…)` next to a write, one write, and one Python string about the
+    guard.
+    - **A read:** a `git config` naming the key with `--get*`, `--list`,
+      `-l`, or the `get` / `list` subcommand. Or one with no write option and
+      nothing after the key but redirections; the scan stops at `)`, quotes
+      and separators.
+    - **A write:** a value after the key (`""` counts), `--unset*`, `--add`,
+      `--replace-all`, or the `set` / `unset` subcommand.
+    - `-c core.hooksPath=…` and the environment forms are unchanged.
+    - Arming (`git config core.hooksPath .githooks`) is a write, and stays
+      the user's.
+25. **Plan-number collisions** (owner ruling, 2026-10-20): keep numbers.
+    - `--next-plan` (Part 2) reads every worktree's disk and every local
+      ref. So a collision now needs work this checkout can't see (an
+      unfetched branch, another machine, a cloud session), or two sessions
+      numbering in the same moment.
+    - prizma's two 29s and Hatedate's two 28s predate it.
+    - The session view's duplicate warning (Part 1, AC9) reports what's
+      left. SDD.md §2 says to renumber the later plan and its references.
+    - No new mechanism, so no criterion.
+26. **Lint only added lines** (owner ruling, 2026-10-20).
+    - **Evidence:** Hatedate's lint fired 35 times, at most 7 of them true.
+      Most re-flagged old lines on every edit (handover §3).
+    - SSDD's convention-lint does the same: the edit hook and `--staged`
+      lint every line of the file (`convention-lint.mjs:50-60`).
+    - `--staged` also reads the file on disk, not the staged blob. A
+      violation staged and then fixed on disk passes, and the reverse
+      blocks.
+    - **The change:**
+      - `--staged` lints the `+` lines of `git diff --staged -U0 -M`. That's
+        the staged content, and rename detection keeps a moved file from
+        counting as new.
+      - The edit hook lints the lines added since `HEAD` (`git diff -U0
+        HEAD -- <file>`). A file `HEAD` doesn't have is linted whole.
+      - Files named on the command line are still linted whole (CI, manual
+        runs).
+27. **Out, recorded so they aren't raised again:**
+    - `git add -u` and directory adds (open in Hatedate's handover). A new
+      block isn't a cost cut.
+    - The `2>` and heredoc tokenizer misses. Those are in Hatedate's gate;
+      SSDD's shapes suite passes `2>&1`, `> /dev/null` and heredoc
+      messages.
+    - Color literals in comments, which is a Hatedate rule.
+    - Cherry-pick and revert (Clarify 18).
+
+### Acceptance criteria
+
+- **AC17 — Clean merges.**
+  - In a scratch repo, during a merge stopped on a conflict, a path equal to
+    git's merge owes nothing in `--pre-commit`, the harness hook and
+    `--check`.
+  - The resolved path, and a path edited during the merge, are owed.
+  - An octopus merge, and a git whose `merge-tree --write-tree` fails, owe
+    everything, as today.
+  - **On real data:** each of prizma's 4 merges is redone in a scratch clone
+    (`checkout <c>^1`, `merge <c>^2`, then `<c>`'s tree as the resolution).
+    `--check` owes 1 routed file across the four. Today's gate owes 120.
+- **AC18 — Delta re-review.**
+  - After a full stamp, one routed file is edited. Under each reviewer
+    routed to it, the block message gives `git diff <stamped> <staged>`, and
+    that command prints exactly the edit. This holds in both stamping modes.
+  - A file never stamped, a deletion, and a pruned blob get no delta line
+    and owe the whole change.
+  - After the re-stamp, the key names the new blob.
+- **AC19 — `--check`.**
+  - It prints the owed list and exits 1, or prints `nothing owed` and exits
+    0.
+  - The stamp file and the index are byte-for-byte unchanged.
+  - `--repo` works from another directory.
+  - git-guard allows it under `stamping: "hooks"`.
+- **AC20 — Shapes and chained staging.** Under both harness payloads:
+  - In a repo without `.ssdd/config.json`, the shapes refused today pass
+    (`-am`, `commit <path>`, a chained `add` or `rm`). An unresolvable target
+    still fails closed.
+  - In an SSDD repo, `git add <unrouted file> && git commit -m x` passes,
+    and so does `git add -- <file>`.
+  - It's refused when a chained path is routed (by its spelling on disk
+    too), a directory, `.`, a glob, has a `$`, or is outside the repo. It's
+    also refused for `-A`, `-u` or `-p`, and when the chain uses `rm`, `mv`,
+    `restore` or `update-index`.
+  - **On real data:** Hatedate's 209 chains are replayed through the new
+    hook in a scratch clone, with Hatedate's routing in an SSDD config.
+    None of the 78 that add a routed file passes. The count that now passes
+    is recorded.
+- **AC21 — The untracked warning.** Through the real `pre-commit`:
+  - An untracked file is listed as a warning, and the commit lands.
+  - With `preCommit.blockUntracked: true`, it blocks as v3.0.0 does.
+  - A Superpowers ledger stays exempt and keeps its reminder.
+  - A non-object `preCommit` is a config error.
+- **AC22 — `core.hooksPath` reads.**
+  - git-guard allows `git config core.hooksPath` alone; with `--local`,
+    `--global`, `--show-origin` or `--type=path`; as `git config get`; and
+    followed by `2>/dev/null`, `|| echo unset` or `; …`, or inside `"$(…)"`.
+  - It blocks a value (`""` too), `--unset`, `--unset-all`, `--add`,
+    `--replace-all`, `set` and `unset`, and every case it blocks today.
+  - **On real data:** of the 4 Hatedate commands, the plain read now passes.
+    The read beside a write stays blocked, and the other two keep today's
+    outcome.
+- **AC23 — Lint only added lines.** In a scratch repo with an old violation
+  in a tracked file:
+  - An edit elsewhere in that file passes the edit hook and `--staged`.
+  - A new violating line is flagged with its line number.
+  - A new file is linted whole, and files named on the command line are
+    linted whole.
+  - A renamed file whose only violation is old passes.
+  - `--staged` judges the staged content: a violation that's staged and
+    then fixed on disk still blocks.
+- **AC24 — Docs.**
+  - SDD.md §4 covers `--check`, the delta, merges and the visible chained
+    `add`. §2 says how to fix a duplicate number.
+  - `config.example.json` has `preCommit`.
+  - The README, BACKLOG and a `## [3.1.0] — unreleased` CHANGELOG entry are
+    updated.
+- **AC25 — Existing tests and update.**
+  - The suite passes; it's 631 at `v3.0.0`, plus the new cases.
+  - An installed layout's selftests pass.
+  - `update` from a `v3.0.0` install to this branch is clean.
+  - No API newer than Node 18 is added; CI runs Node 18 and 24 on a push.
 
 ## Part 4 — the production guard and the Supabase pack
 
