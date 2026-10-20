@@ -30,6 +30,9 @@
 //                                   change of every routed file they cover, or
 //                                   of the named files only (a delta round);
 //                                   --repo for a commit in another work tree
+//   --check [--repo <path>]         what the index owes, on stdout, without
+//                                   committing: exit 1 when a commit would be
+//                                   blocked; writes nothing
 //   --pre-commit                    portable git pre-commit mode (any harness):
 //                                   judges the index git is committing (git's
 //                                   cwd, never the env); exit 1 if reviews owed
@@ -246,6 +249,7 @@ const short = (key) => {
   const [, sm, sb, dm, db] = m;
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
+const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
 function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual') {
   const lines = [];
   for (const { name, files, missing, refused } of owed) {
@@ -277,7 +281,8 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
       `When it finishes with its verdict line, its completion stamps\n` +
       `those files — a file edited during its review stays owed. Fix or triage findings,\n` +
       `re-stage, and retry the commit. (reviewGate.stamping is "hooks": the agent can't run\n` +
-      `--stamp; a person in a terminal can.)\n`
+      `--stamp; a person in a terminal can.)\n` +
+      CHECK_LINE
     );
   }
   return (
@@ -291,7 +296,8 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
     `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}${repoHint}\n` +
     `(add --files <path,…> when a reviewer re-read only those files) and retry the\n` +
     `commit. Stamp only AFTER the reviewers actually ran on those files — stamping\n` +
-    `blind defeats the gate.\n`
+    `blind defeats the gate.\n` +
+    CHECK_LINE
   );
 }
 
@@ -355,6 +361,31 @@ if (process.argv[2] === '--stamp') {
     console.log(`[ssdd-review-gate] stamped ${n} on ${files.length} file(s): ${files.join(', ')}`);
   }
   process.exit(0);
+}
+
+// ── --check mode: what the index owes, without committing ───────────────────
+// The verdict a commit would get from the index of git's cwd (or --repo), on
+// stdout; exit 1 when a commit would be blocked. Writes nothing. A command's
+// shape and the pre-commit's other steps aren't judged here.
+if (process.argv[2] === '--check') {
+  const repoAt = process.argv.indexOf('--repo');
+  if (repoAt > -1 && !process.argv[repoAt + 1]) {
+    console.error('usage: review-gate.mjs --check [--repo <path>]');
+    process.exit(1);
+  }
+  repo = repoAt > -1 ? resolve(process.argv[repoAt + 1]) : process.cwd();
+  const loaded = loadConfig();
+  if (!loaded) { console.log('[ssdd-review-gate] no .ssdd/config.json — not gated'); process.exit(0); }
+  if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
+  const { cfg } = loaded;
+  repo = cfg.root;
+  const verdict = judge(cfg);
+  if (!verdict.owed.length) {
+    process.stdout.write(verdict.warning + triageNote(cfg) + '[ssdd-review-gate] nothing owed\n');
+    process.exit(0);
+  }
+  process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${repo}` : '', stampingMode(cfg)));
+  process.exit(1);
 }
 
 // ── --pre-commit mode (portable: any harness, any human) ─────────────────────

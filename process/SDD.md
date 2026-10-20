@@ -85,7 +85,10 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   `.ssdd/config.json` is blocked until every reviewer routed to each such
   file has reviewed that file's exact staged change. Stamps are per
   reviewer × per file, so after a fix only the changed files are owed again;
-  unrouted files (ledgers, docs) never void a stamp. The procedure:
+  unrouted files (ledgers, docs) never void a stamp. To see what the index
+  owes without committing, run `node .ssdd/hooks/review-gate.mjs --check`
+  (exit 1 when a commit would be blocked); never a probe commit. The
+  procedure:
   1. Read the block message: per reviewer, the files it owes and why.
   2. Dispatch those reviewers in parallel. Name each one's input (the staged
      diff, a range, or a file list). For a file a reviewer stamped before,

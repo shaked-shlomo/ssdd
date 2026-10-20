@@ -251,6 +251,22 @@ describe('git-guard', () => {
     });
   }
 
+  it('review-gate --check runs under stamping "hooks" (only --stamp is the reviewers\' own)', () => {
+    const d = mkdtempSync(join(tmpdir(), 'ssdd-guard-hooks-'));
+    try {
+      spawnSync('git', ['-C', d, 'init', '-q']);
+      mkdirSync(join(d, '.ssdd'));
+      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({ reviewGate: { stamping: 'hooks' } }));
+      const at = (command) => spawnSync(NODE, [HOOK], {
+        input: JSON.stringify({ tool_input: { command } }), cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8',
+      }).status;
+      assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --check'), 0);
+      assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --stamp alpha'), 2);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
   it('a wrong-type section elsewhere keeps extraRules on', () => {
     const file = join(REPO, '.ssdd', 'config.json');
     writeFileSync(file, JSON.stringify({ routing: {}, gitGuard: GIT_GUARD }));

@@ -526,6 +526,67 @@ describe('the delta since the last stamp', () => {
   });
 });
 
+// v3.1: --check answers "what's owed?" without a probe commit.
+describe('--check', () => {
+  const check = (d, extra = [], opts = {}) => run(d, ['--check', ...extra], opts);
+  it('prints the owed list and exits 1', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const r = check(dir);
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stdout, /• alpha/);
+    assert.match(r.stdout, /• beta/);
+  });
+  it('prints nothing owed and exits 0', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    const r = check(dir);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, /nothing owed/);
+  });
+  it('writes nothing', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    stamp(dir, 'alpha');
+    const before = [readFileSync(stampFile(dir)), readFileSync(join(dir, '.git', 'index'))];
+    assert.strictEqual(check(dir).status, 1);
+    stamp(dir, 'beta');
+    const mid = [readFileSync(stampFile(dir)), readFileSync(join(dir, '.git', 'index'))];
+    assert.strictEqual(check(dir).status, 0);
+    assert.ok(readFileSync(stampFile(dir)).equals(mid[0]));
+    assert.ok(readFileSync(join(dir, '.git', 'index')).equals(mid[1]));
+    assert.ok(!before[0].equals(mid[0]), 'the second stamp changed the file, so the comparison has teeth');
+  });
+  it('--repo works from another directory', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const elsewhere = mkdtempSync(join(tmpdir(), 'ssdd-check-cwd-'));
+    try {
+      const r = spawnSync(NODE, [HOOK, '--check', '--repo', dir], { cwd: elsewhere, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', SSDD_PROJECT_DIR: '' } });
+      assert.strictEqual(r.status, 1, r.stderr);
+      assert.match(r.stdout, /• alpha/);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+  it('outside an SSDD repo it exits 0; a broken config exits 1', () => {
+    const bare = makeRepo(null);
+    try {
+      const r = check(bare);
+      assert.strictEqual(r.status, 0);
+      assert.match(r.stdout, /not gated/);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+    writeFileSync(join(dir, '.ssdd', 'config.json'), '{ nope');
+    const b = check(dir);
+    assert.strictEqual(b.status, 1);
+    assert.match(b.stderr, /not valid JSON/);
+  });
+  it('the block message names --check', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.match(preCommit(dir).stderr, /review-gate\.mjs --check/);
+  });
+});
+
 describe('the oversize warning', () => {
   const routed = (n) => { for (let i = 0; i < n; i++) write(dir, `src/f${i}.ts`, `${i}\n`); };
   const WARN = /WARNING: (\d+) routed file\(s\) staged \(limit (\d+)\)[^]*SDD\.md §4/;
