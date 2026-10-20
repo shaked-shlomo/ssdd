@@ -140,6 +140,30 @@ describe('prod-guard', () => {
     }
   });
 
+  it('a quoted command name or option still matches a rule', () => {
+    const rule = { match: '\\bvercel\\s+deploy\\b.*--prod\\b', decision: 'ask', reason: 'deploys to production' };
+    const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [rule] } } });
+    for (const cmd of ['"vercel" deploy --prod', "vercel deploy '--prod'", 'vercel "deploy" --prod']) {
+      assert.equal(verdict(claude(repo, cmd)).decision, 'ask', cmd);
+    }
+    assert.equal(verdict(claude(repo, 'git commit -m "vercel deploy --prod"')).decision, 'allow');
+  });
+
+  it("a rule sees a command it can't parse", () => {
+    const rule = { match: '\\bvercel\\s+deploy\\b.*--prod\\b', decision: 'deny', reason: 'deploys to production' };
+    const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [rule] } } });
+    const v = verdict(claude(repo, "vercel deploy --prod 'unbalanced"));
+    assert.equal(v.decision, 'ask');
+    assert.match(v.reason, /can't be parsed/);
+  });
+
+  it('an MCP rule matches the same name under both harnesses', () => {
+    const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [{ match: '^mcp__srv__deploy$', decision: 'ask', reason: 'deploys' }] } } });
+    assert.equal(verdict(claudeMcp(repo, 'mcp__srv__deploy')).decision, 'ask');
+    assert.equal(verdict(cursorMcp(repo, 'deploy', '{}', 'srv')).decision, 'deny');
+    assert.equal(verdict(cursorMcp(repo, 'deploy', '{}', 'other')).decision, 'allow');
+  });
+
   it('a deny rule denies', () => {
     const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [{ match: '^rm -rf /$', decision: 'deny', reason: 'no' }] } } });
     const v = verdict(claude(repo, 'rm -rf /'));

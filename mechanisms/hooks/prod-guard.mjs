@@ -11,9 +11,11 @@
 //     shape: `| tail`, `2>&1` and `> file` beside a production command change
 //     nothing
 //   - productionGuard.extraRules in .ssdd/config.json: {match, decision:
-//     ask|deny, reason}, tested against each command with its quoted words
-//     blanked (a commit message that mentions a command isn't the command), or
-//     against an MCP call's tool name
+//     ask|deny, reason}, tested against each command with each quoted word
+//     that holds whitespace blanked (a commit message that mentions a command
+//     isn't the command; a quoted `"vercel"` or `'--prod'` is still read), or
+//     against an MCP call as `mcp__<server>__<tool>` under both harnesses. A
+//     rule that matches text the shell view can't parse asks.
 //   - every pack installed beside this file (../packs/<name>/guard.mjs), with
 //     its options from productionGuard.<name>. A pack exports name,
 //     validate(options) → '' | error, mentions(text) → boolean,
@@ -95,9 +97,10 @@ async function loadPacks() {
 }
 
 const tryRegex = (src) => { try { return new RegExp(src); } catch { return null; } };
-// A command's text for project rules: quoted words blanked, so a message or an
-// echo that mentions a command isn't the command.
-const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] ? '""' : w)).join(' ');
+// A command's text for project rules: a quoted word with whitespace in it is
+// a message or a script, not part of the command, so it's blanked. A quoted
+// single word (`"vercel"`, `'--prod'`) is read as the shell reads it.
+const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] && /\s/.test(w) ? '""' : w)).join(' ');
 
 async function main() {
   const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -116,7 +119,8 @@ async function main() {
   try {
     const call = hookMcpCall(payload);
     const command = call ? '' : String(hookCommand(payload) ?? '');
-    subject = call ? `${payload.tool_name ?? ''} ${JSON.stringify(call.input ?? payload.tool_input ?? '')}` : command;
+    const mcpName = call ? `mcp__${call.server}__${call.tool}` : '';
+    subject = call ? `${mcpName} ${JSON.stringify(call.input ?? payload.tool_input ?? '')}` : command;
     if (!call && !command.trim()) return emit(harness, [], writePath);
 
     const loaded = loadSsddConfig(resolveHookRepo(payload));
@@ -137,7 +141,7 @@ async function main() {
     if (call) {
       if (call.inputError) verdicts.push({ decision: 'ask', kind: 'unclear', what: `MCP ${call.tool}`, why: call.inputError });
       for (const r of rules) {
-        if (tryRegex(r.match)?.test(String(payload.tool_name ?? ''))) {
+        if (tryRegex(r.match)?.test(mcpName)) {
           verdicts.push({ decision: r.decision, kind: 'rule', what: `MCP ${call.tool}`, why: r.reason ?? `matches /${r.match}/` });
         }
       }
@@ -147,6 +151,9 @@ async function main() {
         const re = tryRegex(r.match);
         for (const words of ctx.commands) {
           if (re?.test(ruleText(words))) verdicts.push({ decision: r.decision, kind: 'rule', what: words.join(' '), why: r.reason ?? `matches /${r.match}/` });
+        }
+        for (const text of ctx.unparsed) {
+          if (re?.test(text)) verdicts.push({ decision: 'ask', kind: 'unclear', what: 'this command', why: `it can't be parsed, and it matches productionGuard.extraRules /${r.match}/` });
         }
       }
     }
