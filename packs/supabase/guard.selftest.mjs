@@ -4,12 +4,13 @@
 // suites are ported with their decisions, except where Part 4 changed them
 // (SPEC v3 Part 4, Clarify 32 and 36–38).
 // Run: node --test packs/supabase/guard.selftest.mjs
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXAMPLE_FRAME, both, makeLayout, proofOf } from './test-layout.mjs';
+import { EXAMPLE_FRAME, PACK_DIR, both, makeLayout, proofOf } from './test-layout.mjs';
 import { detect } from './detect.mjs';
 
 const WRITES = /writes to production outside the merge path/;
@@ -505,5 +506,52 @@ describe('options the guard does not know ask, when the call names supabase', ()
       'psql -X -q -A -t -h db.x.supabase.co -c "select 1"',
       'curl --unknown-flag https://example.com',
     ]) expectPass(L, c);
+  });
+});
+
+// End to end: bin/ssdd.mjs installs this branch's committed HEAD into a
+// scratch repo with supabase/config.toml, and the installed files decide.
+// Source tree only (an installed repo has no bin/ssdd.mjs).
+const SSDD_ROOT = join(PACK_DIR, '..', '..');
+const INSTALLER = join(SSDD_ROOT, 'bin', 'ssdd.mjs');
+describe('installed by bin/ssdd.mjs', { skip: !existsSync(INSTALLER) && 'not in the SSDD source tree' }, () => {
+  let repo;
+  let out;
+  before(() => {
+    repo = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-installed-')));
+    spawnSync('git', ['-C', repo, 'init', '-q']);
+    mkdirSync(join(repo, 'supabase'));
+    writeFileSync(join(repo, 'supabase', 'config.toml'), 'project_id = "x"\n');
+    const r = spawnSync(process.execPath, [INSTALLER, 'install', repo, 'claude-code,cursor', '--ref', 'HEAD', '--source', SSDD_ROOT], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    out = r.stdout;
+    writeFileSync(join(repo, 'ro.sql'), 'BEGIN READ ONLY;\nselect 1;\nROLLBACK;\n');
+  });
+  after(() => rmSync(repo, { recursive: true, force: true }));
+  const run = (payload, env = {}) => {
+    const r = spawnSync(process.execPath, [join(repo, '.ssdd', 'hooks', 'prod-guard.mjs')], {
+      input: JSON.stringify(payload), cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', ...env },
+    });
+    const o = r.stdout.trim() ? JSON.parse(r.stdout) : null;
+    return o?.hookSpecificOutput?.permissionDecision ?? o?.permission ?? (r.status === 0 ? 'allow' : `exit ${r.status}`);
+  };
+  const claude = (command) => run({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: repo }, { CLAUDE_PROJECT_DIR: repo });
+  const cursor = (command) => run({ hook_event_name: 'beforeShellExecution', command, cwd: repo, workspace_roots: [repo] });
+
+  it('the pack is detected and its selftests are named in the next steps', () => {
+    assert.match(out, /packs: supabase \(supabase\/config\.toml\)/);
+    assert.ok(existsSync(join(repo, '.ssdd', 'packs', 'supabase', 'guard.mjs')));
+    assert.match(out, /node --test \.ssdd\/hooks\/\*\.selftest\.mjs \.ssdd\/packs\/\*\/\*\.selftest\.mjs/);
+  });
+  it('a write asks in Claude Code and is denied in Cursor', () => {
+    assert.equal(claude('supabase db push'), 'ask');
+    assert.equal(cursor('supabase db push'), 'deny');
+  });
+  it('a READ ONLY file, piped, passes both', () => {
+    assert.equal(claude('supabase db query --linked -f ro.sql -o json 2>&1 | tail -5'), 'allow');
+    assert.equal(cursor('supabase db query --linked -f ro.sql -o json 2>&1 | tail -5'), 'allow');
+  });
+  it('an MCP apply_migration asks', () => {
+    assert.equal(run({ hook_event_name: 'PreToolUse', tool_name: 'mcp__x__apply_migration', tool_input: {}, cwd: repo }, { CLAUDE_PROJECT_DIR: repo }), 'ask');
   });
 });

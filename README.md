@@ -267,7 +267,7 @@ an agent was seen using it in a real project.
 ## Development
 
 ```bash
-node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs
+node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs packs/*/*.selftest.mjs
 ```
 
 Tests are named `*.selftest.mjs` so no injected project's test runner

@@ -30,4 +30,4 @@ jobs:
           git config --global user.name ci
           git config --global init.defaultBranch main
       - run: node --version && git --version
-      - run: node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs
+      - run: node --test bin/*.selftest.mjs mechanisms/hooks/*.selftest.mjs packs/*/*.selftest.mjs

@@ -658,6 +658,18 @@ describe('session-start wiring in the adapter templates', () => {
     assert.deepEqual(hooks.sessionStart, [{ command: 'node .ssdd/hooks/work-state.mjs --session-start=cursor' }]);
   });
 
+  it('both adapters wire prod-guard: Claude Code on Bash and mcp__.*, Cursor on shell and MCP with failClosed', () => {
+    const claude = JSON.parse(readFileSync(join(ADAPTERS, 'claude-code', 'settings-hooks.json'), 'utf8')).hooks.PreToolUse;
+    const cmd = 'node "$CLAUDE_PROJECT_DIR/.ssdd/hooks/prod-guard.mjs"';
+    const on = (matcher) => claude.filter((g) => g.matcher === matcher).flatMap((g) => g.hooks);
+    assert.ok(on('Bash').some((h) => h.command === cmd && !('if' in h)), 'Bash, unfiltered');
+    assert.deepEqual(on('mcp__.*'), [{ type: 'command', command: cmd }]);
+    const cursor = JSON.parse(readFileSync(join(ADAPTERS, 'cursor', 'hooks.json'), 'utf8')).hooks;
+    const guard = { command: 'node .ssdd/hooks/prod-guard.mjs', failClosed: true };
+    assert.ok(cursor.beforeShellExecution.some((h) => JSON.stringify(h) === JSON.stringify(guard)));
+    assert.deepEqual(cursor.beforeMCPExecution, [guard]);
+  });
+
   it('ssdd.mdc and the AGENTS template carry the run-the-script line', () => {
     assert.ok(readFileSync(join(ADAPTERS, 'cursor', 'rules', 'ssdd.mdc'), 'utf8').includes(LINE));
     assert.ok(readFileSync(join(ADAPTERS, 'generic', 'AGENTS.md'), 'utf8').includes(LINE));

@@ -6,7 +6,11 @@
     ],
     "beforeShellExecution": [
       { "command": "node .ssdd/hooks/git-guard.mjs", "failClosed": true },
-      { "command": "node .ssdd/hooks/review-gate.mjs", "failClosed": true }
+      { "command": "node .ssdd/hooks/review-gate.mjs", "failClosed": true },
+      { "command": "node .ssdd/hooks/prod-guard.mjs", "failClosed": true }
+    ],
+    "beforeMCPExecution": [
+      { "command": "node .ssdd/hooks/prod-guard.mjs", "failClosed": true }
     ],
     "afterFileEdit": [
       { "command": "node .ssdd/hooks/convention-lint.mjs" }

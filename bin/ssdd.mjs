@@ -300,7 +300,7 @@ function armHook(target, log) {
   return true;
 }
 
-function nextSteps(target, adapters, armed) {
+function nextSteps(target, adapters, armed, packs = []) {
   const steps = [
     ...(armed ? [] : [`git -C '${target}' config core.hooksPath .githooks`]),
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
@@ -315,7 +315,7 @@ function nextSteps(target, adapters, armed) {
     steps.push('If .claude/settings.json already existed, merge adapters/claude-code/settings-hooks.json into it');
     steps.push('Make sure CLAUDE.md starts with @AGENTS.md (see adapters/claude-code/CLAUDE.md)');
   }
-  steps.push('Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.selftest.mjs');
+  steps.push(`Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.selftest.mjs${packs.length ? ' .ssdd/packs/*/*.selftest.mjs' : ''}`);
   steps.push(`Commit the whole setup, including ${LOCK} — the framework travels with the repo`);
   console.log('\nManual steps left:');
   steps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
@@ -355,7 +355,7 @@ async function install(target) {
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, packs, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
-  nextSteps(target, adapters, armHook(target, log));
+  nextSteps(target, adapters, armHook(target, log), packs);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
 }

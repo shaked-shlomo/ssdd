@@ -11,7 +11,8 @@ replacement.
 1. **Hooks** — install seeds `.claude/settings.json` from
    [settings-hooks.json](settings-hooks.json) when none exists; otherwise
    merge its top-level `hooks` key by hand. It registers git-guard and the
-   review gate on Bash, git-guard on Edit/Write (the gate's state files are
+   review gate on Bash, prod-guard on Bash and every MCP tool (`mcp__.*`),
+   git-guard on Edit/Write (the gate's state files are
    off limits), convention-lint after edits, and the review gate on
    `SubagentStart` / `SubagentStop` (completion stamps). On `SessionStart`
    (startup, resume, clear and compact) it runs `work-state.mjs
@@ -67,6 +68,13 @@ replacement.
   CLI: an older CLI resolved the alias `sonnet` to `claude-sonnet-5`, below a
   5.5 floor. `CLAUDE_CODE_SUBAGENT_MODEL` in `.claude/settings.json` forces
   one model for every subagent, not only reviewers.
+- **prod-guard** asks before a call that would change production outside
+  the merge path (`permissionDecision: "ask"`, with a reason that says
+  "writes" or "can't tell"), and prints nothing on an allow, so the
+  project's own permission rules still apply. It runs on every MCP tool
+  because the matcher can't follow which packs are installed; with no pack
+  claiming the call it allows at once. An `ask` stops a call before it is
+  sent. An Esc on a call already sent doesn't: the server may finish it.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
 - Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)

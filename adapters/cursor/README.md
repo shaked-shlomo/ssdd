@@ -5,8 +5,9 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
 
 ## Wiring (after `bin/ssdd.mjs install <repo> cursor`)
 
-1. `.cursor/hooks.json` — seeded from [hooks.json](hooks.json): git-guard and
-   review-gate on `beforeShellExecution` (`failClosed`), convention-lint on
+1. `.cursor/hooks.json` — seeded from [hooks.json](hooks.json): git-guard,
+   review-gate and prod-guard on `beforeShellExecution`, prod-guard on
+   `beforeMCPExecution` (all `failClosed`), convention-lint on
    `afterFileEdit`, and the work-state view on `sessionStart` (as
    `additional_context`). Forum reports say Cursor often drops that context
    before it reaches the agent, so `ssdd.mdc` (always applied) also tells the
@@ -26,5 +27,12 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
   them under `tool_input`), may carry a UTF-8 BOM, and don't set
   `CLAUDE_PROJECT_DIR` — `stdin-payload.mjs` handles all three (repo root
   from `cwd` / `workspace_roots[0]`).
+- **Cursor ignores `ask`.** Its staff confirmed (forum, 2026-03-21) that
+  hooks' `ask` isn't enforced on shell or MCP calls; the call just runs. So
+  where Claude Code would ask, prod-guard returns `deny` with the same
+  reason, and the owner runs the command in their own terminal. Recheck
+  when Cursor's changelog says `ask` works, and switch it back.
+- `beforeMCPExecution` sends `tool_input` as a JSON string and names the
+  server in `mcp_server_name` / `url`; `stdin-payload.mjs` reads both.
 - Don't add `.cursor/skills/`: Cursor already reads `.agents/skills/`, and a
   second tree double-lists every skill.
