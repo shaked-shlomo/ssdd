@@ -44,8 +44,9 @@ const real = (p) => { try { return realpathSync(p); } catch { return resolve(p);
 const isPlanName = (name) => /^\d/.test(name) && name.endsWith('.md');
 const isLedger = (p) => p.startsWith(`${SP_DIR}/`);
 // A plan's number: leading digits and any suffix up to the first `-` (`14d`,
-// `14f.2`), then further `-<digits>` parts (Hatedate's sub-plans `14d-1-1`).
-const PLAN_NUM = /^\d+[^-]*(?:-\d+(?=-|\.md$))*/;
+// `14f.2`), then further `-<digits>` parts (Hatedate's sub-plans `14d-1-1`,
+// `14e-3.1`).
+const PLAN_NUM = /^\d+[^-]*(?:-\d+(?:\.\d+)*(?=-|\.md$))*/;
 const planNum = (path) => PLAN_NUM.exec(basename(path))?.[0] ?? basename(path, '.md');
 const planSlug = (path) => basename(path, '.md').slice(planNum(path).length).replace(/^-/, '') || basename(path, '.md');
 const ssddLedger = (paths, plan) => `${paths.ledgers}/${basename(plan, '.md')}-ledger.md`;

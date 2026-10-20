@@ -802,12 +802,13 @@ describe('onboarding', () => {
 
 describe('plan numbers', () => {
   it('sub-plan numbers are not duplicates (Hatedate: 14d-1, 14d-1-1, 14d-2)', () => {
-    for (const n of ['14d-1-routing', '14d-1-1-followups', '14d-2-onboarding', '14f.2-monetization', '28-a', '28-b']) {
+    for (const n of ['14d-1-routing', '14d-1-1-followups', '14d-2-onboarding', '14e-3.1-stack', '14e-3.2-voice', '14f.2-monetization', '28-a', '28-b']) {
       put(`.ssdd/plans/${n}.md`, planText({ status: 'DRAFT' }));
     }
     commitAll('sub-plans');
     const { out } = run();
-    assert.doesNotMatch(out, /plans numbered 14d/);
+    assert.doesNotMatch(out, /plans numbered 14[de]/);
+    assert.match(out, /^ {2}14e-3\.1 stack\s+DRAFT/m);
     assert.match(out, /! plans numbered 28: 28-a\.md \(main\), 28-b\.md \(main\)/);
     assert.match(out, /^ {2}14d-1-1 followups\s+DRAFT/m);
     assert.match(out, /^ {2}14f\.2 monetization\s+DRAFT/m);
