@@ -18,11 +18,12 @@
 // stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
 // re-review reads that change, and the new stamp lands on the new blob.
 //
-// A merge that stopped (a conflict, or --no-commit) owes only what differs
-// from git's own merge of the two sides: conflict resolutions and edits made
-// during the merge. A path equal to `git merge-tree --write-tree HEAD
-// MERGE_HEAD` came in reviewed. An octopus merge, or a git older than 2.38,
-// is judged in full. (A merge with no conflict commits without pre-commit.)
+// A merge of the default branch that stopped (a conflict, or --no-commit)
+// owes only what differs from git's own merge of the two sides: conflict
+// resolutions and edits made during the merge. A path equal to `git
+// merge-tree --write-tree HEAD MERGE_HEAD` came in reviewed. Merging anything
+// the default branch doesn't hold, an octopus merge, or a git older than
+// 2.38 is judged in full. (A merge with no conflict commits without pre-commit.)
 //
 // Stamping without actually running the named reviewers defeats the gate and
 // is forbidden by the process (process/SDD.md §4).
@@ -127,19 +128,33 @@ const stagedChanges = () => {
   }
   return out;
 };
-// While a merge is stopped (MERGE_HEAD holds one commit), git's own merge of
-// HEAD and that commit (`merge-tree --write-tree`, git ≥ 2.38): a staged path
+// While a merge of the default branch is stopped (MERGE_HEAD holds one
+// commit, and that commit is on the default branch), git's own merge of HEAD
+// and that commit (`merge-tree --write-tree`, git ≥ 2.38): a staged path
 // whose index entry equals it came in reviewed, so only conflict resolutions
 // and edits made during the merge owe. → { head, paths } | null, and null
-// judges the merge as before: no merge, an octopus, or a git that can't.
+// judges the merge as before: no merge, an octopus, a commit the default
+// branch doesn't hold (another branch, a `git stash create` object), or a
+// git that can't.
 const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+// The default branch as work-state.mjs reads it: the remote's as last fetched
+// (origin/HEAD) and its local namesake, else local main or master. A commit
+// either holds counts.
+function onDefaultBranch(oid) {
+  const quiet = (...args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const remote = quiet('symbolic-ref', '-q', 'refs/remotes/origin/HEAD').stdout?.trim();
+  const refs = remote
+    ? [remote, `refs/heads/${remote.replace(/^refs\/remotes\/origin\//, '')}`]
+    : ['refs/heads/main', 'refs/heads/master'];
+  return refs.some((ref) => quiet('merge-base', '--is-ancestor', oid, ref).status === 0);
+}
 function mergeClean(staged) {
   let heads;
   try {
     const file = git('rev-parse', '--git-path', 'MERGE_HEAD').trim();
     heads = readFileSync(isAbsolute(file) ? file : join(repo, file), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
   } catch { return null; } // not merging
-  if (heads.length !== 1 || !OID.test(heads[0])) return null;
+  if (heads.length !== 1 || !OID.test(heads[0]) || !onDefaultBranch(heads[0])) return null;
   const r = spawnSync('git', ['-C', repo, 'merge-tree', '--write-tree', 'HEAD', heads[0]],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   const tree = String(r.stdout ?? '').split('\n')[0].trim();

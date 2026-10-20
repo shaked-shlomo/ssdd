@@ -587,29 +587,36 @@ describe('--check', () => {
   });
 });
 
-// v3.1: during a stopped merge, a staged path equal to git's own merge of the
-// two sides was reviewed on its way in; only resolutions and edits owe.
+// v3.1: during a stopped merge of the default branch, a staged path equal to
+// git's own merge of the two sides was reviewed on its way in; only
+// resolutions and edits owe. Merging anything else is judged in full.
 describe('merges', () => {
-  // base: a.ts (3 lines) and b.ts; side edits a.ts line 1 and b.ts; main
-  // edits a.ts line 1 too, so `git merge side` stops on a.ts and merges b.ts.
-  function conflictedMerge(d) {
+  // base: a.ts (3 lines) and b.ts on main; main then edits a.ts line 1 and
+  // b.ts, and branch feat edits a.ts line 1 too, so `git merge main` on feat
+  // stops on a.ts and merges b.ts cleanly.
+  function conflictedMerge(d, from = 'main') {
+    git(d, 'branch', '-M', 'main');
     write(d, 'src/a.ts', 'a1\na2\na3\n');
     write(d, 'src/b.ts', 'b\n');
     git(d, 'commit', '-qm', 'base');
-    git(d, 'checkout', '-qb', 'side');
-    write(d, 'src/a.ts', 'side\na2\na3\n');
-    write(d, 'src/b.ts', 'b side\n');
-    git(d, 'commit', '-qm', 'side');
-    git(d, 'checkout', '-q', '-');
-    write(d, 'src/a.ts', 'main\na2\na3\n');
-    git(d, 'commit', '-qm', 'main');
-    const m = spawnSync('git', ['-C', d, 'merge', '-q', 'side'], { encoding: 'utf8' });
+    git(d, 'branch', 'feat');
+    git(d, 'branch', 'side');
+    for (const b of from === 'main' ? ['main'] : ['side']) {
+      git(d, 'checkout', '-q', b);
+      write(d, 'src/a.ts', 'upstream\na2\na3\n');
+      write(d, 'src/b.ts', 'b upstream\n');
+      git(d, 'commit', '-qm', 'upstream');
+    }
+    git(d, 'checkout', '-q', 'feat');
+    write(d, 'src/a.ts', 'feat\na2\na3\n');
+    git(d, 'commit', '-qm', 'feat');
+    const m = spawnSync('git', ['-C', d, 'merge', '-q', from], { encoding: 'utf8' });
     assert.strictEqual(m.status, 1, 'the merge stops on the conflict');
   }
   const resolveA = (d) => write(d, 'src/a.ts', 'both\na2\na3\n');
   const owesB = (text) => /src\/b\.ts/.test(text.replace(/^ {2}merge:.*$/m, ''));
 
-  it('a path equal to git\'s merge owes nothing', () => {
+  it('a path equal to git\'s merge of the default branch owes nothing', () => {
     conflictedMerge(dir);
     resolveA(dir);
     const { status, stderr } = preCommit(dir);
@@ -640,6 +647,23 @@ describe('merges', () => {
     resolveA(dir);
     assert.strictEqual(stamp(dir, 'alpha,beta').status, 0);
     assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('merging a branch that is not on the default branch is judged in full', () => {
+    conflictedMerge(dir, 'side');
+    resolveA(dir);
+    const { stderr } = preCommit(dir);
+    assert.ok(owesB(stderr), stderr);
+    assert.doesNotMatch(stderr, /merge: /);
+  });
+  it('merging a commit no ref holds (git stash create) is judged in full', () => {
+    git(dir, 'branch', '-M', 'main');
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'commit', '-qm', 'base');
+    write(dir, 'src/b.ts', 'unreviewed\n');
+    const dangling = git(dir, 'stash', 'create').trim();
+    git(dir, 'reset', '-q', '--hard');
+    assert.strictEqual(spawnSync('git', ['-C', dir, 'merge', '-q', '--no-commit', '--no-ff', dangling], { encoding: 'utf8' }).status, 0);
+    assert.ok(owesB(preCommit(dir).stderr));
   });
   it('an octopus merge is judged as today', () => {
     conflictedMerge(dir);
@@ -672,22 +696,21 @@ describe('merges', () => {
     assert.doesNotMatch(c.stderr, /Error/);
   });
   it('in a linked worktree', () => {
+    git(dir, 'branch', '-M', 'main');
     write(dir, 'src/a.ts', 'a1\na2\na3\n');
     write(dir, 'src/b.ts', 'b\n');
     git(dir, 'commit', '-qm', 'base');
-    git(dir, 'branch', 'side');
-    git(dir, 'branch', 'other');
+    git(dir, 'branch', 'feat');
+    write(dir, 'src/a.ts', 'upstream\na2\na3\n');
+    write(dir, 'src/b.ts', 'b upstream\n');
+    git(dir, 'commit', '-qm', 'upstream');
     const wt = mkdtempSync(join(tmpdir(), 'ssdd-merge-wt-'));
+    const w = join(wt, 'w');
     try {
-      git(dir, 'worktree', 'add', '-q', join(wt, 'w'), 'side');
-      const w = join(wt, 'w');
-      write(w, 'src/a.ts', 'side\na2\na3\n');
-      write(w, 'src/b.ts', 'b side\n');
-      git(w, 'commit', '-qm', 'side');
-      git(w, 'checkout', '-q', 'other');
-      write(w, 'src/a.ts', 'other\na2\na3\n');
-      git(w, 'commit', '-qm', 'other');
-      assert.strictEqual(spawnSync('git', ['-C', w, 'merge', '-q', 'side'], { encoding: 'utf8' }).status, 1);
+      git(dir, 'worktree', 'add', '-q', w, 'feat');
+      write(w, 'src/a.ts', 'feat\na2\na3\n');
+      git(w, 'commit', '-qm', 'feat');
+      assert.strictEqual(spawnSync('git', ['-C', w, 'merge', '-q', 'main'], { encoding: 'utf8' }).status, 1);
       mkdirSync(join(w, '.ssdd'), { recursive: true });
       writeFileSync(join(w, '.ssdd', 'config.json'), JSON.stringify(CONFIG));
       write(w, 'src/a.ts', 'both\na2\na3\n');
@@ -696,20 +719,43 @@ describe('merges', () => {
       assert.match(stderr, /src\/a\.ts/);
       assert.ok(!owesB(stderr), stderr);
     } finally {
-      git(dir, 'worktree', 'remove', '--force', join(wt, 'w'));
+      git(dir, 'worktree', 'remove', '--force', w);
       rmSync(wt, { recursive: true, force: true });
+    }
+  });
+  it('a merge of origin/main counts, though local main is behind', () => {
+    const origin = makeRepo();
+    try {
+      git(origin, 'branch', '-M', 'main');
+      write(origin, 'src/b.ts', 'b\n');
+      git(origin, 'commit', '-qm', 'base');
+      git(dir, 'remote', 'add', 'origin', origin);
+      git(dir, 'fetch', '-q', 'origin');
+      git(dir, 'checkout', '-qb', 'feat', 'origin/main');
+      git(dir, 'remote', 'set-head', 'origin', 'main');
+      write(dir, 'src/a.ts', 'feat\n');
+      git(dir, 'commit', '-qm', 'feat');
+      write(origin, 'src/b.ts', 'b upstream\n');
+      git(origin, 'commit', '-qm', 'upstream');
+      git(dir, 'fetch', '-q', 'origin');
+      assert.strictEqual(spawnSync('git', ['-C', dir, 'merge', '-q', '--no-commit', '--no-ff', 'origin/main'], { encoding: 'utf8' }).status, 0);
+      const { status, stderr } = preCommit(dir);
+      assert.strictEqual(status, 0, stderr);
+    } finally {
+      rmSync(origin, { recursive: true, force: true });
     }
   });
   it('the oversize warning doesn\'t count merged paths', () => {
     const d = makeRepo({ ...CONFIG, reviewGate: { maxRoutedFiles: 1 } });
     try {
-      git(d, 'checkout', '-qb', 'side');
+      git(d, 'branch', '-M', 'main');
+      git(d, 'branch', 'feat');
       for (const f of ['x', 'y', 'z']) write(d, `src/${f}.ts`, `${f}\n`);
-      git(d, 'commit', '-qm', 'side');
-      git(d, 'checkout', '-q', '-');
-      write(d, 'docs/main.md', 'm\n');
       git(d, 'commit', '-qm', 'main');
-      assert.strictEqual(spawnSync('git', ['-C', d, 'merge', '-q', '--no-commit', '--no-ff', 'side'], { encoding: 'utf8' }).status, 0);
+      git(d, 'checkout', '-q', 'feat');
+      write(d, 'docs/feat.md', 'f\n');
+      git(d, 'commit', '-qm', 'feat');
+      assert.strictEqual(spawnSync('git', ['-C', d, 'merge', '-q', '--no-commit', '--no-ff', 'main'], { encoding: 'utf8' }).status, 0);
       const { status, stderr } = preCommit(d);
       assert.strictEqual(status, 0, stderr);
       assert.doesNotMatch(stderr, /WARNING/);
