@@ -210,6 +210,17 @@ describe('only added lines', () => {
     assert.ok(r.stderr.includes(`${rel}:1 `), r.stderr);
   });
 
+  it('an added line that starts with "++ " is a line, not a file header', () => {
+    put('src/a.ts', 'line1\n');
+    git(dir, 'add', 'src/a.ts');
+    git(dir, 'commit', '-qm', 'old');
+    put('src/a.ts', 'line1\n++ counter;\nconst c = "#abcdef";\n');
+    git(dir, 'add', 'src/a.ts');
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /src\/a\.ts:3 /);
+  });
+
   it('the edit hook lints from a project dir below the repo root', () => {
     put('app/src/a.ts', OLD);
     git(dir, 'add', 'app/src/a.ts');

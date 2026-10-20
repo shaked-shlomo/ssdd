@@ -92,12 +92,20 @@ function diffPath(raw) {
   }
   return p.replace(/^b\//, '');
 }
-// `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds.
+// `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds. A hunk
+// runs while its lines start with `+`, `-` or `\`, so inside one, `+++ x` is
+// an added line `++ x`, not the next file's header.
 function addedLines(diff) {
   const out = new Map();
   let file = null;
   let n = 0;
+  let inHunk = false;
   for (const line of diff.split('\n')) {
+    if (inHunk && /^[-+\\]/.test(line)) {
+      if (file && line[0] === '+') out.get(file).push([n++, line.slice(1)]);
+      continue;
+    }
+    inHunk = false;
     if (line.startsWith('+++ ')) {
       // git ends a name that holds a space with a tab
       file = line === '+++ /dev/null' ? null : diffPath(line.slice(4).replace(/\t$/, ''));
@@ -105,8 +113,7 @@ function addedLines(diff) {
       continue;
     }
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (hunk) { n = Number(hunk[1]); continue; }
-    if (file && line.startsWith('+')) out.get(file).push([n++, line.slice(1)]);
+    if (hunk) { n = Number(hunk[1]); inHunk = true; }
   }
   return out;
 }
