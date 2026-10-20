@@ -18,6 +18,12 @@
 // stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
 // re-review reads that change, and the new stamp lands on the new blob.
 //
+// A merge that stopped (a conflict, or --no-commit) owes only what differs
+// from git's own merge of the two sides: conflict resolutions and edits made
+// during the merge. A path equal to `git merge-tree --write-tree HEAD
+// MERGE_HEAD` came in reviewed. An octopus merge, or a git older than 2.38,
+// is judged in full. (A merge with no conflict commits without pre-commit.)
+//
 // Stamping without actually running the named reviewers defeats the gate and
 // is forbidden by the process (process/SDD.md §4).
 //
@@ -67,7 +73,7 @@
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
 import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
@@ -121,6 +127,36 @@ const stagedChanges = () => {
   }
   return out;
 };
+// While a merge is stopped (MERGE_HEAD holds one commit), git's own merge of
+// HEAD and that commit (`merge-tree --write-tree`, git ≥ 2.38): a staged path
+// whose index entry equals it came in reviewed, so only conflict resolutions
+// and edits made during the merge owe. → { head, paths } | null, and null
+// judges the merge as before: no merge, an octopus, or a git that can't.
+const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+function mergeClean(staged) {
+  let heads;
+  try {
+    const file = git('rev-parse', '--git-path', 'MERGE_HEAD').trim();
+    heads = readFileSync(isAbsolute(file) ? file : join(repo, file), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
+  } catch { return null; } // not merging
+  if (heads.length !== 1 || !OID.test(heads[0])) return null;
+  const r = spawnSync('git', ['-C', repo, 'merge-tree', '--write-tree', 'HEAD', heads[0]],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const tree = String(r.stdout ?? '').split('\n')[0].trim();
+  if ((r.status !== 0 && r.status !== 1) || !OID.test(tree)) return null; // 1 = conflicts, still a tree
+  let differ;
+  try { differ = new Set(git('diff', '--cached', '--name-only', '--no-renames', '-z', tree).split('\0')); } catch { return null; }
+  return { head: heads[0], paths: new Set([...staged.keys()].filter((p) => !differ.has(p))) };
+}
+// The staged changes that can owe a review: the staged diff minus a stopped
+// merge's clean paths. Everything that decides what's owed reads this.
+function stagedOwed() {
+  const staged = stagedChanges();
+  const merged = mergeClean(staged);
+  if (merged) for (const p of merged.paths) staged.delete(p);
+  return { staged, merged };
+}
+
 const readStamp = () => {
   try {
     const s = JSON.parse(readFileSync(stampPath(), 'utf8'));
@@ -157,7 +193,7 @@ const stampingMode = (cfg) => (cfg?.reviewGate?.stamping === 'hooks' ? 'hooks' :
 // Reviewers flagged issues on files that are about to be committed unchanged:
 // allowed (fix-or-triage), but worth a line so triage isn't silent.
 function triageNote(cfg) {
-  const staged = stagedChanges();
+  const { staged } = stagedOwed();
   const stamp = readStamp();
   const lines = [];
   for (const [name, files] of reviewerFiles(cfg, staged)) {
@@ -185,7 +221,7 @@ const reviewerFiles = (cfg, staged) =>
 // files it still owes (with the key it last stamped, if any); the unrouted
 // staged paths, for context; and the oversize warning if one is due.
 function judge(cfg) {
-  const staged = stagedChanges();
+  const { staged, merged } = stagedOwed();
   const stamp = readStamp();
   const owed = [];
   const routed = new Set();
@@ -201,7 +237,10 @@ function judge(cfg) {
     if (missing.length) owed.push({ name, files, missing, refused: stamp.refused?.[name]?.reason });
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
-  return { owed, unrouted, warning: oversizeWarning(cfg, routed.size) };
+  return {
+    owed, unrouted, warning: oversizeWarning(cfg, routed.size),
+    merged: merged?.paths.size ? { head: merged.head, count: merged.paths.size } : null,
+  };
 }
 
 // What a reviewer re-reads after a fix: the change from the blob its stamp
@@ -250,7 +289,7 @@ const short = (key) => {
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
 const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
-function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual') {
+function blockMessage({ owed, unrouted, warning, merged }, repoHint = '', mode = 'manual') {
   const lines = [];
   for (const { name, files, missing, refused } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
@@ -271,6 +310,7 @@ function blockMessage({ owed, unrouted, warning }, repoHint = '', mode = 'manual
     }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
+  if (merged) lines.push(`  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`);
   if (mode === 'hooks') {
     return (
       warning +
@@ -317,7 +357,7 @@ if (process.argv[2] === '--stamp') {
   if (!loaded) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
   if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
   const { cfg } = loaded;
-  const staged = stagedChanges();
+  const { staged } = stagedOwed();
   const table = new Map(reviewerFiles(cfg, staged));
   const known = new Set(routes(cfg).map(([name]) => name));
   // Validate everything before writing anything: a refused name or file leaves
@@ -651,7 +691,7 @@ function subagentHook(p) {
   const file = join(dir, `${agentId}.json`);
 
   if (p.hook_event_name === 'SubagentStart') {
-    const staged = stagedChanges();
+    const { staged } = stagedOwed();
     const mine = new Map(reviewerFiles(cfg, staged)).get(type) ?? [];
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, JSON.stringify({ reviewer: type, files: Object.fromEntries(mine.map((f) => [f, staged.get(f)])), at: new Date().toISOString() }));

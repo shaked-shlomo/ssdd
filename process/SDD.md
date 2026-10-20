@@ -110,6 +110,11 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
      index before the command runs, so it refuses `git add … && git commit`,
      `commit -a/-i/-o` and `commit <path>`.
 
+  **Merges.** While a merge is stopped (a conflict, or `--no-commit`), a
+  staged file equal to git's own merge of the two sides was reviewed on its
+  way in and owes nothing; conflict resolutions and edits made during the
+  merge are owed as usual (git 2.38 or later; older git judges every file).
+
   Stamping without running the reviewers is forbidden; `SSDD_REVIEW_SKIP=1`
   is for emergencies, with the user's explicit go-ahead. Over
   `reviewGate.maxRoutedFiles` routed files the gate warns: split the commit
