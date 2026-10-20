@@ -132,6 +132,17 @@ const BLOCKED = [
   ['git by absolute path', '/usr/bin/git commit -nm x'],
   ['env -i before git -c core.hooksPath', 'env -i git -c core.hooksPath=/x commit -m x'],
   ['sudo before git config core.hooksPath', 'sudo git config core.hooksPath /x'],
+  // v3.1 — a git config with a value or a write option is a write; reads pass (ALLOWED).
+  ['an empty value', 'git config core.hooksPath ""'],
+  ['a quoted value', "git config core.hooksPath '/dev/null'"],
+  ['--unset-all', 'git config --unset-all core.hooksPath'],
+  ['--add', 'git config --add core.hooksPath /x'],
+  ['--replace-all', 'git config --replace-all core.hooksPath /x'],
+  ['the set subcommand', 'git config set core.hooksPath /x'],
+  ['the unset subcommand', 'git config unset core.hooksPath'],
+  ['a read, then a write', 'git config --get core.hooksPath && git config core.hooksPath /x'],
+  ['Hatedate 08-09: read in $(…), write on the next line', `echo "hooksPath = '$(git config core.hooksPath)'"\ngit config core.hooksPath .githooks`],
+  ['arming is a write too', 'git config core.hooksPath .githooks'],
 ];
 
 const ALLOWED = [
@@ -180,6 +191,19 @@ const ALLOWED = [
   ['a wrapper quoted inside a commit message', `git commit -m 'use bash -c "git commit -n"'`],
   ['a shell running a script file', 'bash scripts/release.sh'],
   ['"| sh" inside a quoted string', 'echo "hi | sh"'],
+  // v3.1 — a git config with no value and no write option reads core.hooksPath.
+  ['git config core.hooksPath (a read)', 'git config core.hooksPath'],
+  ['read with a scope flag', 'git config --local core.hooksPath'],
+  ['read with --global', 'git config --global core.hooksPath'],
+  ['read with --show-origin', 'git config --show-origin core.hooksPath'],
+  ['read with --type=path', 'git config --type=path core.hooksPath'],
+  ['the get subcommand', 'git config get core.hooksPath'],
+  ['read, stderr redirected', 'git config core.hooksPath 2>/dev/null'],
+  ['read, 2>&1', 'git config core.hooksPath 2>&1'],
+  ['read, || fallback', 'git config core.hooksPath || echo unset'],
+  ['read, then another command', 'git config core.hooksPath; ls .githooks'],
+  ['read inside $(…) in a string', `echo "hooksPath = '$(git config core.hooksPath)'"`],
+  ['Hatedate 07-11: a plain read after a cat', 'cat .githooks/pre-commit 2>/dev/null || ls .githooks/ .git/hooks/ 2>/dev/null; git config core.hooksPath'],
 ];
 
 describe('git-guard', () => {

@@ -9,9 +9,10 @@
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
 //   git commit … --amend                                     (never amend)
-//   git -c core.hooksPath=… | git config … core.hooksPath …
+//   git -c core.hooksPath=… | git config … core.hooksPath <value> / --unset …
 //   | GIT_CONFIG_PARAMETERS / GIT_CONFIG_KEY_<n> = core.hooksPath
-//                                                    (never re-point or unset the hooks)
+//                                                    (never re-point or unset the hooks;
+//                                                     a read passes)
 // plus any gitGuard.extraRules [{pattern, message}]. Also, as PreToolUse(Edit|Write):
 // the Edit/Write tools never touch .git/ssdd-review-* (stamp and dispatch files);
 // with reviewGate.stamping "hooks", Bash can't run `review-gate.mjs --stamp` or
@@ -66,16 +67,38 @@ if (filePath && STAMP_FILES.test(filePath)) {
 // blank `-c 'core.hooksPath=…'`) but heredocs dropped, anchored at a command
 // start (after optional VAR=value assignments) so a mention inside a message
 // needs a separator in front of `git` to match — a false block at worst,
-// never a bypass. Config keys are case-insensitive → /i. Reads are allowed.
+// never a bypass. Config keys are case-insensitive → /i.
+//
+// Reads are allowed. Each `git config … core.hooksPath` in the call is
+// judged on its own (a read must not cover a write after it):
+//   read   --get* / --list / -l, or the `get` / `list` subcommand; or no
+//          write option and nothing after the key but redirections (the
+//          scan stops at `)`, so `"$(git config core.hooksPath)"` reads)
+//   write  a value after the key (`""` too), --unset*, --add,
+//          --replace-all, -e / --edit, or the `set` / `unset` subcommand
+// Arming (`git config core.hooksPath .githooks`) is a write: it stays the user's.
+const READ_OPT = /(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l|get|list)(?=\s|$)/;
+const WRITE_OPT = /(?:^|\s)(?:--unset(?:-all)?|--add|--replace-all|-e|--edit|set|unset)(?=\s|$)/;
+// The words after the key, once redirections are dropped: none → no value.
+function hasValue(tail) {
+  const words = tail.trim().split(/\s+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    if (/^\d*[<>]+&?$/.test(words[i])) { i++; continue; } // `>` / `2>` and its target
+    if (/^\d*[<>]/.test(words[i])) continue;              // `2>/dev/null`, `>&2`
+    return true;
+  }
+  return false;
+}
 if (guard.blockHooksPath !== false) {
   const RUNNER = String.raw`(?:\S*\/)?(?:sudo|command|env|nohup|time|exec|nice|builtin)(?:\s+-\S+)*`;
   const START = String.raw`(?:^|[;&|(\n]\s*)(?:(?:[A-Za-z_]\w*=\S*|${RUNNER})\s+)*(?:\S*\/)?git\s+(?:(?:-[cC]\s*(?:'[^']*'|"[^"]*"|\S+)|--?[\w-]+(?:=\S*)?)\s+)*`;
   const viaFlag = new RegExp(START + String.raw`-c\s*['"]?core\.hookspath\b`, 'i');
-  const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)['"]?\bcore\.hookspath\b`, 'i');
+  const viaConfig = new RegExp(START + String.raw`config\b([^;&|\n]*?)(['"]?)\bcore\.hookspath\b\2([^;&|\n)]*)`, 'gi');
   const viaEnv = /\bGIT_CONFIG_(?:PARAMETERS=[^;&|\n]*core\.hookspath|KEY_\d+=['"]?core\.hookspath\b)/i;
   const quoted = stripHeredocs(cmd);
-  const m = viaConfig.exec(quoted);
-  if (viaFlag.test(quoted) || viaEnv.test(quoted) || (m && !/(?:^|\s)(?:--get(?:-all|-regexp)?|--list|-l)\b/.test(m[1]))) {
+  const writes = [...quoted.matchAll(viaConfig)].some(([, before, , after]) =>
+    !READ_OPT.test(before) && (WRITE_OPT.test(before) || hasValue(after)));
+  if (viaFlag.test(quoted) || viaEnv.test(quoted) || writes) {
     deny('Blocked: re-pointing or unsetting `core.hooksPath` disables the pre-commit gate (project rule).');
   }
 }
