@@ -2872,7 +2872,7 @@ My calls.
 
 ### Open
 
-All resolved by the owner on 2026-10-21 (Clarify 28–30, 32–35):
+All resolved by the owner on 2026-10-21 (Clarify 28–29, 31–35):
 - Cursor doesn't enforce `ask`, so it gets `deny`, and the owner runs the
   command in their own terminal (Clarify 28).
 - The 07-27 note was an interrupt, not a rejected prompt. MCP writes keep
