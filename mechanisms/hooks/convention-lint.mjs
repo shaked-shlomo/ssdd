@@ -112,7 +112,11 @@ function addedLines(diff) {
 }
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
 const lintAdded = (diff) => [...addedLines(diff)].flatMap(([path, lines]) => lintLines(path, lines));
-const inHead = (rel) => { try { git('cat-file', '-e', `HEAD:${rel}`); return true; } catch { return false; } };
+// The edit hook's paths are root-relative, so its git runs at the root (the
+// hook's project dir may be a subdirectory).
+const atRoot = (...args) =>
+  execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+const inHead = (rel) => { try { atRoot('cat-file', '-e', `HEAD:${rel}`); return true; } catch { return false; } };
 
 function report(findings, exitCode) {
   if (!findings.length) process.exit(0);
@@ -132,5 +136,5 @@ if (process.argv[2] === '--staged') {
   const rel = toRel(path);
   if (rel.startsWith('..')) process.exit(0); // outside the repo
   // exit 2 → the agent self-corrects
-  report(inHead(rel) ? lintAdded(git(...DIFF, 'HEAD', '--', rel)) : lintFile(rel), 2);
+  report(inHead(rel) ? lintAdded(atRoot(...DIFF, 'HEAD', '--', rel)) : lintFile(rel), 2);
 }

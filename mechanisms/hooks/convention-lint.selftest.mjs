@@ -5,7 +5,7 @@
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -208,5 +208,18 @@ describe('only added lines', () => {
     const r = run(dir, ['--staged']);
     assert.strictEqual(r.status, 1);
     assert.ok(r.stderr.includes(`${rel}:1 `), r.stderr);
+  });
+
+  it('the edit hook lints from a project dir below the repo root', () => {
+    put('app/src/a.ts', OLD);
+    git(dir, 'add', 'app/src/a.ts');
+    git(dir, 'commit', '-qm', 'old');
+    writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({ lint: [{ name: 'hex', pattern: '#[0-9a-fA-F]{3,8}\\b', message: 'hex', include: '^app/src/' }] }));
+    put('app/src/a.ts', `${OLD}const c = '#abcdef';\n`);
+    const real = realpathSync(dir); // git reports /private/var for /var on macOS
+    const sub = join(real, 'app');
+    const r = spawnSync(NODE, [HOOK], { input: JSON.stringify({ tool_input: { file_path: join(real, 'app/src/a.ts') } }), cwd: sub, env: { ...process.env, CLAUDE_PROJECT_DIR: sub }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, r.stderr);
+    assert.match(r.stderr, /app\/src\/a\.ts:3 /);
   });
 });
