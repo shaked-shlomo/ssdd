@@ -10,6 +10,22 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.1.1] — unreleased
+
+The five minor issues Part 3's final review deferred. Nothing to do by hand.
+
+### Fixed
+- `convention-lint` took an added line that starts with `++ ` for a file
+  header, and skipped the rest of that file's added lines.
+- `convention-lint` flagged an old violation on a file's last line again
+  when an edit added or dropped the trailing newline.
+- During a merge, `--stamp --files` refused a merge-clean path as "not
+  staged, or not routed"; it now says the path matches git's own merge and
+  is owed by no one.
+- The delta command cut blob ids to 12 characters; it prints the full ids.
+- When nothing is owed during a merge, `--check` now prints the merge line
+  the block message has.
+
 ## [3.1.0] — 2026-10-20
 
 v3 Part 3, a cheaper gate: keep every block that catches a real mistake and

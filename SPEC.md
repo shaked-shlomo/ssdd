@@ -2725,14 +2725,19 @@ wrong.
   - Two Minors were re-graded and fixed: the subdirectory lint regression,
     and `cd x 2>/dev/null` plus a trailing `popd` failing closed in every
     repo.
-  - Four are deferred, plus one of mine:
+  - Four were deferred, plus one of mine. All five are fixed (unreleased
+    3.1.1):
     - convention-lint reads an added line that starts with `++ ` as a file
-      header
-    - a dropped or added final newline re-lints the last line
+      header. Fixed: a hunk runs while its lines start with `+`, `-` or
+      `\`.
+    - a dropped or added final newline re-lints the last line. Fixed: an
+      added line equal to a removed line in its hunk, where only one of
+      the two lacks the newline, isn't new.
     - during a merge, `--stamp --files` on a merge-clean path says "not
-      staged, or not routed"
-    - the delta abbreviates blobs to 12 characters
-    - when nothing is owed, `--check` doesn't show the merge line
+      staged, or not routed". Fixed: it says the path matches git's own
+      merge and is owed by no one.
+    - the delta abbreviates blobs to 12 characters. Fixed: full ids.
+    - when nothing is owed, `--check` doesn't show the merge line. Fixed.
 - **Out, as rulings:** `git config --remove-section core` and `export
   GIT_INDEX_FILE` before a commit are both older than Part 3, and both are
   new evasion shapes. The first is in BACKLOG's accepted limitations.
