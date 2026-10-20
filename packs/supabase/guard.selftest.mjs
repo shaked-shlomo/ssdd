@@ -440,3 +440,21 @@ describe('differentials the second commit review found', () => {
     assert.equal(L.claudeMcp('mcp__639420f9-b3d0-4316-8c54-0d01f4f795f9__create_project', { name: 'x', teamId: 't' }).decision, 'allow');
   });
 });
+
+describe('differentials the third commit review found', () => {
+  it('a nested command anywhere may change the file', () => {
+    expectAsk(L, `echo "$(python3 gen.py)" && supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectAsk(L, `supabase db query --linked -f ${F.ro} -o "$(python3 gen.py)"`, /runs before it/);
+    expectPass(L, `supabase db query --linked -f ${F.ro} -o json | python3 -c 'import json,sys; json.load(sys.stdin)'`);
+  });
+  it('sort, uniq and a command given by path are not safe before a query', () => {
+    expectAsk(L, `sort -o x y; supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectAsk(L, `uniq a b && supabase db query --linked -f ${F.ro}`, /runs before it/);
+    expectAsk(L, `/tmp/echo hi && supabase db query --linked -f ${F.ro}`, /runs before it/);
+  });
+  it('an attached short-flag value is that flag’s value', () => {
+    expectAsk(L, `supabase db query --linked -f${F.write}`, WRITES);
+    expectAsk(L, `supabase db query --linked -f${F.write} "select 1"`, /more than one/);
+    expectPass(L, `supabase db query --linked -ojson -f ${F.ro}`);
+  });
+});

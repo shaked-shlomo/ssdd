@@ -79,7 +79,7 @@ const WRITE_VERBS = new Set(['create', 'delete', 'update', 'remove', 'add', 'act
 // Commands that may run before a `db query -f` in the same call: none of them
 // writes a file (a redirection makes any of them unsafe).
 const SAFE_BEFORE = new Set(['cd', 'echo', 'printf', 'ls', 'cat', 'pwd', 'true', 'sleep', 'date', 'export', 'which',
-  'test', '[', 'grep', 'head', 'tail', 'wc', 'jq', 'sort', 'uniq']);
+  'test', '[', 'grep', 'head', 'tail', 'wc', 'jq']);
 // A command that targets the remote project passes only when it's one of these reads.
 const READ_GROUPS = new Set(['inspect', 'gen', 'link', 'unlink', 'status', 'services', 'login', 'logout', 'init', 'start', 'stop']);
 const READ_VERBS = new Set(['list', 'get', 'show', 'info', 'ls', 'download', 'fetch', 'diff', 'dump', 'lint', 'api-keys',
@@ -99,6 +99,7 @@ function parseArgs(rest) {
   for (let k = 0; k < rest.length; k++) {
     const w = rest[k];
     if (VALUE_FLAGS.has(w)) { vals.push([w, rest[k + 1] ?? '']); k++; continue; }
+    if (/^-[^-]./.test(w) && VALUE_FLAGS.has(w.slice(0, 2))) { vals.push([w.slice(0, 2), w.slice(2)]); continue; } // -f/x.sql, -ojson
     if (w.startsWith('-')) {
       flags.push(w);
       const eq = w.indexOf('=');
@@ -166,14 +167,17 @@ export function judgeSql(sql, what, ctx) {
   return unclear(what, c.rule);
 }
 
-// A command before ctx.commands[k] (any top-level one, for a nested k) that
-// may write a file: not SAFE_BEFORE, or with an output redirection.
+// A command that may run before ctx.commands[k] and write a file: a
+// top-level command before it (any, for a nested k), or a nested one anywhere
+// — a substitution, even in the query's own words, runs first. It's a writer
+// unless it is SAFE_BEFORE by its bare name, with no output redirection.
 function writerBefore(ctx, k) {
-  const before = ctx.commands[k].depth > 0 ? ctx.commands.filter((w) => w.depth === 0) : ctx.commands.slice(0, k).filter((w) => w.depth === 0);
+  const query = ctx.commands[k];
+  const before = ctx.commands.filter((w, j) => j !== k && (w.depth > 0 || query.depth > 0 || j < k));
   return before.find((w) => {
     if (w.every((x) => /^[A-Za-z_]\w*=/.test(x))) return false;
     if (w.some((x, j) => !w.quoted[j] && /^\d*(?:>|>>|&>|>\|)/.test(x) && !/^\d*>&\d$/.test(x))) return true;
-    return !SAFE_BEFORE.has(base(w[0]));
+    return w[0].includes('/') || !SAFE_BEFORE.has(w[0]);
   });
 }
 
