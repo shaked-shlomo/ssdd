@@ -10,10 +10,10 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.0.0] — unreleased
+## [3.0.0] — 2026-10-20
 
 v3 Parts 1 (work state) and 2 (onboarding existing repos); see `SPEC.md` →
-v3. VERSION and the tag wait for the owner's go-ahead.
+v3.
 
 ### Added
 - **The work-state view** (`.ssdd/hooks/work-state.mjs`). It lists every open

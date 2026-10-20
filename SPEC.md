@@ -1154,9 +1154,9 @@ and the D13 `if` filter tested and included (item 9).
 # v3 — SSDD knows where the work is
 
 **Date:** 2026-10-17 · **Status:** design approved by the owner 2026-10-17;
-Plan 1 BUILT 2026-10-17 (two checks DEFERRED, see Part 1 → Verification);
-Plan 2 BUILT 2026-10-18 (Node 18 and the 3.0.0 tag DEFERRED, see Part 2 →
-Verification) · **Branch:** `v3`
+Parts 1 and 2 SHIPPED as 3.0.0, tagged 2026-10-20 (Node 18 CI and the
+after-`/compact` check DEFERRED, see their Verification sections) ·
+**Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
 - where each plan stands, what's verified and what's next
@@ -2064,9 +2064,10 @@ at `4951153`: `plan-migrate` 35, `plan-parse` 29, `work-state` 66,
 - **Node 18** — DEFERRED (operator). There's no Node 18 on this machine, and
   CI runs on a push, which waits for the owner. No API newer than Node 18
   was added (`Array.prototype.at` is 16.6+).
-- **Tagging 3.0.0** (Scope) — DEFERRED (owner). VERSION stays `2.7.0`; the
-  CHANGELOG's `[3.0.0] — unreleased` entry covers Parts 1 and 2, and its
-  `### Upgrade` section names the migration and the `SessionStart` entry.
+- **Tagging 3.0.0** (Scope) — tagged `v3.0.0` on 2026-10-20 at the owner's
+  go-ahead: VERSION `3.0.0`, the CHANGELOG entry dated, and its `### Upgrade`
+  section names the migration and the `SessionStart` entry. It wasn't
+  pushed, so CI hasn't run on it.
 
 ### Deviations & discoveries
 
@@ -2441,6 +2442,10 @@ My calls.
    needs Claude Code 2.1.283 or later).
 6. **Trim the handover and AGENTS templates.** `new-plan` shrinks once
    Part 1's script can compute the next plan number.
+7. **Raise the Node floor to 22** (owner ruling, 2026-10-20). Node 18 and
+   20 are past end-of-life (April 2025 and April 2026), prizma's workflows
+   run 22, and nothing in SSDD needs 18. CI moves to `[22, 24]`; the README
+   badge and text, `bin/ssdd.mjs`'s header and the CHANGELOG follow.
 
 ### Open
 

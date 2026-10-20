@@ -1,7 +1,7 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-17 at v2.7.0. The
-next work is v3 (`SPEC.md` → v3): five parts, one plan each, agreed
+The single list of remaining SSDD work. Updated 2026-10-20 at v3.0.0. The
+next work is the rest of v3 (`SPEC.md` → v3): five parts, one plan each, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
 is planned, it gets a `SPEC.md` section first.
@@ -15,12 +15,13 @@ that incident.
 
 | # | Part (SPEC.md → v3) | Plan | Ships as |
 |---|---|---|---|
-| 1 | Work state: the session-start view, the close check, tracked Superpowers ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md`: BUILT 2026-10-17 (Node 18 CI pending; the after-`/compact` check runs during the first real repo migration, at the end of v3) | 3.0.0, with Part 2 |
-| 2 | Onboarding existing repos: `/migrate-plans`, `paths` everywhere, `/skills-audit` tracked | `docs/superpowers/plans/2026-10-18-v3-onboarding.md`: BUILT 2026-10-18 (Node 18 CI and the 3.0.0 tag pending) | 3.0.0 |
 | 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads | not written | 3.1.0 |
 | 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |
-| 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test | not written | 3.3.0 |
+| 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test, the Node floor to 22 | not written | 3.3.0 |
 
+- **End of v3:** the real migrations of prizma and Hatedate (owner,
+  2026-10-20: none until all five parts land; scratch clones only before
+  then), with Part 1's after-`/compact` session-start check.
 - **Open owner decision:** how to prevent plan-number collisions (Part 3,
   decision 7).
 - **Hatedate adoption is parked** (owner, 2026-10-17). The prompt to start
