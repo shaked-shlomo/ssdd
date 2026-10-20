@@ -44,8 +44,9 @@ to do by hand: a repo that wants the untracked-file block back sets
 - **Command shapes are judged only in an SSDD repo.** The harness gate
   resolves the target repo and loads its config first, so a scratch repo
   with no `.ssdd/config.json` passes chained staging, `commit -a` and `commit
-  <path>`. An unresolvable target (`$VAR`, `pushd`, `cd -`) still fails
-  closed.
+  <path>`. An unresolvable target still fails closed: `$VAR`, `cd -`, and
+  now also a `pushd`, a `popd`, a `builtin cd` or a `cd` with an option
+  before the commit (v3.0.0 judged the starting repo there).
 - **Untracked files are a warning.** The pre-commit lists them, at most 10,
   and the commit lands. `preCommit.blockUntracked: true` in
   `.ssdd/config.json` restores the block; a `preCommit` that isn't an object

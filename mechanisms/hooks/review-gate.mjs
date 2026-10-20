@@ -514,19 +514,32 @@ const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slic
 const unresolvable = (p) => /[$`]/.test(p) || p === '-';
 // Every git invocation with the directory it runs in. `bad` is the first `cd`,
 // or a commit's `-C`, that can't be read; a staging command's is its own reason.
-// Only a plain `cd <dir>` is followed: `pushd`, `popd`, and a `cd` with an
-// option, more than one word, or a runner in front (`builtin cd`) can't be.
+// Only a plain `cd <dir>` is followed (its redirections aside): `pushd`,
+// `popd`, and a `cd` with an option, more than one word, or a runner in front
+// (`builtin cd`) can't be. That matters only if a commit comes after it.
 // Every command is a step, in order; a git one carries its invocation.
+const unquotedRedirect = (words, i) => /^\d*[<>]/.test(words[i]) && !words.quoted?.[i];
+function withoutRedirects(words) {
+  const out = [];
+  for (let i = 0; i < words.length; i++) {
+    if (unquotedRedirect(words, i)) { if (/^\d*[<>]+&?$/.test(words[i])) i++; continue; }
+    out.push(words[i]);
+  }
+  return out;
+}
 function walk(from) {
   let cwd = from;
   let bad = null;
+  let lost = null; // a directory change that can't be followed, until a commit makes it matter
   const steps = [];
-  for (const words of commands) {
+  for (const all of commands) {
+    const words = withoutRedirects(all);
     const at = commandStart(words);
     const head = (words[at] ?? '').split('/').pop();
     if (head === 'pushd' || head === 'popd' ||
       (head === 'cd' && (at > 0 || words.length > 2 || /^-./.test(words[1] ?? '')))) {
-      bad ??= words.join(' ');
+      lost ??= words.join(' ');
+      steps.push({ name: head });
       continue;
     }
     if (head === 'cd') {
@@ -536,11 +549,14 @@ function walk(from) {
       steps.push({ name: 'cd' });
       continue;
     }
-    const inv = gitInvocation(words);
+    const inv = gitInvocation(all);
     if (!inv) { steps.push({ name: head }); continue; }
     const badC = inv.dashC.find(unresolvable);
-    if (badC !== undefined && inv.sub === 'commit') bad ??= `git -C ${badC}`;
-    steps.push({ name: `git ${inv.sub}`, inv, words, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC });
+    if (inv.sub === 'commit') {
+      if (badC !== undefined) bad ??= `git -C ${badC}`;
+      if (lost) bad ??= lost;
+    }
+    steps.push({ name: `git ${inv.sub}`, inv, words: all, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC: badC ?? (lost ? lost : undefined) });
   }
   return { steps, bad, cwd };
 }
@@ -586,7 +602,7 @@ const { cfg } = loaded;
 const BESIDE_ADD = new Set(['git add', 'git status', 'git diff', 'git log', 'git show', 'git rev-parse', 'git ls-files']);
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
 function chainedAddReason({ inv: { args }, words, dir, badC }) {
-  if (badC !== undefined) return `\`-C ${badC}\` can't be read before it runs`;
+  if (badC !== undefined) return `where it runs (\`${badC}\`) can't be read before it runs`;
   let rootReal;
   try { rootReal = realpathSync.native(repo); } catch { rootReal = repo; }
   const routeOf = (rel) => routes(cfg).find(([, matches]) => matches(rel))?.[0];

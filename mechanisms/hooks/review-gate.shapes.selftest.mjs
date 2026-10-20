@@ -185,6 +185,25 @@ describe('a malformed route fails closed, never open', () => {
   }
 });
 
+describe('directory changes the gate can and can\'t follow', () => {
+  for (const [name, h] of BOTH) {
+    it(`${name}: cd with a redirection is followed`, () => {
+      mkdirSync(join(repo, 'docs'), { recursive: true });
+      const r = h('cd docs 2>/dev/null && git commit -m x', repo);
+      assert.equal(r.status, 0, r.stderr);
+    });
+    it(`${name}: a popd after the last commit doesn't matter`, () => {
+      const r = h('git commit -m x; popd', repo);
+      assert.equal(r.status, 0, r.stderr);
+    });
+    it(`${name}: a pushd before the commit still can't be followed`, () => {
+      const r = h('pushd docs && git commit -m x', repo);
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /cannot resolve the repo/);
+    });
+  }
+});
+
 describe('a repo without .ssdd/config.json judges no shapes', () => {
   let plain;
   beforeEach(() => {
