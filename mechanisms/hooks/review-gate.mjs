@@ -373,7 +373,7 @@ if (process.argv[2] === '--stamp') {
   if (!loaded) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
   if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
   const { cfg } = loaded;
-  const { staged } = stagedOwed();
+  const { staged, merged } = stagedOwed();
   const table = new Map(reviewerFiles(cfg, staged));
   const known = new Set(routes(cfg).map(([name]) => name));
   // Validate everything before writing anything: a refused name or file leaves
@@ -389,11 +389,23 @@ if (process.argv[2] === '--stamp') {
     if (only) {
       const bad = only.filter((f) => !routed.includes(f));
       if (bad.length) {
-        console.error(
-          `[ssdd-review-gate] refused for ${n}: ${bad.join(', ')} — not staged, or not routed to ${n}.\n` +
-          `A reviewer can be stamped only on files in its part of the staged diff; paths are\n` +
-          `repo-relative, as \`git diff --staged --name-only\` prints them.`,
-        );
+        // A merge-clean path is staged, but stagedOwed() took it out of the diff.
+        const clean = bad.filter((f) => merged?.paths.has(f));
+        const rest = bad.filter((f) => !clean.includes(f));
+        if (clean.length) {
+          const many = clean.length > 1;
+          console.error(
+            `[ssdd-review-gate] refused for ${n}: ${clean.join(', ')} — ${many ? 'match' : 'matches'} git's own merge ` +
+            `with ${merged.head.slice(0, 7)}, so ${many ? 'they are' : 'it is'} owed by no one; there's nothing to stamp.`,
+          );
+        }
+        if (rest.length) {
+          console.error(
+            `[ssdd-review-gate] refused for ${n}: ${rest.join(', ')} — not staged, or not routed to ${n}.\n` +
+            `A reviewer can be stamped only on files in its part of the staged diff; paths are\n` +
+            `repo-relative, as \`git diff --staged --name-only\` prints them.`,
+          );
+        }
         process.exit(1);
       }
       files = only;

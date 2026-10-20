@@ -642,6 +642,19 @@ describe('merges', () => {
     write(dir, 'src/b.ts', 'b edited\n');
     assert.ok(owesB(preCommit(dir).stderr));
   });
+  it('--stamp --files on a merge-clean path says it is owed by no one, writing nothing', () => {
+    conflictedMerge(dir);
+    resolveA(dir);
+    const r = stamp(dir, 'beta', 'src/b.ts');
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/b\.ts — matches git's own merge with [0-9a-f]{7}, so it is owed by no one/);
+    assert.doesNotMatch(r.stderr, /not staged, or not routed/);
+    const both = stamp(dir, 'beta', 'src/b.ts,src/nope.ts');
+    assert.strictEqual(both.status, 1);
+    assert.match(both.stderr, /src\/b\.ts — matches git's own merge/);
+    assert.match(both.stderr, /src\/nope\.ts — not staged, or not routed to beta/);
+    assert.throws(() => readStamp(dir));
+  });
   it('once the resolution is stamped, the merge commits', () => {
     conflictedMerge(dir);
     resolveA(dir);
