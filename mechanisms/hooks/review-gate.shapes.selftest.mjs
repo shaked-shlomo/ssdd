@@ -83,6 +83,10 @@ describe('un-evaluable commits are refused before anything is judged', () => {
     ['a chained add -A', 'git add -A && git commit -m x', /`git add` chained[\s\S]*`-A`/],
     ['a chained add -u', 'git add -u && git commit -m x', /`git add` chained[\s\S]*`-u`/],
     ['a chained add -p', 'git add -p docs/notes.md && git commit -m x', /`git add` chained[\s\S]*`-p`/],
+    ['a chained add of a path an earlier command makes', 'mkdir docs/new && git add docs/new && git commit -m x', /`git add` chained[\s\S]*`docs\/new` doesn't exist yet/],
+    ['a quoted word that looks like a redirection', "git add '2>' src/a.ts && git commit -m x", /`git add` chained[\s\S]*`2>`/],
+    ['pushd before a chained add', 'pushd src && git add a.ts && git commit -m x', /cannot resolve the repo/],
+    ['cd with an option before a chained add', 'cd -P src && git add a.ts && git commit -m x', /cannot resolve the repo/],
     ['mv chained before commit', 'git mv docs/notes.md docs/n2.md && git commit -m x', /`git mv` chained/],
     ['restore chained before commit', 'git restore --staged docs/notes.md && git commit -m x', /`git restore` chained/],
     ['update-index chained before commit', 'git update-index --add docs/notes.md && git commit -m x', /`git update-index` chained/],
@@ -134,6 +138,16 @@ describe('a visible chained git add passes', () => {
       const r = h('git add docs/notes.md && git commit -m x', repo);
       assert.equal(r.status, 2, r.stderr);
       assert.match(r.stderr, /alpha — never stamped/);
+    });
+  }
+  for (const [name, h] of BOTH) {
+    it(`${name}: staging the deletion of a tracked unrouted file passes`, () => {
+      docs();
+      git(repo, 'add', 'docs/notes.md');
+      git(repo, 'commit', '-qm', 'notes');
+      rmSync(join(repo, 'docs', 'notes.md'));
+      const r = h('git add docs/notes.md && git commit -m x', repo);
+      assert.equal(r.status, 0, r.stderr);
     });
   }
   it('a routed file named in another case is routed by its spelling on disk', () => {
