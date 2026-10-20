@@ -228,70 +228,102 @@ function judgeCli(words, i, ctx, k) {
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
 const isSupabaseHost = (h) => /(^|\.)supabase\.(co|com)$/i.test(String(h ?? ''));
-// The hosts of the URLs (or bare api.supabase.com / *.supabase.co paths) in a word.
+// The hosts of the URLs (or bare api.supabase.com / *.supabase.co paths) in a
+// word; a fully qualified name's trailing dot is dropped.
 function hostsIn(word) {
   const out = [];
-  for (const m of String(word).matchAll(/(?:\b[a-z][a-z0-9+.-]*:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?=[/:?#'"\s]|$)/gi)) out.push(m[1]);
+  for (const m of String(word).matchAll(/(?:\b[a-z][a-z0-9+.-]*:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})\.?(?=[/:?#'"\s]|$)/gi)) out.push(m[1]);
   return out;
 }
-const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'ruby', 'perl', 'php']);
-const CURL_DATA = new Set(['-d', '--data', '--data-binary', '--data-raw', '--data-urlencode', '--data-ascii', '--json',
-  '-F', '--form', '--form-string', '-T', '--upload-file']);
+// A word the shell or curl would expand before it's a URL: a variable, a
+// substitution, or curl's {a,b} / [1-3] globbing.
+const nonLiteral = (w) => /[$`{}[\]]/.test(w);
+const INTERPRETER = /^(?:node|nodejs|deno|bun|tsx|ts-node|python|pypy|ruby|perl|php|osascript)[\d.]*$/;
+// curl's long options that send a body, and its short options that take a
+// value (the rest of the word, or the next one).
+const CURL_DATA = ['--data', '--data-binary', '--data-raw', '--data-urlencode', '--data-ascii', '--json', '--form',
+  '--form-string', '--upload-file'];
+const CURL_SHORT_VALUE = new Set('AbBcCdDeEFHKmoPQrtTuUwxXyYz'.split(''));
 const WGET_DATA = ['--post-data', '--post-file', '--body-data', '--body-file'];
+const isLong = (w, opts) => opts.some((f) => w === f || w.startsWith(`${f}=`));
 
-function httpMethod(tool, rest) {
+// → { method, config }: the HTTP method a curl / wget call sends, and
+// whether curl reads a config file (-K), which can set any of it.
+function httpCall(tool, rest) {
   let method = '';
   let data = false;
   let head = false;
   let get = false;
+  let config = false;
   for (let k = 0; k < rest.length; k++) {
     const w = rest[k];
     if (tool === 'wget') {
       if (w === '--method') method = rest[++k] ?? '';
       else if (w.startsWith('--method=')) method = w.slice(9);
-      else if (WGET_DATA.some((f) => w === f || w.startsWith(`${f}=`))) data = true;
+      else if (isLong(w, WGET_DATA)) data = true;
       continue;
     }
-    if (w === '--request' || w === '-X') method = rest[++k] ?? '';
+    if (w === '--request') method = rest[++k] ?? '';
     else if (w.startsWith('--request=')) method = w.slice(10);
-    else if (CURL_DATA.has(w) || [...CURL_DATA].some((f) => f.startsWith('--') && w.startsWith(`${f}=`))) data = true;
-    else if (w === '--head' || w === '-I') head = true;
-    else if (w === '--get' || w === '-G') get = true;
-    else if (/^-[a-zA-Z]+$/.test(w)) {
-      const x = w.indexOf('X');
-      if (x > 0) { method = w.slice(x + 1) || rest[++k] || ''; continue; }
-      if (/[dFT]$/.test(w)) data = true;
-      if (w.includes('I')) head = true;
-      if (w.includes('G')) get = true;
+    else if (isLong(w, CURL_DATA)) data = true;
+    else if (isLong(w, ['--config'])) config = true;
+    else if (w === '--head') head = true;
+    else if (w === '--get') get = true;
+    else if (/^-[^-]/.test(w)) {
+      for (let j = 1; j < w.length; j++) {
+        const c = w[j];
+        if (c === 'I') head = true;
+        else if (c === 'G') get = true;
+        if (!CURL_SHORT_VALUE.has(c)) continue;
+        const value = w.slice(j + 1) || rest[++k] || '';
+        if (c === 'X') method = value;
+        else if (c === 'd' || c === 'F' || c === 'T') data = true;
+        else if (c === 'K') config = true;
+        break;
+      }
     }
   }
-  if (method) return method.toUpperCase();
-  if (get) return 'GET';
-  if (head) return 'HEAD';
-  return data ? 'POST' : 'GET';
+  const m = method ? method.toUpperCase() : get ? 'GET' : head ? 'HEAD' : data ? 'POST' : 'GET';
+  return { method: m, config };
 }
 
 function judgeHttp(words, i) {
   const tool = base(words[i]);
   const rest = words.slice(i + 1);
-  const method = httpMethod(tool, rest);
+  const { method, config } = httpCall(tool, rest);
+  const named = rest.filter(mentions);
+  if (config && named.length) return unclear(tool, 'it reads a config file (-K), which can set the method');
   if (method === 'GET' || method === 'HEAD') return null;
+  if (/\$/.test(method) && named.length) return unclear(`${tool} ${method}`, "its method isn't literal");
+  if (named.some(nonLiteral)) return unclear(`${tool} ${method}`, "a URL naming supabase isn't literal");
   const host = rest.flatMap(hostsIn).find(isSupabaseHost);
   if (host) return writes(`${tool} ${method} ${host}`);
-  if (/\$/.test(method) || rest.some((w) => w.includes('$') && mentions(w))) {
-    return unclear(`${tool} ${method}`, "its URL or method isn't literal, and it names supabase");
-  }
+  if (named.length) return unclear(`${tool} ${method}`, "it names supabase in a URL it can't read");
   return null;
 }
 
 // ── psql ───────────────────────────────────────────────────────────────────
 const PSQL_VALUE = new Set(['-h', '--host', '-p', '--port', '-U', '--username', '-d', '--dbname', '-c', '--command',
   '-f', '--file', '-v', '--variable', '--set', '-o', '--output', '-P', '--pset', '-L', '--log-file', '-T', '-F', '-R']);
-function hostOf(target) {
+// PG* variables that only carry credentials or the target; any other (PGOPTIONS,
+// PGSERVICE, PGCLIENTENCODING …) can change what a read does or where it goes.
+const PG_PLAIN = new Set(['PGPASSWORD', 'PGUSER', 'PGPORT', 'PGHOST', 'PGDATABASE', 'PGSSLMODE', 'PGCONNECT_TIMEOUT', 'PGAPPNAME']);
+
+// A connection target → { hosts, service }: every host a URI or conninfo
+// names (a comma list, host= / hostaddr= parameters), or the word itself.
+function targetHosts(target) {
   const t = String(target);
-  if (/^postgres(?:ql)?:\/\//i.test(t)) { try { return new URL(t).hostname; } catch { return ''; } }
-  const m = /(?:^|\s)host=(\S+)/.exec(t);
-  return m ? m[1] : t;
+  if (/^postgres(?:ql)?:\/\//i.test(t)) {
+    let u;
+    try { u = new URL(t); } catch { return { hosts: [t], service: false }; }
+    const hosts = [...u.hostname.split(','), ...u.searchParams.getAll('host').flatMap((h) => h.split(',')), ...u.searchParams.getAll('hostaddr')];
+    return { hosts: hosts.map((h) => h.replace(/:\d+$/, '')), service: u.searchParams.has('service') };
+  }
+  if (/(?:^|\s)(?:host|hostaddr|service)=/.test(t)) {
+    const hosts = [...t.matchAll(/(?:^|\s)(?:host|hostaddr)=(\S+)/g)].flatMap((m) => m[1].split(','));
+    return { hosts, service: /(?:^|\s)service=/.test(t) };
+  }
+  return { hosts: [t], service: false };
 }
 
 function judgePsql(words, i, ctx) {
@@ -300,19 +332,29 @@ function judgePsql(words, i, ctx) {
   const targets = [...values(rest, ['-h', '--host', '-d', '--dbname'])];
   for (const w of words.slice(0, i)) if (/^PGHOST=/.test(w)) targets.push(w.slice(7));
   for (let k = 0; k < rest.length; k++) {
-    if (PSQL_VALUE.has(rest[k])) { k++; continue; }
-    if (rest[k].startsWith('-') || /^\d*[<>]/.test(rest[k])) continue;
-    targets.push(rest[k]); // the dbname (a URL or conninfo) or the user name
+    const w = rest[k];
+    if (PSQL_VALUE.has(w)) { k++; continue; }
+    if (/^-[hd]./.test(w)) { targets.push(w.slice(2)); continue; } // -hHOST, -dDBNAME
+    if (w.startsWith('-')) { if (mentions(w)) targets.push(w); continue; }
+    if (/^\d*[<>]/.test(w)) continue;
+    targets.push(w); // the dbname (a URL or conninfo) or the user name
   }
   if (targets.some((t) => t.includes('$'))) return unclear(tool, "its target isn't literal");
-  if (!targets.some((t) => isSupabaseHost(hostOf(t)))) return null;
+  const parsed = targets.map(targetHosts);
+  if (parsed.some((t) => t.service)) return unclear(tool, 'it names a connection service, which can point anywhere');
+  const host = parsed.flatMap((t) => t.hosts).find((h) => isSupabaseHost(h) || (mentions(h) && /[/@:]/.test(h)));
+  if (!host) return null;
   if (tool === 'pg_dump' || tool === 'pg_dumpall') return null;
-  if (tool === 'pg_restore') return writes(`pg_restore to ${targets.map(hostOf).find(isSupabaseHost)}`);
+  if (tool === 'pg_restore') return writes(`pg_restore to ${host}`);
+  const pg = words.slice(0, i).find((w) => /^PG[A-Z_]+=/.test(w) && !PG_PLAIN.has(w.split('=')[0]));
+  if (pg) return unclear(tool, `it sets ${pg.split('=')[0]}`);
   const commands = values(rest, ['-c', '--command']);
   const files = values(rest, ['-f', '--file']);
   if (!commands.length && !files.length) return unclear(tool, 'it reads SQL interactively or from stdin');
   const verdicts = [];
-  for (const sql of commands) verdicts.push(judgeSql(sql, tool, ctx));
+  for (const sql of commands) {
+    verdicts.push(/`|\$[({A-Za-z_]/.test(sql) ? unclear(tool, "the -c SQL isn't literal") : judgeSql(sql, tool, ctx));
+  }
   for (const f of files) {
     const file = readSqlFile(f, ctx);
     verdicts.push(file.why ? unclear(tool, file.why) : judgeSql(file.sql, tool, ctx));
@@ -332,7 +374,7 @@ export function judgeShell(ctx) {
     const p = words.findIndex((w) => ['psql', 'pg_dump', 'pg_dumpall', 'pg_restore'].includes(base(w)));
     const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
     if (pv) out.push(pv);
-    const n = words.findIndex((w) => INTERPRETERS.has(base(w)));
+    const n = words.findIndex((w) => INTERPRETER.test(base(w)));
     if (n >= 0 && words.slice(n + 1).some((w) => hostsIn(w).some(isSupabaseHost))) {
       out.push(unclear(base(words[n]), 'it calls a Supabase API host from a script'));
     }
@@ -359,6 +401,8 @@ function isSupabaseCall(call) {
   if (/supabase/i.test(call.server)) return true;
   try { if (isSupabaseHost(new URL(call.url).hostname)) return true; } catch { /* no URL */ }
   if (SUPABASE_ONLY_TOOLS.has(call.tool)) return true;
+  // Supabase's own field names: create_project takes organization_id and confirm_cost_id.
+  if (call.input && (Object.hasOwn(call.input, 'organization_id') || Object.hasOwn(call.input, 'confirm_cost_id'))) return true;
   return typeof call.input?.project_id === 'string' && PROJECT_REF.test(call.input.project_id);
 }
 

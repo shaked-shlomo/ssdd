@@ -392,3 +392,51 @@ describe('differentials the commit review found', () => {
     ]) expectPass(L, c);
   });
 });
+
+describe('differentials the second commit review found', () => {
+  const URL_ = '"postgresql://u@db.abcdefghijklmnopqrst.supabase.co:5432/postgres"';
+  it('psql: non-literal -c SQL and PG* variables ask', () => {
+    expectAsk(L, `psql ${URL_} -c "$(cat q.sql)"`, /isn't literal/);
+    expectAsk(L, `PGOPTIONS=-csearch_path=evil psql ${URL_} -c "select 1"`, /PGOPTIONS/);
+  });
+  it('psql: attached short options and any word naming supabase are targets', () => {
+    expectAsk(L, 'psql -hdb.abcdefghijklmnopqrst.supabase.co -c "delete from t"', WRITES);
+    expectAsk(L, 'psql -dpostgresql://u@db.x.supabase.co/postgres -c "delete from t"', WRITES);
+  });
+  it('psql: every host in a URI, and host / hostaddr / service parameters', () => {
+    expectAsk(L, 'psql "postgresql://u@localhost,db.x.supabase.co/postgres" -c "delete from t"', WRITES);
+    expectAsk(L, 'psql "postgresql://u@localhost/postgres?host=db.x.supabase.co" -c "delete from t"', WRITES);
+    expectAsk(L, 'psql "postgresql://u@localhost/postgres?service=prod" -c "select 1"', /service/);
+    expectPass(L, 'psql "postgresql://u@localhost/postgres?sslmode=disable" -c "delete from t"');
+  });
+  it('curl: short-option clusters with attached values', () => {
+    for (const c of [
+      'curl -dfoo https://abc.supabase.co/rest/v1/t',
+      'curl -sdfoo https://abc.supabase.co/rest/v1/t',
+      'curl -sXPOST https://api.supabase.com/v1/x',
+      'curl -Ffile=@x https://abc.supabase.co/storage/v1/object/b/x',
+      'curl -Tx https://abc.supabase.co/storage/v1/object/b/x',
+      'curl --url-query a=b --data-binary=@f https://abc.supabase.co/rest/v1/t',
+    ]) expectAsk(L, c, WRITES);
+    expectAsk(L, 'curl -K cfg https://abc.supabase.co/rest/v1/t', /config file/);
+    expectPass(L, 'curl -sSfL https://abc.supabase.co/rest/v1/t');
+  });
+  it("curl: a host it can't read cleanly asks for a non-GET", () => {
+    expectAsk(L, 'curl -X POST https://api.supabase.com./v1/x', WRITES);
+    expectAsk(L, 'curl -X POST "https://{api,x}.supabase.com/v1/x"', UNCLEAR);
+    expectAsk(L, 'curl -X POST "https://api.supabase.co[m]/v1/x"', UNCLEAR);
+  });
+  it('interpreters by pattern', () => {
+    for (const c of [
+      "python3.12 -c 'import urllib.request; urllib.request.urlopen(\"https://abc.supabase.co/rest/v1/t\")'",
+      'node22 -e "fetch(\'https://api.supabase.com/v1/x\',{method:\'POST\'})"',
+      'npx tsx -e "fetch(\'https://api.supabase.com/v1/x\',{method:\'POST\'})"',
+      "pypy3 -c 'x = \"https://abc.supabase.co\"'",
+    ]) expectAsk(L, c, UNCLEAR);
+  });
+  it("MCP: Supabase's create_project input shape is recognized", () => {
+    const r = L.claudeMcp('mcp__ba176f8c-ba86-458b-b61a-71583c653bd4__create_project', { name: 'x', organization_id: 'o', region: 'us-east-1', confirm_cost_id: 'c' });
+    assert.equal(r.decision, 'ask', r.reason);
+    assert.equal(L.claudeMcp('mcp__639420f9-b3d0-4316-8c54-0d01f4f795f9__create_project', { name: 'x', teamId: 't' }).decision, 'allow');
+  });
+});
