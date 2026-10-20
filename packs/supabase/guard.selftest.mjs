@@ -458,3 +458,29 @@ describe('differentials the third commit review found', () => {
     expectPass(L, `supabase db query --linked -ojson -f ${F.ro}`);
   });
 });
+
+describe('differentials the fourth commit review found', () => {
+  it('curl -B takes no value', () => expectAsk(L, 'curl -B -X POST https://api.supabase.com/v1/x', WRITES));
+  it('psql: any target naming supabase is a Supabase target', () => {
+    expectAsk(L, 'psql -h db.abcdefghijklmnopqrst.supabase.co. -c "delete from t"', WRITES);
+    expectAsk(L, "psql \"host = 'db.x.supabase.co' dbname=postgres\" -c \"delete from t\"", WRITES);
+  });
+  it('psql: a PG* variable that can redirect it asks, whatever the target', () => {
+    expectAsk(L, 'PGSERVICE=prod psql -c "delete from t"', /PGSERVICE/);
+    expectAsk(L, 'PGSERVICEFILE=/x/pg_service.conf psql "service=prod" -c "select 1"', UNCLEAR);
+  });
+  it('psql: attached and clustered -c / -f values', () => {
+    expectAsk(L, 'psql -h db.x.supabase.co -c"delete from t"', WRITES);
+    expectAsk(L, 'psql -h db.x.supabase.co -qc "delete from t"', WRITES);
+    expectAsk(L, `psql -h db.x.supabase.co -f${F.write}`, WRITES);
+  });
+  it('wget -e / --config and curl or wget config variables ask when they name supabase', () => {
+    expectAsk(L, "wget -e 'method=POST' https://api.supabase.com/v1/x", /config/);
+    expectAsk(L, 'CURL_HOME=/tmp/x curl https://api.supabase.com/v1/x', /config/);
+    expectAsk(L, 'WGETRC=/tmp/x wget https://api.supabase.com/v1/x', /config/);
+  });
+  it('curl --next with a Supabase URL asks', () => {
+    expectAsk(L, 'curl https://example.com --next -X POST https://api.supabase.com/v1/x', UNCLEAR);
+    expectAsk(L, 'curl https://api.supabase.com/v1/x -: -d x https://example.com', UNCLEAR);
+  });
+});

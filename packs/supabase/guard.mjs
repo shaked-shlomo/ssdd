@@ -249,8 +249,10 @@ const INTERPRETER = /^(?:node|nodejs|deno|bun|tsx|ts-node|python|pypy|ruby|perl|
 // value (the rest of the word, or the next one).
 const CURL_DATA = ['--data', '--data-binary', '--data-raw', '--data-urlencode', '--data-ascii', '--json', '--form',
   '--form-string', '--upload-file'];
-const CURL_SHORT_VALUE = new Set('AbBcCdDeEFHKmoPQrtTuUwxXyYz'.split(''));
+const CURL_SHORT_VALUE = new Set('AbcCdDeEFHKmoPQrtTuUwxXyYz'.split(''));
 const WGET_DATA = ['--post-data', '--post-file', '--body-data', '--body-file'];
+// Settings that can change what curl / wget send, outside the call's own options.
+const HTTP_CONFIG_VARS = /^(?:CURL_HOME|XDG_CONFIG_HOME|WGETRC|SYSTEM_WGETRC)=/;
 const isLong = (w, opts) => opts.some((f) => w === f || w.startsWith(`${f}=`));
 
 // → { method, config }: the HTTP method a curl / wget call sends, and
@@ -267,6 +269,7 @@ function httpCall(tool, rest) {
       if (w === '--method') method = rest[++k] ?? '';
       else if (w.startsWith('--method=')) method = w.slice(9);
       else if (isLong(w, WGET_DATA)) data = true;
+      else if (w === '-e' || isLong(w, ['--execute', '--config']) || /^-e./.test(w)) config = true;
       continue;
     }
     if (w === '--request') method = rest[++k] ?? '';
@@ -298,7 +301,11 @@ function judgeHttp(words, i) {
   const rest = words.slice(i + 1);
   const { method, config } = httpCall(tool, rest);
   const named = rest.filter(mentions);
-  if (config && named.length) return unclear(tool, 'it reads a config file (-K), which can set the method');
+  if (!named.length) return null;
+  if (config || words.slice(0, i).some((w) => HTTP_CONFIG_VARS.test(w))) {
+    return unclear(tool, 'it reads a config file or settings, which can set the method');
+  }
+  if (rest.includes('--next') || rest.includes('-:')) return unclear(tool, 'it sends several requests (--next), each with its own method');
   if (method === 'GET' || method === 'HEAD') return null;
   if (/\$/.test(method) && named.length) return unclear(`${tool} ${method}`, "its method isn't literal");
   if (named.some(nonLiteral)) return unclear(`${tool} ${method}`, "a URL naming supabase isn't literal");
@@ -314,6 +321,9 @@ const PSQL_VALUE = new Set(['-h', '--host', '-p', '--port', '-U', '--username', 
 // PG* variables that only carry credentials or the target; any other (PGOPTIONS,
 // PGSERVICE, PGCLIENTENCODING …) can change what a read does or where it goes.
 const PG_PLAIN = new Set(['PGPASSWORD', 'PGUSER', 'PGPORT', 'PGHOST', 'PGDATABASE', 'PGSSLMODE', 'PGCONNECT_TIMEOUT', 'PGAPPNAME']);
+
+// psql's short options that take a value (getopt: the rest of the word, or the next one).
+const PSQL_SHORT_VALUE = new Set('hpUdcfvoPLTFR'.split(''));
 
 // A connection target → { hosts, service }: every host a URI or conninfo
 // names (a comma list, host= / hostaddr= parameters), or the word itself.
@@ -332,30 +342,56 @@ function targetHosts(target) {
   return { hosts: [t], service: false };
 }
 
-function judgePsql(words, i, ctx) {
-  const tool = base(words[i]);
-  const rest = words.slice(i + 1);
-  const targets = [...values(rest, ['-h', '--host', '-d', '--dbname'])];
-  for (const w of words.slice(0, i)) if (/^PGHOST=/.test(w)) targets.push(w.slice(7));
+// psql's words → { targets, commands, files }, reading options as getopt
+// does: `-qc SQL`, `-cSQL`, `-fFILE`, `--command=SQL`.
+function psqlArgs(rest) {
+  const targets = [];
+  const commands = [];
+  const files = [];
+  const take = (opt, value) => {
+    if (opt === 'h' || opt === 'd' || opt === '--host' || opt === '--dbname') targets.push(value);
+    else if (opt === 'c' || opt === '--command') commands.push(value);
+    else if (opt === 'f' || opt === '--file') files.push(value);
+  };
   for (let k = 0; k < rest.length; k++) {
     const w = rest[k];
-    if (PSQL_VALUE.has(w)) { k++; continue; }
-    if (/^-[hd]./.test(w)) { targets.push(w.slice(2)); continue; } // -hHOST, -dDBNAME
-    if (w.startsWith('-')) { if (mentions(w)) targets.push(w); continue; }
+    if (w.startsWith('--')) {
+      const eq = w.indexOf('=');
+      if (eq > 0) take(w.slice(0, eq), w.slice(eq + 1));
+      else if (PSQL_VALUE.has(w)) take(w, rest[++k] ?? '');
+      else if (mentions(w)) targets.push(w);
+      continue;
+    }
+    if (/^-./.test(w)) {
+      for (let j = 1; j < w.length; j++) {
+        if (!PSQL_SHORT_VALUE.has(w[j])) continue;
+        take(w[j], w.slice(j + 1) || rest[++k] || '');
+        break;
+      }
+      continue;
+    }
     if (/^\d*[<>]/.test(w)) continue;
     targets.push(w); // the dbname (a URL or conninfo) or the user name
   }
+  return { targets, commands, files };
+}
+
+function judgePsql(words, i, ctx) {
+  const tool = base(words[i]);
+  const rest = words.slice(i + 1);
+  const env = words.slice(0, i).filter((w) => /^PG[A-Z_]+=/.test(w));
+  const pg = env.find((w) => !PG_PLAIN.has(w.split('=')[0]));
+  if (pg) return unclear(tool, `it sets ${pg.split('=')[0]}, which can change where it connects or what it runs`);
+  const { targets, commands, files } = psqlArgs(rest);
+  for (const w of env) if (w.startsWith('PGHOST=')) targets.push(w.slice(7));
   if (targets.some((t) => t.includes('$'))) return unclear(tool, "its target isn't literal");
   const parsed = targets.map(targetHosts);
   if (parsed.some((t) => t.service)) return unclear(tool, 'it names a connection service, which can point anywhere');
-  const host = parsed.flatMap((t) => t.hosts).find((h) => isSupabaseHost(h) || (mentions(h) && /[/@:]/.test(h)));
+  // Any target that names supabase is Supabase's, however libpq would spell it.
+  const host = parsed.flatMap((t) => t.hosts).find(isSupabaseHost) ?? targets.find(mentions);
   if (!host) return null;
   if (tool === 'pg_dump' || tool === 'pg_dumpall') return null;
   if (tool === 'pg_restore') return writes(`pg_restore to ${host}`);
-  const pg = words.slice(0, i).find((w) => /^PG[A-Z_]+=/.test(w) && !PG_PLAIN.has(w.split('=')[0]));
-  if (pg) return unclear(tool, `it sets ${pg.split('=')[0]}`);
-  const commands = values(rest, ['-c', '--command']);
-  const files = values(rest, ['-f', '--file']);
   if (!commands.length && !files.length) return unclear(tool, 'it reads SQL interactively or from stdin');
   const verdicts = [];
   for (const sql of commands) {
