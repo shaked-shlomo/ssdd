@@ -152,6 +152,9 @@ const BLOCKED = [
   ['an abbreviated write option', 'git config --unset-a core.hooksPath'],
   ['a read flag quoted inside an option value', 'git config --comment "x --get" core.hooksPath /x'],
   ['a read flag as an option value', 'git config --comment --get core.hooksPath /x'],
+  ['an option from a variable', 'git config $OP core.hooksPath'],
+  ['an option from a command substitution', 'git config `echo --unset` core.hooksPath'],
+  ['an option from a brace expansion', 'git config --unset{,-all} core.hooksPath'],
 ];
 
 const ALLOWED = [
