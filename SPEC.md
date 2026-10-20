@@ -2477,7 +2477,7 @@ Hatedate's Claude Code transcripts (read-only, 14 project folders under
   - A new violating line is flagged with its line number.
   - A new file is linted whole, and files named on the command line are
     linted whole.
-  - A renamed file whose only violation is old passes.
+  - A renamed file whose only violation is old passes `--staged`.
   - `--staged` judges the staged content: a violation that's staged and
     then fixed on disk still blocks.
 - **AC24 — Docs.**
