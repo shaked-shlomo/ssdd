@@ -128,3 +128,17 @@ describe('the guard and db-read', () => {
     assert.match(m.reason, /MCP execute_sql reads personal data: auth\.users, phone/);
   });
 });
+
+describe('db-read paths the guard must still read (final review)', () => {
+  it('--personal asks however the path is spelled; a variable path still passes a plain read', () => {
+    for (const c of [
+      'cd tmp && node ../.ssdd/packs/supabase/db-read.mjs --personal "select phone from auth.users"',
+      'node $PWD/.ssdd/packs/supabase/db-read.mjs --personal "select phone from auth.users"',
+    ]) {
+      const r = L.claude(c);
+      assert.equal(r.decision, 'ask', c);
+      assert.match(r.reason, /personal/);
+    }
+    assert.equal(L.claude('node $PWD/.ssdd/packs/supabase/db-read.mjs "select 1"').decision, 'allow');
+  });
+});

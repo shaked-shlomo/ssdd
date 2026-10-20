@@ -483,10 +483,12 @@ export function judgeShell(ctx) {
     const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
     if (pv) out.push(pv);
     const n = words.findIndex((w) => INTERPRETER.test(base(w)));
-    if (n >= 0 && isDbRead(words[n + 1], ctx)) {
+    // db-read by any spelling of its path asks on --personal or a variable set
+    // on it; only the installed file, by realpath, skips the script checks.
+    if (n >= 0 && /(^|\/)packs\/supabase\/db-read\.mjs$/.test(words[n + 1] ?? '')) {
       if (words.slice(0, n).some((w) => /^[A-Za-z_]\w*=/.test(w))) out.push(unclear('db-read', 'a variable set on it can change what it runs'));
       else if (words.includes('--personal')) out.push({ decision: 'ask', kind: 'personal', what: 'db-read --personal', why: 'it was run with --personal' });
-      continue;
+      if (isDbRead(words[n + 1], ctx)) continue;
     }
     if (n >= 0 && words.slice(n + 1).some((w) => hostsIn(w).some(isSupabaseHost))) {
       out.push(unclear(base(words[n]), 'it calls a Supabase API host from a script'));
