@@ -71,9 +71,21 @@ describe('un-evaluable commits are refused before anything is judged', () => {
     ['-i with a path', 'git commit -i -m x foo.ts', /`-i`/],
     ['--only', 'git commit --only -m x foo.ts', /`--only`/],
     ['pathspec with a heredoc message', "git commit -F - foo.ts <<'EOF'\nmsg\nEOF", /pathspec/],
-    ['add chained before commit', 'git add x.ts && git commit -m "x"', /`git add` chained/],
+    ['add chained before commit', 'git add src/x.ts && git commit -m "x"', /`git add` chained[\s\S]*`src\/x\.ts`, routed to alpha/],
     ['rm chained before commit', 'git rm x.ts; git commit -m x', /`git rm` chained/],
-    ['-C add chained before -C commit', 'git -C /tmp/wt add a.ts && git -C /tmp/wt commit -m x', /chained/],
+    ['-C add chained before -C commit', 'git -C . add src/a.ts && git -C . commit -m x', /chained/],
+    // v3.1: a chained `git add` passes only when it names unrouted files.
+    ['a chained add of a directory', 'git add docs && git commit -m x', /`git add` chained[\s\S]*a directory `docs`/],
+    ['a chained add of .', 'git add . && git commit -m x', /`git add` chained[\s\S]*a directory `\.`/],
+    ['a chained add of a glob', "git add 'docs/*.md' && git commit -m x", /`git add` chained[\s\S]*a glob `docs\/\*\.md`/],
+    ['a chained add of $X', 'git add $X && git commit -m x', /`git add` chained[\s\S]*`\$X` can't be read before it runs/],
+    ['a chained add outside the repo', 'git add ../outside.md && git commit -m x', /`git add` chained[\s\S]*`\.\.\/outside\.md` is outside the repo/],
+    ['a chained add -A', 'git add -A && git commit -m x', /`git add` chained[\s\S]*`-A`/],
+    ['a chained add -u', 'git add -u && git commit -m x', /`git add` chained[\s\S]*`-u`/],
+    ['a chained add -p', 'git add -p docs/notes.md && git commit -m x', /`git add` chained[\s\S]*`-p`/],
+    ['mv chained before commit', 'git mv docs/notes.md docs/n2.md && git commit -m x', /`git mv` chained/],
+    ['restore chained before commit', 'git restore --staged docs/notes.md && git commit -m x', /`git restore` chained/],
+    ['update-index chained before commit', 'git update-index --add docs/notes.md && git commit -m x', /`git update-index` chained/],
     // v2.1.1 — every commit in the call, runners.
     ['a second commit with -a', 'git commit -m x; git commit -am y', /`-am`/],
     ['sudo git commit -am', 'sudo git commit -am x', /`-am`/],
@@ -81,12 +93,82 @@ describe('un-evaluable commits are refused before anything is judged', () => {
   for (const [label, command, why] of refused) {
     for (const [name, h] of BOTH) {
       it(`${name}: ${label}`, () => {
+        mkdirSync(join(repo, 'docs'), { recursive: true });
+        writeFileSync(join(repo, 'docs', 'notes.md'), 'n\n');
         const r = h(command, repo);
         assert.equal(r.status, 2, r.stderr);
         assert.match(r.stderr, why);
         assert.equal(JSON.parse(r.stdout).permission, 'deny');
       });
     }
+  }
+});
+
+describe('a visible chained git add passes', () => {
+  const passes = [
+    'git add docs/notes.md && git commit -m x',
+    'git add -- docs/notes.md && git commit -m x',
+    'git add -f docs/notes.md && git commit -m x',
+    'cd docs && git add notes.md && git commit -m x',
+    'git add "docs/my notes é.md" docs/notes.md && git commit -m x',
+    'git add docs/notes.md 2>&1 && git commit -m x',
+  ];
+  const docs = () => {
+    mkdirSync(join(repo, 'docs'), { recursive: true });
+    writeFileSync(join(repo, 'docs', 'notes.md'), 'n\n');
+    writeFileSync(join(repo, 'docs', 'my notes é.md'), 'n\n');
+  };
+  for (const command of passes) {
+    for (const [name, h] of BOTH) {
+      it(`${name}: ${JSON.stringify(command)}`, () => {
+        docs();
+        const r = h(command, repo);
+        assert.equal(r.status, 0, r.stderr);
+      });
+    }
+  }
+  for (const [name, h] of BOTH) {
+    it(`${name}: the staged routed files are still judged`, () => {
+      docs();
+      stage(repo, 'src/a.ts');
+      const r = h('git add docs/notes.md && git commit -m x', repo);
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /alpha — never stamped/);
+    });
+  }
+  it('a routed file named in another case is routed by its spelling on disk', () => {
+    if (git(repo, 'config', '--bool', 'core.ignorecase') !== 'true') return; // case-sensitive disk
+    stage(repo, 'src/lib/a.ts');
+    git(repo, 'reset', '-q');
+    const r = claude('git add SRC/lib/a.ts && git commit -m x', repo);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /routed to alpha/);
+  });
+});
+
+describe('a repo without .ssdd/config.json judges no shapes', () => {
+  let plain;
+  beforeEach(() => {
+    plain = tmp('ssdd-plain-');
+    git(plain, 'init', '-q');
+    writeFileSync(join(plain, 'x'), 'x\n');
+  });
+  afterEach(() => rmSync(plain, { recursive: true, force: true }));
+  const passes = ['git commit -am x', 'git commit x -m y', 'git add x && git commit -m y', 'git rm x && git commit -m y'];
+  for (const command of passes) {
+    for (const [name, h] of BOTH) {
+      it(`${name}: ${JSON.stringify(command)} passes`, () => {
+        const r = h(command, plain);
+        assert.equal(r.status, 0, r.stderr);
+      });
+    }
+  }
+  for (const [name, h] of BOTH) {
+    it(`${name}: an unresolvable target still fails closed`, () => {
+      const r = h('cd $X && git commit -m y', plain);
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /cannot resolve the repo/);
+    });
   }
 });
 

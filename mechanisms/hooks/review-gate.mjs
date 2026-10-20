@@ -48,11 +48,12 @@
 //                                   `git commit`, exit 2 to block
 //
 // Harness mode runs BEFORE the command, so it reads the index as it is now.
-// It therefore refuses the shapes whose committed content it can't see —
-// staging chained before the commit in one call, `commit -a/-i/-o`, and
-// `commit <pathspec>` — and judges the repo the commit really targets:
-// starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
-// `~` expands; `$VAR` / `$(…)` or an unopenable repo fail CLOSED. Scripts
+// It judges the repo the commit really targets — starting from the payload's
+// cwd, `cd <dir>` moves, `git -C <dir>` composes, `~` expands; `$VAR` / `$(…)`
+// or an unopenable repo fail CLOSED — and, when that repo has a config, refuses
+// the shapes whose committed content it can't see: staging chained before the
+// commit in one call (except a `git add` naming only unrouted files),
+// `commit -a/-i/-o`, and `commit <pathspec>`. Scripts
 // handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
 // not unwrapped: the pre-commit layer is the backstop for them.
 //
@@ -73,9 +74,9 @@
 // to .git/ssdd-review-*, and the block message says to dispatch reviewers.
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
-import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { join, isAbsolute } from 'node:path';
+import { basename, dirname, join, isAbsolute, relative, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
@@ -496,27 +497,134 @@ if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
   finish(0, 'allow');
 }
 
-// ── commits whose content this hook can't see are refused outright ──────────
+// ── which repo does the commit target? ───────────────────────────────────────
+// Starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
+// `~` expands; `$VAR` / `$(…)` / `cd -` can't be read before the command runs.
 const commands = splitCommands(cmd); // in execution order
+const start = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR ||
+  payload?.workspace_roots?.[0] || process.cwd();
+const toplevel = (dir) => {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return null; }
+};
+const home = homedir();
+const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
+const unresolvable = (p) => /[$`]/.test(p) || p === '-';
+// Every git invocation with the directory it runs in. `bad` is the first `cd`,
+// or a commit's `-C`, that can't be read; a staging command's is its own reason.
+function walk(from) {
+  let cwd = from;
+  let bad = null;
+  const steps = [];
+  for (const words of commands) {
+    if (words[0] === 'cd') {
+      const to = words[1] ?? '~';
+      if (unresolvable(to)) bad ??= `cd ${to}`;
+      cwd = resolve(cwd, expand(to));
+      continue;
+    }
+    const inv = gitInvocation(words);
+    if (!inv) continue;
+    const badC = inv.dashC.find(unresolvable);
+    if (badC !== undefined && inv.sub === 'commit') bad ??= `git -C ${badC}`;
+    steps.push({ inv, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC });
+  }
+  return { steps, bad, cwd };
+}
+const { steps, bad, cwd } = walk(start);
+{
+  const targets = steps.filter((s) => s.inv.sub === 'commit').map((s) => s.dir);
+  const roots = [...new Set((targets.length ? targets : [cwd]).map(toplevel))];
+  if (!bad && roots.length > 1 && !roots.includes(null)) {
+    deny(`[ssdd-review-gate] one call commits to ${roots.length} repos (${roots.join(', ')}) — commit to one repo per call.\n`);
+  }
+  const root = bad || roots.includes(null) ? null : roots[0];
+  if (!root) {
+    deny(
+      `[ssdd-review-gate] cannot resolve the repo this commit targets (${bad ?? targets[0] ?? cwd}) — use a literal\n` +
+      'path in `cd …` / `git -C …` (no `$VAR`, no `$(…)`, no `cd -`), then retry.\n',
+    );
+  }
+  repo = root;
+}
+// `--stamp` defaults to the env's project dir or its own cwd; name the repo
+// whenever the commit targets anything else (a worktree, a `cd` elsewhere).
+const defaults = [start, process.env.CLAUDE_PROJECT_DIR, process.env.SSDD_PROJECT_DIR].filter(Boolean).map(toplevel);
+const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
+
+// Shapes are judged only in an SSDD repo: a scratch repo passes them all.
+const loaded = loadConfig();
+if (!loaded) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
+if (loaded.error) deny(brokenMessage(loaded.error), "SSDD review gate: .ssdd/config.json can't be used.");
+const { cfg } = loaded;
+
+// ── commits whose content this hook can't see are refused ────────────────────
+// Harness mode runs BEFORE the command, so it reads the index as it is now.
+// Staging chained before a commit is refused, except a visible `git add`: it
+// names files (no option but -f / -v, no directory, glob, pathspec magic or
+// expansion), inside this repo, and none is routed. Those can't change what
+// the commit owes, so the index judged now owes what the commit will.
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
-let staging = null;
-const commitArgs = []; // every commit in the call, not just the first
-for (const words of commands) {
-  const inv = gitInvocation(words);
-  if (!inv) continue;
-  if (STAGING.has(inv.sub)) staging ??= inv.sub;
-  if (inv.sub === 'commit') {
-    if (staging) {
+function chainedAddReason({ args }, dir, badC) {
+  if (badC !== undefined) return `\`-C ${badC}\` can't be read before it runs`;
+  let rootReal;
+  try { rootReal = realpathSync.native(repo); } catch { rootReal = repo; }
+  const routeOf = (rel) => routes(cfg).find(([, matches]) => matches(rel))?.[0];
+  let options = true;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (/^\d*[<>]+&?$/.test(w)) { i++; continue; } // bare redirection: skip its target
+    if (/^\d*[<>]/.test(w)) continue;               // attached redirection
+    if (options && w === '--') { options = false; continue; }
+    if (options && w.startsWith('-')) {
+      if (!/^(?:-f|--force|-v|--verbose)$/.test(w)) return `\`${w}\``;
+      continue;
+    }
+    if (/[$`]/.test(w)) return `\`${w}\` can't be read before it runs`;
+    if (/[*?[]/.test(w)) return `a glob \`${w}\``;
+    if (w.startsWith(':')) return `pathspec magic \`${w}\``;
+    const abs = resolve(dir, expand(w));
+    let real; // its spelling on disk: on a case-insensitive disk SRC/a.ts is src/a.ts
+    try { real = realpathSync.native(abs); } catch {
+      try { real = join(realpathSync.native(dirname(abs)), basename(abs)); } catch { real = abs; }
+    }
+    const rel = relative(rootReal, real);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return `\`${w}\` is outside the repo`;
+    let isDir = rel === '';
+    try { isDir ||= statSync(real).isDirectory(); } catch { /* a deletion */ }
+    if (isDir) return `a directory \`${w}\``;
+    const reviewer = routeOf(rel.split(sep).join('/'));
+    if (reviewer) return `\`${w}\`, routed to ${reviewer}`;
+  }
+  return '';
+}
+{
+  let lastCommit = -1;
+  steps.forEach((s, i) => { if (s.inv.sub === 'commit') lastCommit = i; });
+  for (const { inv, dir, badC } of steps.slice(0, lastCommit)) {
+    if (!STAGING.has(inv.sub)) continue;
+    if (inv.sub !== 'add') {
       deny(
-        `[ssdd-review-gate] \`git ${staging}\` chained before \`git commit\` in ONE call — the gate reads\n` +
+        `[ssdd-review-gate] \`git ${inv.sub}\` chained before \`git commit\` in ONE call — the gate reads\n` +
         'the index BEFORE the command runs, so it cannot see what that stages. Stage first,\n' +
         'then stamp and commit in SEPARATE calls.\n',
       );
     }
-    commitArgs.push(inv.args);
+    const why = chainedAddReason(inv, dir, badC);
+    if (why) {
+      deny(
+        `[ssdd-review-gate] \`git add\` chained before \`git commit\` in ONE call: ${why}. The gate\n` +
+        'reads the index BEFORE the command runs, so it cannot see what that stages. A chained\n' +
+        'add passes only when it names files no reviewer is routed to; otherwise stage first,\n' +
+        'then stamp and commit in SEPARATE calls.\n',
+      );
+    }
   }
 }
-for (const toks of commitArgs) {
+for (const { inv } of steps.filter((s) => s.inv.sub === 'commit')) {
+  const toks = inv.args;
   // Words after `commit` (quotes already removed). Value-taking options skip
   // their value; redirections are not pathspecs.
   const valueOpts = new Set(['-m', '--message', '-F', '--file', '-C', '--reuse-message', '-c',
@@ -552,58 +660,6 @@ for (const toks of commitArgs) {
   }
 }
 
-// ── which repo does the commit target? ───────────────────────────────────────
-const start = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR ||
-  payload?.workspace_roots?.[0] || process.cwd();
-const toplevel = (dir) => {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return null; }
-};
-{
-  const home = homedir();
-  const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
-  const unresolvable = (p) => /[$`]/.test(p) || p === '-';
-  let cwd = start;
-  const targets = [];
-  let bad = null;
-  for (const words of commands) {
-    if (words[0] === 'cd') {
-      const to = words[1] ?? '~';
-      if (unresolvable(to)) bad ??= `cd ${to}`;
-      cwd = resolve(cwd, expand(to));
-      continue;
-    }
-    const inv = gitInvocation(words);
-    if (!inv || inv.sub !== 'commit') continue;
-    const badC = inv.dashC.find(unresolvable);
-    if (badC !== undefined) bad ??= `git -C ${badC}`;
-    targets.push(inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd));
-  }
-  const roots = [...new Set((targets.length ? targets : [cwd]).map(toplevel))];
-  if (!bad && roots.length > 1 && !roots.includes(null)) {
-    deny(`[ssdd-review-gate] one call commits to ${roots.length} repos (${roots.join(', ')}) — commit to one repo per call.\n`);
-  }
-  const target = targets[0];
-  const root = bad || roots.includes(null) ? null : roots[0];
-  if (!root) {
-    deny(
-      `[ssdd-review-gate] cannot resolve the repo this commit targets (${bad ?? target ?? cwd}) — use a literal\n` +
-      'path in `cd …` / `git -C …` (no `$VAR`, no `$(…)`, no `cd -`), then retry.\n',
-    );
-  }
-  repo = root;
-}
-// `--stamp` defaults to the env's project dir or its own cwd; name the repo
-// whenever the commit targets anything else (a worktree, a `cd` elsewhere).
-const defaults = [start, process.env.CLAUDE_PROJECT_DIR, process.env.SSDD_PROJECT_DIR].filter(Boolean).map(toplevel);
-const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
-
-const loaded = loadConfig();
-if (!loaded) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
-if (loaded.error) deny(brokenMessage(loaded.error), "SSDD review gate: .ssdd/config.json can't be used.");
-const { cfg } = loaded;
 let verdict;
 try {
   verdict = judge(cfg);

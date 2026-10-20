@@ -108,7 +108,9 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
      stamps are the only way.
   4. Commit in a separate call from staging: the harness gate reads the
      index before the command runs, so it refuses `git add … && git commit`,
-     `commit -a/-i/-o` and `commit <path>`.
+     `commit -a/-i/-o` and `commit <path>`. The one exception is a chained
+     `git add` that names files no reviewer is routed to (a doc, a ledger),
+     which can't change what the commit owes.
 
   **Merges.** While a merge of the default branch is stopped (a conflict,
   or `--no-commit`), a staged file equal to git's own merge of the two sides
