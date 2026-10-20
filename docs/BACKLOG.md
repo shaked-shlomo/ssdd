@@ -15,7 +15,7 @@ that incident.
 
 | # | Part (SPEC.md → v3) | Plan | Ships as |
 |---|---|---|---|
-| 1 | Work state: the session-start view, the close check, tracked Superpowers ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md`: BUILT 2026-10-17 (Node 18 CI and the after-`/compact` check pending) | 3.0.0, with Part 2 |
+| 1 | Work state: the session-start view, the close check, tracked Superpowers ledgers | `docs/superpowers/plans/2026-10-17-v3-work-state.md`: BUILT 2026-10-17 (Node 18 CI pending; the after-`/compact` check runs during the first real repo migration, at the end of v3) | 3.0.0, with Part 2 |
 | 2 | Onboarding existing repos: `/migrate-plans`, `paths` everywhere, `/skills-audit` tracked | `docs/superpowers/plans/2026-10-18-v3-onboarding.md`: BUILT 2026-10-18 (Node 18 CI and the 3.0.0 tag pending) | 3.0.0 |
 | 3 | A cheaper gate: clean merges, delta re-review, `--check`, unrouted chained staging, the untracked warning, `core.hooksPath` reads | not written | 3.1.0 |
 | 4 | The production guard and the Supabase pack (installed only where Supabase is used) | not written | 3.2.0 |

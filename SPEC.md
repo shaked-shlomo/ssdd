@@ -1652,7 +1652,9 @@ Selftest counts after the fix pass: `work-state` 45, `plan-parse` 22,
   compact". To check it: in an interactive Claude Code session in a repo
   with the template hooks, run `/compact`, then ask what the `SSDD ·` line
   says. The hook has no matcher, so Claude Code runs it for every
-  `SessionStart` source.
+  `SessionStart` source. Owner ruling (2026-10-20): run this check during
+  the first real repo migration at the end of v3, since no repo runs the
+  newest SSDD yet.
 - **AC5** — `node --test bin/ssdd.selftest.mjs` → 45 pass, including
   "the Claude Code template has a SessionStart work-state hook without a
   matcher", "the Cursor template has sessionStart without failClosed" and
