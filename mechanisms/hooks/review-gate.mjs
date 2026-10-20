@@ -274,7 +274,7 @@ function deltaFor(prev, now) {
   try {
     execFileSync('git', ['-C', repo, 'cat-file', '-e', p[4]], { stdio: 'ignore' });
   } catch { return 'gone'; }
-  return { cmd: `git diff ${p[4].slice(0, 12)} ${n[4].slice(0, 12)}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
+  return { cmd: `git diff ${p[4]} ${n[4]}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
 }
 
 // Not a block: SDD.md §4 is per task — implement → review gate → commit — and a

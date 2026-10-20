@@ -452,6 +452,15 @@ describe('the delta since the last stamp', () => {
     assert.match(stderr, /that diff is its input/);
     assert.doesNotMatch(stderr, /base moved/);
   });
+  it('the delta names the full blob ids', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const was = git(dir, 'rev-parse', ':src/a.ts').trim();
+    stamp(dir, 'alpha,beta');
+    write(dir, 'src/a.ts', 'a\nb\n');
+    const now = git(dir, 'rev-parse', ':src/a.ts').trim();
+    assert.match(was, /^[0-9a-f]{40}$/);
+    assert.strictEqual(deltaUnder(preCommit(dir).stderr, 'alpha'), `git diff ${was} ${now}`);
+  });
   it('hooks mode gives the same delta line', () => {
     const d = makeRepo({ ...CONFIG, reviewGate: { stamping: 'hooks' } });
     try {
