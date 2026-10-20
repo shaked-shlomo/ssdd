@@ -100,6 +100,17 @@ describe('the guard and db-read', () => {
     }
   });
 
+  it('only the installed db-read, with nothing set on it, is the read path', () => {
+    const set = L.claude('SSDD_SUPABASE_BIN=/tmp/x node .ssdd/packs/supabase/db-read.mjs "select 1"');
+    assert.equal(set.decision, 'ask');
+    assert.match(set.reason, /a variable set on it/);
+    assert.equal(L.claude('NODE_OPTIONS=--require=/tmp/x.js node .ssdd/packs/supabase/db-read.mjs "select 1"').decision, 'ask');
+    // a look-alike elsewhere is just a node script: judged like one
+    const fake = L.claude('node /tmp/elsewhere/packs/supabase/db-read.mjs "https://api.supabase.com/v1/x"');
+    assert.equal(fake.decision, 'ask');
+    assert.match(fake.reason, /Supabase API host/);
+  });
+
   it('--personal asks', () => {
     const { claude, cursor } = both(L, 'node .ssdd/packs/supabase/db-read.mjs --personal "select phone from auth.users"');
     assert.equal(claude.decision, 'ask');

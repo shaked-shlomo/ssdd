@@ -27,15 +27,17 @@
 // psql (and pg_restore) aimed at a Supabase host is judged like db query:
 //   -c / -f reads pass, writes ask, interactive or stdin use and a target
 //   that isn't literal ask "can't tell". pg_dump is a read.
-// db-read (node …/packs/supabase/db-read.mjs) never asks: it enforces the
-//   read itself. With --personal it asks, as a personal read.
+// db-read (node .ssdd/packs/supabase/db-read.mjs, this pack's own file by its
+//   real path) never asks: it enforces the read itself. With --personal it
+//   asks, as a personal read; with a variable set on it (SSDD_SUPABASE_BIN,
+//   NODE_OPTIONS …) it asks "can't tell".
 // MCP (judgeMcp): a call is Supabase's when its server's name has
 //   `supabase`, its URL is Supabase's, its tool is one only Supabase has, or
 //   its project_id is a project ref. Known reads pass; execute_sql is judged
 //   by its SQL; every other tool asks (owner ruling, 2026-10-21).
 // A call naming supabase that the shell view can't parse asks "can't tell".
-import { lstatSync, readFileSync } from 'node:fs';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { classifySql } from './sql-readonly.mjs';
 
 export const name = 'supabase';
@@ -453,6 +455,13 @@ function judgePsql(words, i, ctx) {
   return verdicts.find((v) => v?.kind === 'writes') ?? verdicts.find(Boolean) ?? null;
 }
 
+// Is this word the installed db-read (this pack's own file, by its real path)?
+// A look-alike elsewhere is just a script, judged like one.
+function isDbRead(script, ctx) {
+  if (!script || !/(^|\/)db-read\.mjs$/.test(script) || !ctx.packDir) return false;
+  try { return realpathSync(resolve(ctx.cwd, script)) === realpathSync(join(ctx.packDir, 'db-read.mjs')); } catch { return false; }
+}
+
 export function judgeShell(ctx) {
   const out = [];
   for (const [k, words] of ctx.commands.entries()) {
@@ -466,9 +475,9 @@ export function judgeShell(ctx) {
     const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
     if (pv) out.push(pv);
     const n = words.findIndex((w) => INTERPRETER.test(base(w)));
-    const dbRead = n >= 0 && /(^|\/)packs\/supabase\/db-read\.mjs$/.test(words[n + 1] ?? '');
-    if (dbRead) {
-      if (words.includes('--personal')) out.push({ decision: 'ask', kind: 'personal', what: 'db-read --personal', why: 'it was run with --personal' });
+    if (n >= 0 && isDbRead(words[n + 1], ctx)) {
+      if (words.slice(0, n).some((w) => /^[A-Za-z_]\w*=/.test(w))) out.push(unclear('db-read', 'a variable set on it can change what it runs'));
+      else if (words.includes('--personal')) out.push({ decision: 'ask', kind: 'personal', what: 'db-read --personal', why: 'it was run with --personal' });
       continue;
     }
     if (n >= 0 && words.slice(n + 1).some((w) => hostsIn(w).some(isSupabaseHost))) {
