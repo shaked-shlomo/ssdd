@@ -27,6 +27,8 @@
 // psql (and pg_restore) aimed at a Supabase host is judged like db query:
 //   -c / -f reads pass, writes ask, interactive or stdin use and a target
 //   that isn't literal ask "can't tell". pg_dump is a read.
+// db-read (node …/packs/supabase/db-read.mjs) never asks: it enforces the
+//   read itself. With --personal it asks, as a personal read.
 // MCP (judgeMcp): a call is Supabase's when its server's name has
 //   `supabase`, its URL is Supabase's, its tool is one only Supabase has, or
 //   its project_id is a project ref. Known reads pass; execute_sql is judged
@@ -379,6 +381,11 @@ export function judgeShell(ctx) {
     const pv = p >= 0 ? judgePsql(words, p, ctx) : null;
     if (pv) out.push(pv);
     const n = words.findIndex((w) => INTERPRETER.test(base(w)));
+    const dbRead = n >= 0 && /(^|\/)packs\/supabase\/db-read\.mjs$/.test(words[n + 1] ?? '');
+    if (dbRead) {
+      if (words.includes('--personal')) out.push({ decision: 'ask', kind: 'personal', what: 'db-read --personal', why: 'it was run with --personal' });
+      continue;
+    }
     if (n >= 0 && words.slice(n + 1).some((w) => hostsIn(w).some(isSupabaseHost))) {
       out.push(unclear(base(words[n]), 'it calls a Supabase API host from a script'));
     }
