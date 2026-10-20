@@ -221,6 +221,41 @@ describe('only added lines', () => {
     assert.match(r.stderr, /src\/a\.ts:3 /);
   });
 
+  describe('a change to the final newline', () => {
+    const LAST = 'const ok = 1;\nconst old = "#fff";'; // the old violation is the last line
+    const commit = (text) => { put('src/a.ts', text); git(dir, 'add', 'src/a.ts'); git(dir, 'commit', '-qm', 'old'); };
+
+    it('dropping it does not re-lint the last line', () => {
+      commit(`${LAST}\n`);
+      put('src/a.ts', LAST);
+      assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+      git(dir, 'add', 'src/a.ts');
+      assert.strictEqual(run(dir, ['--staged']).status, 0);
+    });
+    it('adding it does not re-lint the last line', () => {
+      commit(LAST);
+      put('src/a.ts', `${LAST}\n`);
+      assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+      git(dir, 'add', 'src/a.ts');
+      assert.strictEqual(run(dir, ['--staged']).status, 0);
+    });
+    it('a real edit to the last line is still linted', () => {
+      commit(LAST);
+      put('src/a.ts', 'const ok = 1;\nconst old = "#abc";\n');
+      const r = edit(dir, 'src/a.ts');
+      assert.strictEqual(r.status, 2);
+      assert.match(r.stderr, /src\/a\.ts:2 /);
+    });
+    it('a line inserted before the last as it drops is linted; the last is not', () => {
+      commit(`${LAST}\n`);
+      put('src/a.ts', 'const ok = 1;\nconst c = "#abcdef";\nconst old = "#fff";');
+      const r = edit(dir, 'src/a.ts');
+      assert.strictEqual(r.status, 2);
+      assert.match(r.stderr, /src\/a\.ts:2 /);
+      assert.doesNotMatch(r.stderr, /src\/a\.ts:3 /);
+    });
+  });
+
   it('the edit hook lints from a project dir below the repo root', () => {
     put('app/src/a.ts', OLD);
     git(dir, 'add', 'app/src/a.ts');

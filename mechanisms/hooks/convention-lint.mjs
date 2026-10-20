@@ -94,27 +94,40 @@ function diffPath(raw) {
 }
 // `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds. A hunk
 // runs while its lines start with `+`, `-` or `\`, so inside one, `+++ x` is
-// an added line `++ x`, not the next file's header.
+// an added line `++ x`, not the next file's header. An added line that only
+// gains or drops the file's final newline (`\ No newline at end of file`
+// follows the side without one) is the removed line it replaces, not a new one.
 function addedLines(diff) {
   const out = new Map();
   let file = null;
-  let n = 0;
-  let inHunk = false;
+  let hunk = null; // { n, removed, added: [{ n, text, eof }], last }
+  const flush = () => {
+    if (!file || !hunk) return;
+    for (const a of hunk.added) {
+      const same = hunk.removed.find((r) => !r.used && r.text === a.text && r.eof !== a.eof);
+      if (same) same.used = true;
+      else out.get(file).push([a.n, a.text]);
+    }
+  };
   for (const line of diff.split('\n')) {
-    if (inHunk && /^[-+\\]/.test(line)) {
-      if (file && line[0] === '+') out.get(file).push([n++, line.slice(1)]);
+    if (hunk && /^[-+\\]/.test(line)) {
+      if (line[0] === '\\') { if (hunk.last) hunk.last.eof = true; continue; }
+      hunk.last = { n: line[0] === '+' ? hunk.n++ : 0, text: line.slice(1), eof: false };
+      (line[0] === '+' ? hunk.added : hunk.removed).push(hunk.last);
       continue;
     }
-    inHunk = false;
+    flush();
+    hunk = null;
     if (line.startsWith('+++ ')) {
       // git ends a name that holds a space with a tab
       file = line === '+++ /dev/null' ? null : diffPath(line.slice(4).replace(/\t$/, ''));
       if (file) out.set(file, out.get(file) ?? []);
       continue;
     }
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (hunk) { n = Number(hunk[1]); inHunk = true; }
+    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (h) hunk = { n: Number(h[1]), removed: [], added: [], last: null };
   }
+  flush();
   return out;
 }
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
