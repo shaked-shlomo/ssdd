@@ -80,7 +80,7 @@ import { basename, dirname, join, isAbsolute, relative, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
+import { commandStart, gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
 import { ARM_HOOK, dormantHook, loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
@@ -514,35 +514,39 @@ const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slic
 const unresolvable = (p) => /[$`]/.test(p) || p === '-';
 // Every git invocation with the directory it runs in. `bad` is the first `cd`,
 // or a commit's `-C`, that can't be read; a staging command's is its own reason.
-// Only a plain `cd <dir>` is followed: `pushd`, `popd`, and `cd` with an option
-// or more than one word can't be.
+// Only a plain `cd <dir>` is followed: `pushd`, `popd`, and a `cd` with an
+// option, more than one word, or a runner in front (`builtin cd`) can't be.
+// Every command is a step, in order; a git one carries its invocation.
 function walk(from) {
   let cwd = from;
   let bad = null;
   const steps = [];
   for (const words of commands) {
-    if (words[0] === 'pushd' || words[0] === 'popd' ||
-      (words[0] === 'cd' && (words.length > 2 || /^-./.test(words[1] ?? '')))) {
+    const at = commandStart(words);
+    const head = (words[at] ?? '').split('/').pop();
+    if (head === 'pushd' || head === 'popd' ||
+      (head === 'cd' && (at > 0 || words.length > 2 || /^-./.test(words[1] ?? '')))) {
       bad ??= words.join(' ');
       continue;
     }
-    if (words[0] === 'cd') {
+    if (head === 'cd') {
       const to = words[1] ?? '~';
       if (unresolvable(to)) bad ??= `cd ${to}`;
       cwd = resolve(cwd, expand(to));
+      steps.push({ name: 'cd' });
       continue;
     }
     const inv = gitInvocation(words);
-    if (!inv) continue;
+    if (!inv) { steps.push({ name: head }); continue; }
     const badC = inv.dashC.find(unresolvable);
     if (badC !== undefined && inv.sub === 'commit') bad ??= `git -C ${badC}`;
-    steps.push({ inv, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC });
+    steps.push({ name: `git ${inv.sub}`, inv, words, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC });
   }
   return { steps, bad, cwd };
 }
 const { steps, bad, cwd } = walk(start);
 {
-  const targets = steps.filter((s) => s.inv.sub === 'commit').map((s) => s.dir);
+  const targets = steps.filter((s) => s.inv?.sub === 'commit').map((s) => s.dir);
   const roots = [...new Set((targets.length ? targets : [cwd]).map(toplevel))];
   if (!bad && roots.length > 1 && !roots.includes(null)) {
     deny(`[ssdd-review-gate] one call commits to ${roots.length} repos (${roots.join(', ')}) — commit to one repo per call.\n`);
@@ -573,21 +577,25 @@ const { cfg } = loaded;
 // names files (no option but -f / -v, no directory, glob, pathspec magic or
 // expansion), inside this repo, and none is routed. Those can't change what
 // the commit owes, so the index judged now owes what the commit will. Each
-// file exists now, or is a tracked file being deleted: a path an earlier
-// command in the call makes (`mkdir x && git add x`) can't be judged. A word
-// is a redirection only where the command has it unquoted.
+// file exists now, or is a tracked file being deleted. Nothing else in the
+// call may run before the commit but `cd`, `git add` and git reads (status,
+// diff, log, show, rev-parse, ls-files), outside a subshell: anything else
+// could change the files or the index between this check and the commit. A
+// word is a redirection only where the command has it unquoted.
+const BESIDE_ADD = new Set(['cd', 'git add', 'git status', 'git diff', 'git log', 'git show', 'git rev-parse', 'git ls-files']);
 const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
-function chainedAddReason({ args }, dir, badC) {
+function chainedAddReason({ inv: { args }, words, dir, badC }) {
   if (badC !== undefined) return `\`-C ${badC}\` can't be read before it runs`;
   let rootReal;
   try { rootReal = realpathSync.native(repo); } catch { rootReal = repo; }
   const routeOf = (rel) => routes(cfg).find(([, matches]) => matches(rel))?.[0];
-  const redirect = (w) => /^\d*[<>]/.test(w) && probe.includes(w); // `'2>'` is a file name
+  const offset = words.length - args.length;
+  const redirect = (i) => /^\d*[<>]/.test(args[i]) && !words.quoted?.[offset + i]; // `'2>'` is a file name
   let options = true;
   for (let i = 0; i < args.length; i++) {
     const w = args[i];
-    if (redirect(w) && /^\d*[<>]+&?$/.test(w)) { i++; continue; } // bare redirection: skip its target
-    if (redirect(w)) continue;                                     // attached redirection
+    if (redirect(i) && /^\d*[<>]+&?$/.test(w)) { i++; continue; } // bare redirection: skip its target
+    if (redirect(i)) continue;                                     // attached redirection
     if (options && w === '--') { options = false; continue; }
     if (options && w.startsWith('-')) {
       if (!/^(?:-f|--force|-v|--verbose)$/.test(w)) return `\`${w}\``;
@@ -621,17 +629,23 @@ function chainedAddReason({ args }, dir, badC) {
 }
 {
   let lastCommit = -1;
-  steps.forEach((s, i) => { if (s.inv.sub === 'commit') lastCommit = i; });
-  for (const { inv, dir, badC } of steps.slice(0, lastCommit)) {
-    if (!STAGING.has(inv.sub)) continue;
-    if (inv.sub !== 'add') {
+  steps.forEach((s, i) => { if (s.inv?.sub === 'commit') lastCommit = i; });
+  const before = steps.slice(0, lastCommit);
+  for (const { inv } of before) {
+    if (inv && STAGING.has(inv.sub) && inv.sub !== 'add') {
       deny(
         `[ssdd-review-gate] \`git ${inv.sub}\` chained before \`git commit\` in ONE call — the gate reads\n` +
         'the index BEFORE the command runs, so it cannot see what that stages. Stage first,\n' +
         'then stamp and commit in SEPARATE calls.\n',
       );
     }
-    const why = chainedAddReason(inv, dir, badC);
+  }
+  const adds = before.filter((s) => s.inv?.sub === 'add');
+  const other = before.find((s) => !BESIDE_ADD.has(s.name));
+  for (const add of adds) {
+    const why = /[()]/.test(probe) ? 'a subshell can\'t be followed'
+      : other ? `\`${other.name}\` runs in the same call, and may change what it stages`
+      : chainedAddReason(add);
     if (why) {
       deny(
         `[ssdd-review-gate] \`git add\` chained before \`git commit\` in ONE call: ${why}. The gate\n` +
@@ -642,7 +656,7 @@ function chainedAddReason({ args }, dir, badC) {
     }
   }
 }
-for (const { inv } of steps.filter((s) => s.inv.sub === 'commit')) {
+for (const { inv } of steps.filter((s) => s.inv?.sub === 'commit')) {
   const toks = inv.args;
   // Words after `commit` (quotes already removed). Value-taking options skip
   // their value; redirections are not pathspecs.

@@ -44,31 +44,38 @@ export const collapseGlobalFlags = (s) =>
 
 /**
  * Split a shell string into simple commands, each a list of words with quotes
- * removed. Separators: `;` `&&` `||` `|` `&` newline `(` `)`. Heredoc bodies
+ * removed. Separators: `;` `&&` `||` `|` `&` newline `(` `)`, but not the `&`
+ * of a redirection (`2>&1`, `&>file`). Heredoc bodies
  * are dropped and backslash-newline continuations joined. No expansion:
  * `$VAR` / `$(…)` stay literal, so callers can refuse to resolve them.
+ * Each command's `quoted` property marks the words that had a quote or a
+ * backslash in them: `'2>'` is a word, `2>` a redirection.
  */
 export function splitCommands(cmd) {
   const s = stripHeredocs(cmd).replace(/\\\n/g, ' ');
   const cmds = [];
   let words = [];
+  let quoted = [];
   let word = '';
   let inWord = false;
-  const endWord = () => { if (inWord) words.push(word); word = ''; inWord = false; };
-  const endCmd = () => { endWord(); if (words.length) cmds.push(words); words = []; };
+  let wasQuoted = false;
+  const endWord = () => { if (inWord) { words.push(word); quoted.push(wasQuoted); } word = ''; inWord = false; wasQuoted = false; };
+  const endCmd = () => { endWord(); if (words.length) { words.quoted = quoted; cmds.push(words); } words = []; quoted = []; };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === "'") {
       const j = s.indexOf("'", i + 1);
-      word += s.slice(i + 1, j === -1 ? s.length : j); inWord = true;
+      word += s.slice(i + 1, j === -1 ? s.length : j); inWord = true; wasQuoted = true;
       i = j === -1 ? s.length : j;
     } else if (c === '"') {
       let j = i + 1;
       for (; j < s.length && s[j] !== '"'; j++) if (s[j] === '\\') j++;
-      word += s.slice(i + 1, j).replace(/\\(["\\$`])/g, '$1'); inWord = true;
+      word += s.slice(i + 1, j).replace(/\\(["\\$`])/g, '$1'); inWord = true; wasQuoted = true;
       i = j;
     } else if (c === '\\' && i + 1 < s.length) {
-      word += s[++i]; inWord = true;
+      word += s[++i]; inWord = true; wasQuoted = true;
+    } else if (c === '&' && ((inWord && /[<>]$/.test(word)) || s[i + 1] === '>')) {
+      word += c; inWord = true; // `2>&1`, `>&2`, `&>file` are one redirection, not a separator
     } else if (/[;&|\n()]/.test(c)) {
       endCmd();
     } else if (/\s/.test(c)) {
