@@ -91,6 +91,24 @@ const MAX_SQL = 1024 * 1024;
 const writes = (what) => ({ decision: 'ask', kind: 'writes', what });
 const unclear = (what, why) => ({ decision: 'ask', kind: 'unclear', what, why });
 
+// A command's words from index i on, without its redirections: an unquoted
+// `>`, `2>>`, `<`, `&>`, `<<<` … and the word it takes, or `>out`, `2>&1`,
+// `2>/dev/null` attached. A redirection's target is no argument.
+const REDIRECT_BARE = /^\d*(?:>>?|<|<<<|&>>?|>\||<>)$/;
+const REDIRECT_ATTACHED = /^\d*(?:>>?|<|&>>?|>\||[<>]&)\S/;
+function argsFrom(words, i) {
+  const out = [];
+  for (let k = i; k < words.length; k++) {
+    if (!words.quoted?.[k] && REDIRECT_BARE.test(words[k])) { k++; continue; }
+    if (!words.quoted?.[k] && REDIRECT_ATTACHED.test(words[k])) continue;
+    out.push(words[k]);
+  }
+  return out;
+}
+// Whether the command reads stdin from a redirection (`< file`, `<<<`, a heredoc).
+const readsStdin = (words) => words.heredocs?.length > 0 ||
+  words.some((w, k) => !words.quoted?.[k] && /^\d*(?:<(?!&)|<<<)/.test(w) && !/^\d*<>/.test(w));
+
 // A CLI's words after `supabase` → { positionals, flags, values(names) }: the
 // value of a VALUE_FLAGS flag is neither a positional nor a flag, so
 // `--password --dry-run` is a password.
@@ -108,7 +126,6 @@ function parseArgs(rest) {
       if (eq > 0) vals.push([w.slice(0, eq), w.slice(eq + 1)]);
       continue;
     }
-    if (/^\d*[<>]/.test(w)) continue;
     positionals.push(w);
   }
   return { positionals, flags, values: (names) => vals.filter(([f]) => names.includes(f)).map(([, v]) => v) };
@@ -188,11 +205,10 @@ function judgeQuery(words, i, args, ctx, k) {
   const { positionals } = args;
   const pg = words.slice(0, i).find((w) => /^PG[A-Z_]+=/.test(w));
   if (pg) return unclear(what, `it sets ${pg.split('=')[0]}`);
-  const rest = words.slice(i + 1);
   const files = args.values(['-f', '--file']);
   const q = positionals.indexOf('query');
   const inline = q >= 0 ? positionals.slice(q + 1) : [];
-  if (rest.some((w) => /^\d*<(?!<)/.test(w))) return unclear(what, 'it reads SQL from stdin');
+  if (readsStdin(words)) return unclear(what, 'it reads SQL from stdin');
   if (files.length + inline.length > 1) return unclear(what, 'it has more than one SQL source');
   if (!files.length && !inline.length) return unclear(what, 'no SQL found');
   if (inline.length) {
@@ -208,7 +224,7 @@ function judgeQuery(words, i, args, ctx, k) {
 
 // ctx.commands[k] has a `supabase` word at i → a verdict, or null.
 function judgeCli(words, i, ctx, k) {
-  const args = parseArgs(words.slice(i + 1));
+  const args = parseArgs(argsFrom(words, i + 1));
   const { positionals, flags } = args;
   if (flags.includes('--help') || flags.includes('-h') || positionals[0] === 'help') return null;
   if (flags.includes('--local')) return null;
@@ -323,7 +339,7 @@ function httpCall(tool, rest) {
 
 function judgeHttp(words, i) {
   const tool = base(words[i]);
-  const rest = words.slice(i + 1);
+  const rest = argsFrom(words, i + 1);
   const { method, config, next, unknown } = httpCall(tool, rest);
   const named = rest.filter(mentions);
   if (!named.length) return null;
@@ -403,7 +419,6 @@ function psqlArgs(rest) {
       }
       continue;
     }
-    if (/^\d*[<>]/.test(w)) continue;
     targets.push(w); // the dbname (a URL or conninfo) or the user name
   }
   return { targets, commands, files, unknown };
@@ -411,7 +426,7 @@ function psqlArgs(rest) {
 
 function judgePsql(words, i, ctx) {
   const tool = base(words[i]);
-  const rest = words.slice(i + 1);
+  const rest = argsFrom(words, i + 1);
   const env = words.slice(0, i).filter((w) => /^PG[A-Z_]+=/.test(w));
   const pg = env.find((w) => !PG_PLAIN.has(w.split('=')[0]));
   if (pg) return unclear(tool, `it sets ${pg.split('=')[0]}, which can change where it connects or what it runs`);
@@ -426,7 +441,7 @@ function judgePsql(words, i, ctx) {
   if (tool === 'pg_dump' || tool === 'pg_dumpall') return null;
   if (tool === 'pg_restore') return writes(`pg_restore to ${host}`);
   if (unknown) return unclear(tool, `it has an option the guard doesn't know (${unknown})`);
-  if (!commands.length && !files.length) return unclear(tool, 'it reads SQL interactively or from stdin');
+  if ((!commands.length && !files.length) || readsStdin(words)) return unclear(tool, 'it reads SQL interactively or from stdin');
   const verdicts = [];
   for (const sql of commands) {
     verdicts.push(/`|\$[({A-Za-z_]/.test(sql) ? unclear(tool, "the -c SQL isn't literal") : judgeSql(sql, tool, ctx));

@@ -555,3 +555,12 @@ describe('installed by bin/ssdd.mjs', { skip: !existsSync(INSTALLER) && 'not in 
     assert.equal(run({ hook_event_name: 'PreToolUse', tool_name: 'mcp__x__apply_migration', tool_input: {}, cwd: repo }, { CLAUDE_PROJECT_DIR: repo }), 'ask');
   });
 });
+
+describe('found by the replay', () => {
+  it("a redirection's target is not an argument", () => {
+    expectPass(L, `supabase db query --linked -f ${F.ro} -o json > ${join(L.tmp, 'out.json')} 2>&1; tail -5 ${join(L.tmp, 'out.json')}`);
+    expectPass(L, `supabase db query --linked "select 1" >> ${join(L.tmp, 'out.json')}`);
+    expectPass(L, 'psql -h localhost -c "delete from t" > supabase-out.txt');
+    expectPass(L, `supabase db query --linked -f ${F.ro} 2> err.txt`);
+  });
+});
