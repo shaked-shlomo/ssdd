@@ -10,9 +10,15 @@
 // per line, include/exclude against the repo-relative path.
 //
 // Modes (no deps, Node >= 18):
-//   <file> [<file> …]     lint the given files (CI / manual)
-//   --staged              lint the currently staged files (git pre-commit)
-//   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor afterFileEdit
+//   <file> [<file> …]     lint the given files whole (CI / manual)
+//   --staged              lint the lines the staged change adds (git pre-commit)
+//   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor afterFileEdit:
+//                         lint the lines added since HEAD; a file HEAD
+//                         doesn't have is linted whole
+// Only added lines: an old violation isn't flagged again on every edit (in
+// the source project, most lint firings were old lines). `--staged` reads the
+// staged content from the diff, not the file on disk, and detects renames,
+// so a moved file isn't new.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
@@ -50,21 +56,63 @@ try {
 }
 if (!rules.length) process.exit(0);
 
-function lintFile(relPath) {
+// lines: [[lineNo, text]].
+function lintLines(relPath, lines) {
   const findings = [];
-  let src;
-  try { src = readFileSync(join(root, relPath), 'utf8'); } catch { return findings; }
   for (const rule of rules) {
     if (rule.include && !rule.include.test(relPath)) continue;
     if (rule.exclude && rule.exclude.test(relPath)) continue;
-    src.split('\n').forEach((line, i) => {
+    for (const [n, line] of lines) {
       if (rule.pattern.test(line)) {
-        findings.push(`${relPath}:${i + 1} [${rule.name}] ${rule.message}\n    ${line.trim()}`);
+        findings.push(`${relPath}:${n} [${rule.name}] ${rule.message}\n    ${line.trim()}`);
       }
-    });
+    }
   }
   return findings;
 }
+function lintFile(relPath) {
+  let src;
+  try { src = readFileSync(join(root, relPath), 'utf8'); } catch { return []; }
+  return lintLines(relPath, src.split('\n').map((line, i) => [i + 1, line]));
+}
+
+// A `+++ b/<path>` name: C-quoted ("…") when it holds a quote, a backslash or a
+// control character (core.quotePath=false keeps other bytes literal).
+function diffPath(raw) {
+  let p = raw;
+  if (p.startsWith('"')) {
+    const bytes = [];
+    for (let i = 1; i < p.length - 1; i++) {
+      if (p[i] !== '\\') { bytes.push(...Buffer.from(p[i])); continue; }
+      const c = p[++i];
+      if (/[0-7]/.test(c)) { bytes.push(parseInt(p.slice(i, i + 3), 8)); i += 2; continue; }
+      bytes.push(({ n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11 })[c] ?? c.charCodeAt(0));
+    }
+    p = Buffer.from(bytes).toString('utf8');
+  }
+  return p.replace(/^b\//, '');
+}
+// `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds.
+function addedLines(diff) {
+  const out = new Map();
+  let file = null;
+  let n = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++ ')) {
+      // git ends a name that holds a space with a tab
+      file = line === '+++ /dev/null' ? null : diffPath(line.slice(4).replace(/\t$/, ''));
+      if (file) out.set(file, out.get(file) ?? []);
+      continue;
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) { n = Number(hunk[1]); continue; }
+    if (file && line.startsWith('+')) out.get(file).push([n++, line.slice(1)]);
+  }
+  return out;
+}
+const DIFF = ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
+const lintAdded = (diff) => [...addedLines(diff)].flatMap(([path, lines]) => lintLines(path, lines));
+const inHead = (rel) => { try { git('cat-file', '-e', `HEAD:${rel}`); return true; } catch { return false; } };
 
 function report(findings, exitCode) {
   if (!findings.length) process.exit(0);
@@ -75,8 +123,7 @@ function report(findings, exitCode) {
 const toRel = (p) => (isAbsolute(p) ? relative(root, p) : p).split('\\').join('/');
 
 if (process.argv[2] === '--staged') {
-  const staged = git('diff', '--staged', '--name-only', '--diff-filter=d').split('\n').filter(Boolean);
-  report(staged.flatMap(lintFile), 1);
+  report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 1);
 } else if (process.argv.length > 2) {
   report(process.argv.slice(2).map(toRel).flatMap(lintFile), 1);
 } else {
@@ -84,5 +131,6 @@ if (process.argv[2] === '--staged') {
   if (!path) process.exit(0);
   const rel = toRel(path);
   if (rel.startsWith('..')) process.exit(0); // outside the repo
-  report(lintFile(rel), 2); // exit 2 → the agent self-corrects
+  // exit 2 → the agent self-corrects
+  report(inHead(rel) ? lintAdded(git(...DIFF, 'HEAD', '--', rel)) : lintFile(rel), 2);
 }

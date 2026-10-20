@@ -123,3 +123,90 @@ describe('convention-lint config', () => {
     assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'README' } })), 0);
   });
 });
+
+// v3.1: only the lines a change adds are linted, so an old violation isn't
+// flagged again on every edit (Hatedate: 28 of 35 lint firings were old lines).
+describe('only added lines', () => {
+  const OLD = 'const old = "#fff";\nconst ok = 1;\n';
+  const run = (d, args, input = '') => spawnSync(NODE, [HOOK, ...args], { input, cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8' });
+  const edit = (d, rel) => run(d, [], JSON.stringify({ tool_input: { file_path: rel } }));
+  const put = (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); };
+  const commitOld = () => { put('src/a.ts', OLD); git(dir, 'add', 'src/a.ts'); git(dir, 'commit', '-qm', 'old'); };
+
+  it('an edit elsewhere passes the edit hook', () => {
+    commitOld();
+    put('src/a.ts', `${OLD}const clean = 2;\n`);
+    assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+  });
+
+  it('a new violating line is flagged with its number', () => {
+    commitOld();
+    put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
+    const r = edit(dir, 'src/a.ts');
+    assert.strictEqual(r.status, 2);
+    assert.match(r.stderr, /src\/a\.ts:3 /);
+    assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
+  });
+
+  it('--staged: only staged added lines', () => {
+    commitOld();
+    put('src/a.ts', `${OLD}const clean = 2;\n`);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(run(dir, ['--staged']).status, 0);
+    put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
+    git(dir, 'add', 'src/a.ts');
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/a\.ts:3 /);
+    assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
+  });
+
+  it('a new file is linted whole', () => {
+    put('src/b.ts', 'const b = "#fff";\n');
+    const e = edit(dir, 'src/b.ts');
+    assert.strictEqual(e.status, 2);
+    assert.match(e.stderr, /src\/b\.ts:1 /);
+    git(dir, 'add', 'src/b.ts');
+    assert.strictEqual(run(dir, ['--staged']).status, 1);
+  });
+
+  it('files named on the command line are linted whole', () => {
+    commitOld();
+    const r = run(dir, ['src/a.ts']);
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/a\.ts:1 /);
+  });
+
+  it('a renamed file with an old violation passes --staged', () => {
+    commitOld();
+    git(dir, 'mv', 'src/a.ts', 'src/c.ts');
+    assert.strictEqual(run(dir, ['--staged']).status, 0);
+  });
+
+  it('--staged judges the staged content, not the disk', () => {
+    commitOld();
+    put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
+    git(dir, 'add', 'src/a.ts');
+    put('src/a.ts', OLD);
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/a\.ts:3 /);
+  });
+
+  it('a path with a space and non-ASCII letters', () => {
+    put('src/צבע file.ts', 'const c = "#fff";\n');
+    git(dir, 'add', 'src/צבע file.ts');
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/צבע file\.ts:1 /);
+  });
+
+  it('a name git C-quotes (a double quote, a tab)', () => {
+    const rel = 'src/q"uo\tte é.ts';
+    put(rel, 'const c = "#fff";\n');
+    git(dir, 'add', rel);
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 1);
+    assert.ok(r.stderr.includes(`${rel}:1 `), r.stderr);
+  });
+});
