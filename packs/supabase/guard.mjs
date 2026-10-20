@@ -250,69 +250,93 @@ const INTERPRETER = /^(?:node|nodejs|deno|bun|tsx|ts-node|python|pypy|ruby|perl|
 const CURL_DATA = ['--data', '--data-binary', '--data-raw', '--data-urlencode', '--data-ascii', '--json', '--form',
   '--form-string', '--upload-file'];
 const CURL_SHORT_VALUE = new Set('AbcCdDeEFHKmoPQrtTuUwxXyYz'.split(''));
+const CURL_SHORT_FLAG = new Set('0123456#aBfgGhiIjJklLMnNOpqRsSvVZ'.split(''));
+// curl's long options the guard knows (anything else, in a call naming
+// supabase, asks: an abbreviation or a new option could change the method).
+const CURL_LONG = new Set([...CURL_DATA, '--request', '--config', '--head', '--get', '--next', '--silent', '--show-error',
+  '--fail', '--fail-with-body', '--location', '--header', '--output', '--write-out', '--user-agent', '--compressed',
+  '--max-time', '--connect-timeout', '--retry', '--insecure', '--include', '--verbose', '--url', '--url-query', '--user',
+  '--oauth2-bearer', '--cookie', '--globoff', '--http1.1', '--http2', '--no-progress-meter', '--disable', '--referer']);
 const WGET_DATA = ['--post-data', '--post-file', '--body-data', '--body-file'];
-// Settings that can change what curl / wget send, outside the call's own options.
-const HTTP_CONFIG_VARS = /^(?:CURL_HOME|XDG_CONFIG_HOME|WGETRC|SYSTEM_WGETRC)=/;
+const WGET_SHORT_VALUE = new Set('eoaiOPtTwQUlARDIXBY'.split(''));
+const WGET_SHORT_FLAG = new Set('qvnSNcrkxEKmpH46bdFhV'.split(''));
+const WGET_LONG = new Set([...WGET_DATA, '--method', '--execute', '--config', '--quiet', '--output-document', '--output-file',
+  '--header', '--server-response', '--spider', '--timeout', '--tries', '--no-verbose', '--verbose', '--user-agent',
+  '--no-check-certificate', '--content-on-error']);
 const isLong = (w, opts) => opts.some((f) => w === f || w.startsWith(`${f}=`));
 
-// → { method, config }: the HTTP method a curl / wget call sends, and
-// whether curl reads a config file (-K), which can set any of it.
+// → { method, config, next, unknown }: the HTTP method a curl / wget call
+// sends; whether a config file (curl -K, wget -e / --config) can change it;
+// whether curl sends several requests (--next, -:); the first option the
+// guard doesn't know. Short options are read in groups, as getopt does.
 function httpCall(tool, rest) {
+  const curl = tool !== 'wget';
+  const longs = curl ? CURL_LONG : WGET_LONG;
+  const shortValue = curl ? CURL_SHORT_VALUE : WGET_SHORT_VALUE;
+  const shortFlag = curl ? CURL_SHORT_FLAG : WGET_SHORT_FLAG;
   let method = '';
   let data = false;
   let head = false;
   let get = false;
   let config = false;
+  let next = false;
+  let unknown = '';
   for (let k = 0; k < rest.length; k++) {
     const w = rest[k];
-    if (tool === 'wget') {
-      if (w === '--method') method = rest[++k] ?? '';
-      else if (w.startsWith('--method=')) method = w.slice(9);
-      else if (isLong(w, WGET_DATA)) data = true;
-      else if (w === '-e' || isLong(w, ['--execute', '--config']) || /^-e./.test(w)) config = true;
+    if (w.startsWith('--')) {
+      const eq = w.indexOf('=');
+      const name = eq > 0 ? w.slice(0, eq) : w;
+      const value = eq > 0 ? w.slice(eq + 1) : null;
+      if (!longs.has(name)) { unknown ||= w; continue; }
+      const take = () => (value ?? rest[++k] ?? '');
+      if (name === '--request' || name === '--method') method = take();
+      else if (CURL_DATA.includes(name) || WGET_DATA.includes(name)) { data = true; if (value === null) k++; }
+      else if (name === '--config' || name === '--execute') { config = true; if (value === null) k++; }
+      else if (name === '--head') head = true;
+      else if (name === '--get') get = true;
+      else if (name === '--next') next = true;
+      else if (value === null && !['--silent', '--show-error', '--fail', '--fail-with-body', '--location', '--compressed',
+        '--insecure', '--include', '--verbose', '--globoff', '--http1.1', '--http2', '--no-progress-meter', '--disable',
+        '--quiet', '--server-response', '--spider', '--no-verbose', '--no-check-certificate', '--content-on-error'].includes(name)) k++;
       continue;
     }
-    if (w === '--request') method = rest[++k] ?? '';
-    else if (w.startsWith('--request=')) method = w.slice(10);
-    else if (isLong(w, CURL_DATA)) data = true;
-    else if (isLong(w, ['--config'])) config = true;
-    else if (w === '--head') head = true;
-    else if (w === '--get') get = true;
-    else if (/^-[^-]/.test(w)) {
-      for (let j = 1; j < w.length; j++) {
-        const c = w[j];
-        if (c === 'I') head = true;
-        else if (c === 'G') get = true;
-        if (!CURL_SHORT_VALUE.has(c)) continue;
-        const value = w.slice(j + 1) || rest[++k] || '';
-        if (c === 'X') method = value;
-        else if (c === 'd' || c === 'F' || c === 'T') data = true;
-        else if (c === 'K') config = true;
-        break;
+    if (!/^-./.test(w)) continue;
+    for (let j = 1; j < w.length; j++) {
+      const c = w[j];
+      if (curl && c === ':') { next = true; continue; }
+      if (shortFlag.has(c)) {
+        if (curl && c === 'I') head = true;
+        if (curl && c === 'G') get = true;
+        continue;
       }
+      if (!shortValue.has(c)) { unknown ||= w; break; }
+      const value = w.slice(j + 1) || rest[++k] || '';
+      if (c === 'X' && curl) method = value;
+      else if (curl && (c === 'd' || c === 'F' || c === 'T')) data = true;
+      else if ((curl && c === 'K') || (!curl && c === 'e')) config = true;
+      break;
     }
   }
   const m = method ? method.toUpperCase() : get ? 'GET' : head ? 'HEAD' : data ? 'POST' : 'GET';
-  return { method: m, config };
+  return { method: m, config, next, unknown };
 }
 
 function judgeHttp(words, i) {
   const tool = base(words[i]);
   const rest = words.slice(i + 1);
-  const { method, config } = httpCall(tool, rest);
+  const { method, config, next, unknown } = httpCall(tool, rest);
   const named = rest.filter(mentions);
   if (!named.length) return null;
-  if (config || words.slice(0, i).some((w) => HTTP_CONFIG_VARS.test(w))) {
-    return unclear(tool, 'it reads a config file or settings, which can set the method');
-  }
-  if (rest.includes('--next') || rest.includes('-:')) return unclear(tool, 'it sends several requests (--next), each with its own method');
+  if (config) return unclear(tool, 'it reads a config file or settings, which can set the method');
+  if (words.slice(0, i).some((w) => /^[A-Za-z_]\w*=/.test(w))) return unclear(tool, 'a variable set on it can change its config');
+  if (next) return unclear(tool, 'it sends several requests (--next), each with its own method');
+  if (unknown) return unclear(tool, `it has an option the guard doesn't know (${unknown})`);
   if (method === 'GET' || method === 'HEAD') return null;
-  if (/\$/.test(method) && named.length) return unclear(`${tool} ${method}`, "its method isn't literal");
+  if (/\$/.test(method)) return unclear(`${tool} ${method}`, "its method isn't literal");
   if (named.some(nonLiteral)) return unclear(`${tool} ${method}`, "a URL naming supabase isn't literal");
   const host = rest.flatMap(hostsIn).find(isSupabaseHost);
   if (host) return writes(`${tool} ${method} ${host}`);
-  if (named.length) return unclear(`${tool} ${method}`, "it names supabase in a URL it can't read");
-  return null;
+  return unclear(`${tool} ${method}`, "it names supabase in a URL it can't read");
 }
 
 // ── psql ───────────────────────────────────────────────────────────────────
@@ -322,8 +346,14 @@ const PSQL_VALUE = new Set(['-h', '--host', '-p', '--port', '-U', '--username', 
 // PGSERVICE, PGCLIENTENCODING …) can change what a read does or where it goes.
 const PG_PLAIN = new Set(['PGPASSWORD', 'PGUSER', 'PGPORT', 'PGHOST', 'PGDATABASE', 'PGSSLMODE', 'PGCONNECT_TIMEOUT', 'PGAPPNAME']);
 
-// psql's short options that take a value (getopt: the rest of the word, or the next one).
+// psql's short options that take a value (getopt: the rest of the word, or the
+// next one), the ones that don't, and its long options without a value.
 const PSQL_SHORT_VALUE = new Set('hpUdcfvoPLTFR'.split(''));
+const PSQL_SHORT_FLAG = new Set('aAbeEHlnqsStwWxXz01V?'.split(''));
+const PSQL_LONG_FLAG = new Set(['--echo-all', '--no-align', '--echo-errors', '--echo-queries', '--echo-hidden', '--html',
+  '--list', '--no-readline', '--single-step', '--single-line', '--tuples-only', '--no-password', '--password',
+  '--expanded', '--no-psqlrc', '--field-separator-zero', '--record-separator-zero', '--single-transaction', '--csv',
+  '--quiet', '--version', '--help']);
 
 // A connection target → { hosts, service }: every host a URI or conninfo
 // names (a comma list, host= / hostaddr= parameters), or the word itself.
@@ -348,6 +378,7 @@ function psqlArgs(rest) {
   const targets = [];
   const commands = [];
   const files = [];
+  let unknown = '';
   const take = (opt, value) => {
     if (opt === 'h' || opt === 'd' || opt === '--host' || opt === '--dbname') targets.push(value);
     else if (opt === 'c' || opt === '--command') commands.push(value);
@@ -357,14 +388,16 @@ function psqlArgs(rest) {
     const w = rest[k];
     if (w.startsWith('--')) {
       const eq = w.indexOf('=');
-      if (eq > 0) take(w.slice(0, eq), w.slice(eq + 1));
-      else if (PSQL_VALUE.has(w)) take(w, rest[++k] ?? '');
-      else if (mentions(w)) targets.push(w);
+      const name = eq > 0 ? w.slice(0, eq) : w;
+      if (PSQL_VALUE.has(name)) take(name, eq > 0 ? w.slice(eq + 1) : rest[++k] ?? '');
+      else if (!PSQL_LONG_FLAG.has(name)) unknown ||= w;
+      if (mentions(w)) targets.push(w);
       continue;
     }
     if (/^-./.test(w)) {
       for (let j = 1; j < w.length; j++) {
-        if (!PSQL_SHORT_VALUE.has(w[j])) continue;
+        if (PSQL_SHORT_FLAG.has(w[j])) continue;
+        if (!PSQL_SHORT_VALUE.has(w[j])) { unknown ||= w; break; }
         take(w[j], w.slice(j + 1) || rest[++k] || '');
         break;
       }
@@ -373,7 +406,7 @@ function psqlArgs(rest) {
     if (/^\d*[<>]/.test(w)) continue;
     targets.push(w); // the dbname (a URL or conninfo) or the user name
   }
-  return { targets, commands, files };
+  return { targets, commands, files, unknown };
 }
 
 function judgePsql(words, i, ctx) {
@@ -382,7 +415,7 @@ function judgePsql(words, i, ctx) {
   const env = words.slice(0, i).filter((w) => /^PG[A-Z_]+=/.test(w));
   const pg = env.find((w) => !PG_PLAIN.has(w.split('=')[0]));
   if (pg) return unclear(tool, `it sets ${pg.split('=')[0]}, which can change where it connects or what it runs`);
-  const { targets, commands, files } = psqlArgs(rest);
+  const { targets, commands, files, unknown } = psqlArgs(rest);
   for (const w of env) if (w.startsWith('PGHOST=')) targets.push(w.slice(7));
   if (targets.some((t) => t.includes('$'))) return unclear(tool, "its target isn't literal");
   const parsed = targets.map(targetHosts);
@@ -392,6 +425,7 @@ function judgePsql(words, i, ctx) {
   if (!host) return null;
   if (tool === 'pg_dump' || tool === 'pg_dumpall') return null;
   if (tool === 'pg_restore') return writes(`pg_restore to ${host}`);
+  if (unknown) return unclear(tool, `it has an option the guard doesn't know (${unknown})`);
   if (!commands.length && !files.length) return unclear(tool, 'it reads SQL interactively or from stdin');
   const verdicts = [];
   for (const sql of commands) {

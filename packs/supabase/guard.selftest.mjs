@@ -484,3 +484,26 @@ describe('differentials the fourth commit review found', () => {
     expectAsk(L, 'curl https://api.supabase.com/v1/x -: -d x https://example.com', UNCLEAR);
   });
 });
+
+describe('options the guard does not know ask, when the call names supabase', () => {
+  it('curl, wget and psql', () => {
+    for (const c of [
+      'curl --data-bi @f https://abc.supabase.co/rest/v1/t',
+      'curl -s: -d x https://api.supabase.com/v1/x',
+      'HOME=/tmp/x curl https://api.supabase.com/v1/x',
+      "wget -qe 'method=POST' https://api.supabase.com/v1/x",
+      'psql -h db.x.supabase.co --comm="delete from t"',
+      'psql -h db.x.supabase.co -Y -c "select 1"',
+    ]) expectAsk(L, c, UNCLEAR);
+  });
+  it('the shapes agents used still pass', () => {
+    for (const c of [
+      'curl -s -o /tmp/adv.json -w "http %{http_code}\\n" -H "Authorization: Bearer $TOKEN" https://api.supabase.com/v1/projects/abc/advisors/security',
+      'curl -sf -H "Authorization: Bearer $TOKEN" https://api.supabase.com/v1/projects/abc/advisors/performance | python3 -c "import json,sys"',
+      'curl -sSL --compressed https://abc.supabase.co/rest/v1/t',
+      'wget -qO- https://api.supabase.com/v1/projects',
+      'psql -X -q -A -t -h db.x.supabase.co -c "select 1"',
+      'curl --unknown-flag https://example.com',
+    ]) expectPass(L, c);
+  });
+});
