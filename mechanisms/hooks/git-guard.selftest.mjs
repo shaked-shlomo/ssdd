@@ -155,6 +155,7 @@ const BLOCKED = [
   ['an option from a variable', 'git config $OP core.hooksPath'],
   ['an option from a command substitution', 'git config `echo --unset` core.hooksPath'],
   ['an option from a brace expansion', 'git config --unset{,-all} core.hooksPath'],
+  ['an option from a zsh glob group', 'git config --(unset) core.hooksPath'],
 ];
 
 const ALLOWED = [

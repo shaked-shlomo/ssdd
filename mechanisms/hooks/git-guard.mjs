@@ -77,7 +77,8 @@ if (filePath && STAMP_FILES.test(filePath)) {
 //   - any word before the key, quotes removed, is `-e` or a long write
 //     option or a prefix of one, as git accepts (`--unset-a` is
 //     `--unset-all`), or the shell may expand something there (`$`, a
-//     backtick, a brace or a glob character), which can't be read before it runs;
+//     backtick, a brace, a parenthesis or a glob character), which can't be read
+//     before it runs;
 //   - anything but an exact redirection follows the key: a value, `""`, a
 //     process substitution, or a --get value pattern. The scan stops at `)`,
 //     so `"$(git config core.hooksPath)"` is a read.
@@ -90,7 +91,7 @@ const REDIRECT = String.raw`\d*(?:>>?|<|>&|<&|&>>?|>\|)`;
 const REDIRECT_BARE = new RegExp(`^${REDIRECT}$`);              // its target is the next word
 const REDIRECT_ATTACHED = new RegExp(`^${REDIRECT}[^(<>&|]\\S*$`); // `2>/dev/null`, `2>&1`
 function configWrites(before, after) {
-  if (/[$`{}*?[\]]/.test(before)) return true;
+  if (/[$`{}()*?[\]]/.test(before)) return true;
   const words = splitCommands(before).flat();
   if (/^(?:set|unset|edit|rename-section|remove-section)$/.test(words[0] ?? '')) return true;
   if (words.some(isWriteOption)) return true;
