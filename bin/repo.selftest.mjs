@@ -195,3 +195,17 @@ describe('README', () => {
     assert.match(backlog, /docs\/limitations\.md/);
   });
 });
+
+describe('shipped text matches the defaults', () => {
+  it('untracked files are a warning unless preCommit.blockUntracked says otherwise', () => {
+    assert.match(read('mechanisms/config.example.json'), /"blockUntracked": false/);
+    const bad = [];
+    for (const f of tracked().filter((p) => /^(process|skills|adapters|reviewers)\/.*\.(md|mdc)$/.test(p))) {
+      const text = read(f).replace(/\s+/g, ' ');
+      for (const m of text.matchAll(/[^.]*\bblock[a-z]*\b[^.]*\buntracked\b[^.]*\./gi)) {
+        if (!/blockUntracked/.test(m[0])) bad.push(`${f}: ${m[0].trim()}`);
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+});

@@ -1,35 +1,33 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-21 at v3.2.1. The
-next work is the rest of v3 (`SPEC.md` →
-v3), Part 5, one plan, agreed
-2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
-When an item ships, delete it here and record it in `CHANGELOG.md`. When one
-is planned, it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
+The single list of remaining SSDD work. Updated 2026-10-21 at v3.2.1, with
+v3 Part 5 built (3.3.0, unreleased; it waits for the owner's go-ahead to
+tag). All five parts of v3 (`SPEC.md` → v3) are built; what's left of v3 is
+the migrations below. Not hardening. When an item ships, delete it here and
+record it in `CHANGELOG.md`. When one is planned, it gets a spec in
+`docs/specs/` and a row in `SPEC.md` first.
 
 **Threat model.** The harness hooks keep a cooperating agent on the process;
 they aren't a sandbox. A new evasion shape is out of scope unless an agent
 was seen using it in a real project, and the spec that closes it records
 that incident.
 
-## Next: v3
+## Next: the end of v3
 
-| # | Part (SPEC.md → v3) | Plan | Ships as |
-|---|---|---|---|
-| 5 | Trimming: split SPEC.md, a one-page README, optional parts, a thin `/cleanup`, the per-skill test, the Node floor to 22 | not written | 3.3.0 |
-
-- **End of v3:** the real migrations of prizma and Hatedate (owner,
-  2026-10-20: none until all five parts land; scratch clones only before
-  then), with Part 1's after-`/compact` session-start check.
+- **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
+  until all five parts land; scratch clones only before then), with Part 1's
+  after-`/compact` session-start check.
+  - Both carry their own `/cleanup` (11.6 KB and 13.3 KB). The update merges
+    or sidecars it against the thin one; what's project-specific moves into
+    the skill's project section.
+  - A repo that doesn't want the drift audit drops it with `update --with
+    none` (prizma ran it once).
 - **Hatedate adoption is parked** (owner, 2026-10-17). The prompt to start
   it is `docs/handovers/HANDOVER-hatedate-adoption.md`. Its supabase-guard
   is replaced by the Supabase pack (3.2.0): set `productionGuard.supabase`
   (its proof frame, live extensions) and retire its own copy.
 - **prizma's migration:** add its `vercel deploy --prod` rule to
   `productionGuard.extraRules` (SPEC v3 Part 4, Scope).
-
-Also next:
-
 - **prizma:** installed v1.0.1 by copy, with no lock (its hooks were since
   rewritten in the repo to about v2.0). It runs
   `node ~/Developer/ssdd/bin/ssdd.mjs adopt <repo> --base v1.0.1` once, then
@@ -38,14 +36,12 @@ Also next:
   skill, the 786-char `bias-semantics-reviewer` description, the
   Superpowers decision) are a prizma plan. See `docs/model-era-review.md`
   → project-side rows.
-- **This machine:** update the Claude Code CLI. It's 2.1.263;
-  `/doctor prompt-audit` needs 2.1.283 or later, and 2.1.263 resolves the
-  alias `sonnet` to `claude-sonnet-5`.
 
 ## Later
 
 | Item | Why | Blocked by / note | Size |
 |---|---|---|---|
+| **A new-model reminder** (v3 Part 5, Open) | The session view would say when the model is newer than the one the instructions were last reviewed for. Claude Code's SessionStart input carries `model` (not after `/clear`); Cursor's every hook does. | The owner's ruling, asked 2026-10-21. | S |
 | **More `/skills-audit` catalog sources:** Supabase and stack-agnostic ones | v2.4 covers RN/Expo and Next.js/React. Supabase is used by both injected projects. | Needs an audit of each source first. The catalog records what an audit read. | M |
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
 
