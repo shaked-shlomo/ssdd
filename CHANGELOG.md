@@ -10,7 +10,7 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.2.0] — unreleased
+## [3.2.0] — 2026-10-21
 
 v3 Part 4, the production guard and the Supabase pack: production changes go
 one sanctioned way, anything else that would change production asks a

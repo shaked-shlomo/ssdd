@@ -1,7 +1,7 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-21 at v3.1.1, with
-Part 4 built (3.2.0, unreleased). The next work is the rest of v3 (`SPEC.md` →
+The single list of remaining SSDD work. Updated 2026-10-21 at v3.2.0. The
+next work is the rest of v3 (`SPEC.md` →
 v3), Part 5, one plan, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
