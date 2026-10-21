@@ -45,17 +45,19 @@ reason; see `SPEC.md` → v3 → Part 5.
     the dependencies and copies no env file, every agent gets the worktree
     path, Cursor's checkout and stash steps are skipped, MCP output comes
     from the main session, a data claim is checked against the data,
-    `ReportFindings` gets the merged list and the outcomes, and no `pkill
+    `ReportFindings` gets the merged list when the harness's review didn't
+    call it and the outcomes after the fixes, `git status --short` is
+    re-checked before a commit that follows agent activity, and no `pkill
     -f`.
-- **Less text at session start.** A default Claude Code install loads 4,690
+- **Less text at session start.** A default Claude Code install loads 4,712
   bytes of SSDD text, down from 6,153:
-  - the AGENTS template is 45 lines (from 60), leaving the gate's procedure
+  - the AGENTS template is 43 lines (from 60), leaving the gate's procedure
     to its block message
   - CLAUDE.md keeps one fact, and every skill and reviewer description is
     one line of at most 300 characters
   - `AGENTS.md` and `CLAUDE.md` are project-owned, so `update` only prints
     how their templates changed; port what you want
-- **The D3 pass.** `new-plan` (2,268 → 1,255 bytes) runs `work-state.mjs
+- **The D3 pass.** `new-plan` (2,268 → 1,309 bytes) runs `work-state.mjs
   --next-plan` and points at SDD.md for the rest. The handover template
   takes the plan number from the same command. `skills-audit` (6,696 →
   6,153) and SDD.md (12,105 → 10,998) drop text that restated a template, a

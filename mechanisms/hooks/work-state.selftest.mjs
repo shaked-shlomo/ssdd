@@ -1,7 +1,7 @@
 // Tests for work-state: the view across branches and worktrees, the stale-status
 // rule, ledgers, warnings, and the session-start and close-check modes.
 // Run: node --test mechanisms/hooks/work-state.selftest.mjs
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -911,6 +911,44 @@ describe('the new-model reminder', () => {
       assert.equal(code, 0);
       assert.ok(JSON.parse(out).additional_context.split('\n').includes(LINE(model, 5)), out);
     }
+  });
+
+  // A harness that writes the payload late, or keeps stdin open after it.
+  // chunks: [[delayMs, text]]; stdin closes after holdMs.
+  function runHeld(chunks, holdMs = 3000) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const child = spawn(process.execPath, [SCRIPT, '--session-start'], { cwd: dir, env: env(), stdio: ['pipe', 'pipe', 'pipe'] });
+      let out = '';
+      child.stdout.on('data', (d) => { out += d; });
+      child.stdin.on('error', () => {});
+      const timers = chunks.map(([delay, text]) => setTimeout(() => child.stdin.write(text), delay));
+      timers.push(setTimeout(() => child.stdin.end(), holdMs));
+      child.on('exit', (code) => { timers.forEach(clearTimeout); child.stdin.destroy(); resolve({ code, out, ms: Date.now() - t0 }); });
+    });
+  }
+  const PAYLOAD = JSON.stringify({ hook_event_name: 'SessionStart', model: 'claude-opus-6' });
+
+  it('a payload on a pipe the harness keeps open still counts, without waiting for it to close', async () => {
+    const { code, out, ms } = await runHeld([[0, PAYLOAD]]);
+    assert.equal(code, 0);
+    assert.ok(ms < 2000, `${ms} ms`);
+    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
+  });
+
+  it('a payload written late still counts', async () => {
+    const { code, out, ms } = await runHeld([[200, PAYLOAD]]);
+    assert.equal(code, 0);
+    assert.ok(ms < 2000, `${ms} ms`);
+    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
+  });
+
+  it('stdin held open with nothing written: exit 0 within a second, no line', async () => {
+    const { code, out, ms } = await runHeld([]);
+    assert.equal(code, 0);
+    assert.ok(ms < 1500, `${ms} ms`);
+    assert.match(out, /^SSDD · /);
+    assert.doesNotMatch(out, /newer than/);
   });
 
   it('the line survives the cap', () => {

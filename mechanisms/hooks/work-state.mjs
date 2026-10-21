@@ -23,7 +23,7 @@
 // cat-file --batch for every blob and every file a ledger names, one
 // check-ignore per worktree; only the stale rule adds a log per busy copy.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_PATHS, DEFAULT_REVIEWED_GENERATION, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
@@ -417,10 +417,32 @@ export const SESSION_CAP = Object.freeze({ lines: 12, bytes: 1536 });
 // (absent after /clear), or Cursor's `model` or `model_id`, whichever is a
 // Claude model id. '' when there's none.
 function payloadModel() {
-  if (process.stdin.isTTY) return '';
-  let payload = null;
-  try { payload = JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')); } catch { return ''; }
+  const payload = readPayload();
   return [payload?.model, payload?.model_id].find((m) => typeof m === 'string' && generationOf(m) !== null) ?? '';
+}
+
+// The hook's JSON payload, or null. Touching process.stdin makes a pipe
+// non-blocking on purpose: fd 0 is then read in a loop for at most `ms`, so a
+// payload written late, or on a pipe the harness keeps open, still counts, and
+// an open pipe with nothing on it never hangs the session.
+function readPayload(ms = 500) {
+  if (process.stdin.isTTY) return null;
+  const parse = (bufs) => { try { return JSON.parse(Buffer.concat(bufs).toString('utf8').replace(/^\uFEFF/, '')); } catch { return null; } };
+  const bufs = []; const buf = Buffer.alloc(64 * 1024); const until = Date.now() + ms;
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    let n;
+    try { n = readSync(0, buf, 0, buf.length, null); } catch (e) {
+      if (e?.code !== 'EAGAIN' || Date.now() > until) break;
+      Atomics.wait(nap, 0, 0, 10);
+      continue;
+    }
+    if (n === 0) break;
+    bufs.push(Buffer.from(buf.subarray(0, n)));
+    const payload = parse(bufs);
+    if (payload) return payload;
+  }
+  return parse(bufs);
 }
 
 // A session-start hook must never fail or flood the session: capped output,
