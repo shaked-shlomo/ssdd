@@ -150,6 +150,7 @@ describe('prod-guard', () => {
     assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | sudo -E bash')).decision, 'ask');
     assert.equal(verdict(claude(repo, "echo vercel deploy --prod | awk '{system($0)}'")).decision, 'ask');
     assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | grep prod')).decision, 'allow');
+    assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | sort --compress-program=sh')).decision, 'ask');
     assert.equal(verdict(claude(repo, 'echo vercel deploy --prod')).decision, 'allow');
   });
 

@@ -610,6 +610,9 @@ describe('found by the final review', () => {
       "echo supabase db push | awk '{system($0)}'",
       'echo supabase db push | $SHELL',
       'echo supabase db push | doas -s',
+      'echo supabase db push | sort --compress-program=sh',
+      "echo supabase db push | LESSOPEN='|sh %s' less",
+      'echo supabase db push | X=1 tail -1',
       '/tmp/x/echo supabase db push',
     ]) expectAsk(L, c, WRITES);
   });

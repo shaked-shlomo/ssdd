@@ -78,9 +78,11 @@ const base = (w) => String(w ?? '').split('/').pop();
 // judged as a command.
 const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
 const prints = (words) => ['echo', 'printf'].includes(runWord(words));
-const TEXT_READERS = new Set(['echo', 'printf', 'cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'wc', 'jq', 'sort', 'uniq',
-  'cut', 'tr', 'column', 'less', 'more', 'true', 'false', ':', 'test', '[', 'cd', 'pwd', 'ls', 'date', 'sleep']);
-const feeds = (commands) => commands.some((w) => !TEXT_READERS.has(runWord(w)));
+// (sort, less and more can run a program: --compress-program, LESSOPEN.)
+// A reader with a variable set on it isn't one.
+const TEXT_READERS = new Set(['echo', 'printf', 'cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'wc', 'jq', 'uniq',
+  'cut', 'tr', 'column', 'true', 'false', ':', 'test', '[', 'cd', 'pwd', 'ls', 'date', 'sleep']);
+const feeds = (commands) => commands.some((w) => /^[A-Za-z_]\w*=/.test(w[0] ?? '') || !TEXT_READERS.has(w[0]));
 // A psql backslash command outside strings and comments (\gexec, \gset, \i …):
 // the client runs it, and the SQL check can't see what it does.
 const metaCommand = (sql) => /\\[A-Za-z!?]/.test(lexSql(String(sql)).code);

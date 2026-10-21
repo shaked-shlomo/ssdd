@@ -16,7 +16,9 @@ the target, so upgrade steps belong here and not only in commit messages.
 - An `echo` or `printf` piped into a shell asks again: `echo supabase db
   push | sh` passed in 3.2.0, which judged echo and printf as text. They're
   text only by their bare names, and only when every other command in the
-  call is a known text reader (`grep`, `tail`, `jq`, `cat` …); otherwise
+  call is a known text reader (`grep`, `tail`, `jq`, `cat` …, with no
+  variable set on it; not `sort`, `less` or `more`, which can run a
+  program); otherwise
   what they print is judged as a command (`| sh`, `| sudo bash`, `| awk
   '{system($0)}'`). The same holds for `productionGuard.extraRules`. Nothing
   to do by hand.
