@@ -160,6 +160,13 @@ Instructions tuned for one generation drift with the next (see
 3. Re-check effort levels: reviewers' `effort:` frontmatter and the session
    default.
 4. Upstream what generalizes as a MINOR release.
+5. Set `modelReview.generation` in `.ssdd/config.json` to the new
+   generation.
+
+Until step 5, the session view says so whenever a session starts on a newer
+generation than `modelReview.generation` (default 5). Claude Code sends no
+model after `/clear` or a recovered session, so the next fresh session shows
+it.
 
 ## Releasing
 

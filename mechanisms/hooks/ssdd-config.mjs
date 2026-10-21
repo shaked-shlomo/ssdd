@@ -29,6 +29,9 @@
 //   productionGuard         { writePath (default "migrations on merge to
 //                           main"), extraRules (default []), ...one object
 //                           per pack, which the pack validates }
+//   modelReview.generation  the Claude model generation the instructions
+//                           were last reviewed for (default 5); the session
+//                           view says when a session runs a newer one
 //
 // A section-scoped error is also in `sectionErrors[section]`, so a hook that
 // reads one section (prod-guard) can tell its own error from another's. A
@@ -51,8 +54,11 @@ const SECTIONS = [
   ['paths', isObject, 'an object'],
   ['preCommit', isObject, 'an object'],
   ['productionGuard', isObject, 'an object'],
+  ['modelReview', isObject, 'an object'],
 ];
 export const DEFAULT_WRITE_PATH = 'migrations on merge to main';
+// SSDD's own text was last reviewed for the Claude 5 generation (v3 Part 5).
+export const DEFAULT_REVIEWED_GENERATION = 5;
 
 // Where plans, specs and ledgers live, repo-relative. A key that isn't a
 // non-empty string keeps its default.
@@ -136,6 +142,7 @@ function build(root, config) {
         ? config.productionGuard.writePath.trim() : DEFAULT_WRITE_PATH,
       extraRules: Array.isArray(config.productionGuard?.extraRules) ? config.productionGuard.extraRules : [],
     },
+    modelReview: { ...(config.modelReview ?? {}), generation: config.modelReview?.generation ?? DEFAULT_REVIEWED_GENERATION },
     root,
   };
 }
@@ -169,6 +176,10 @@ export function loadSsddConfig(repo) {
   }
   const pg = isObject(config.productionGuard) ? productionGuardError(config.productionGuard) : '';
   if (pg) { fail('productionGuard', `productionGuard: ${pg}`); delete config.productionGuard; }
+  const gen = config.modelReview?.generation;
+  if (gen !== undefined && !(Number.isInteger(gen) && gen > 0)) {
+    fail('modelReview', 'modelReview.generation must be a positive whole number'); delete config.modelReview;
+  }
   const cfg = build(root, config);
   const errors = Object.values(sectionErrors);
   if (!errors.length) return { root, cfg };

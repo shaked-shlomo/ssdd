@@ -57,5 +57,9 @@
       "include": "^src/.+\\.(ts|tsx)$",
       "exclude": "(tokens/|\\.test\\.|__tests__/)"
     }
-  ]
+  ],
+  "modelReview": {
+    "$comment": "The Claude model generation the instructions (AGENTS.md, CLAUDE.md, the skills and reviewers) were last reviewed for. A session that starts on a newer one gets a line in the session view; run the new-model checklist (SSDD's README: When a new model generation ships), then raise this.",
+    "generation": 5
+  }
 }

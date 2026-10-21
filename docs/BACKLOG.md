@@ -41,7 +41,6 @@ that incident.
 
 | Item | Why | Blocked by / note | Size |
 |---|---|---|---|
-| **A new-model reminder** (v3 Part 5, Open) | The session view would say when the model is newer than the one the instructions were last reviewed for. Claude Code's SessionStart input carries `model` (not after `/clear`); Cursor's every hook does. | The owner's ruling, asked 2026-10-21. | S |
 | **More `/skills-audit` catalog sources:** Supabase and stack-agnostic ones | v2.4 covers RN/Expo and Next.js/React. Supabase is used by both injected projects. | Needs an audit of each source first. The catalog records what an audit read. | M |
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
 

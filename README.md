@@ -91,8 +91,9 @@ and keeps the project's edits: [docs/usage.md](docs/usage.md#updating-an-injecte
 
 ## When a new model generation ships
 
-Run `/doctor prompt-audit` and re-run a recent plan's task on the new model:
-[docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
+The session view says when a session starts on a newer generation than the
+instructions were reviewed for. Run `/doctor prompt-audit` and re-run a recent
+plan's task on it: [docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
 
 ## Known limitations
 

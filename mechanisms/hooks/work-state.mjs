@@ -26,7 +26,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEFAULT_PATHS, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { DEFAULT_PATHS, DEFAULT_REVIEWED_GENERATION, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { generationOf } from './model-id.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
 import { idRange, lostText, migratePlan, needsMigration, todoFor } from './plan-migrate.mjs';
 
@@ -274,7 +275,8 @@ function working(root, def, notRefs, src, plan, paths) {
   return Boolean(r && r.trim());
 }
 
-export function collect(repo) {
+// model: the session's model id (from a session-start payload), if known.
+export function collect(repo, { model } = {}) {
   const loaded = loadSsddConfig(repo);
   if (!loaded) return null;
   const { root } = loaded;
@@ -349,6 +351,13 @@ export function collect(repo) {
   if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate-plans`);
   if (!skillsAudited(root)) onboarding.push("/skills-audit hasn't run here");
   warnings.splice(loaded.error ? 1 : 0, 0, ...onboarding.map((l) => `! ${l}`));
+  // A session on a newer model generation than the instructions were reviewed
+  // for (modelReview.generation) gets one line, after the onboarding steps.
+  const reviewed = loaded.cfg.modelReview?.generation ?? DEFAULT_REVIEWED_GENERATION;
+  if (model && generationOf(model) > reviewed) {
+    warnings.splice((loaded.error ? 1 : 0) + onboarding.length, 0, `! this session runs ${model}, newer than the generation the ` +
+      `instructions were reviewed for (${reviewed}): see SSDD's README → "When a new model generation ships", then set modelReview.generation`);
+  }
   return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 
@@ -404,11 +413,21 @@ export function render(state, { cap = null } = {}) {
 // ── CLI ──────────────────────────────────────────────────────────────────────
 export const SESSION_CAP = Object.freeze({ lines: 12, bytes: 1536 });
 
+// The session's model from a session-start payload: Claude Code's `model`
+// (absent after /clear), or Cursor's `model` or `model_id`, whichever is a
+// Claude model id. '' when there's none.
+function payloadModel() {
+  if (process.stdin.isTTY) return '';
+  let payload = null;
+  try { payload = JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')); } catch { return ''; }
+  return [payload?.model, payload?.model_id].find((m) => typeof m === 'string' && generationOf(m) !== null) ?? '';
+}
+
 // A session-start hook must never fail or flood the session: capped output,
-// exit 0 whatever happens, and no stdin read (the payload isn't needed).
+// and exit 0 whatever happens.
 function sessionStart(repo, cursor) {
   let text;
-  try { text = render(collect(repo), { cap: SESSION_CAP }); } catch (e) {
+  try { text = render(collect(repo, { model: payloadModel() }), { cap: SESSION_CAP }); } catch (e) {
     text = `SSDD · work state unavailable (${String(e?.message ?? e).split('\n')[0].slice(0, 120)})\n`;
   }
   if (text) process.stdout.write(cursor ? JSON.stringify({ additional_context: text }) + '\n' : text);

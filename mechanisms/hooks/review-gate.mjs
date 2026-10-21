@@ -78,6 +78,7 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync, st
 import { execFileSync, spawnSync } from 'node:child_process';
 import { basename, dirname, join, isAbsolute, relative, sep } from 'node:path';
 import { homedir } from 'node:os';
+import { parseModel } from './model-id.mjs';
 import { resolve } from 'node:path';
 import { hookCommand, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { commandStart, gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
@@ -766,16 +767,6 @@ function parseVerdict(text) {
   return null;
 }
 
-// `claude-opus-5-5`, `claude-sonnet-5-5-20260101`, `claude-opus-6` → { family,
-// version }; the older `claude-3-5-sonnet-…` order too. null if unrecognized.
-function parseModel(id) {
-  const s = String(id).toLowerCase();
-  let m = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(s);
-  if (m) return { family: m[1], version: [Number(m[2]), Number(m[3] ?? 0)] };
-  m = /claude-(\d+)(?:-(\d{1,2}))?-(opus|sonnet|haiku)/.exec(s);
-  if (m) return { family: m[3], version: [Number(m[1]), Number(m[2] ?? 0)] };
-  return null;
-}
 // An allow-list entry is `<family>` (any version), `<family>>=<major>.<minor>`
 // (that family at or above that version), or else a substring of the model id.
 function modelAllowed(id, entry) {

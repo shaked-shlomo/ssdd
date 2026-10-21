@@ -16,8 +16,9 @@ replacement.
    off limits), convention-lint after edits, and the review gate on
    `SubagentStart` / `SubagentStop` (completion stamps). On `SessionStart`
    (startup, resume, clear and compact) it runs `work-state.mjs
-   --session-start`, so each session opens knowing where the work is. Hook
-   changes take effect after a session reload.
+   --session-start`, so each session opens knowing where the work is, and
+   whether its model is a newer generation than `modelReview.generation` in
+   `.ssdd/config.json`. Hook changes take effect after a session reload.
 2. **Reviewer agents** — `.claude/agents/<name>.md` are **symlinks** to
    `.ssdd/reviewers/<name>.md` (one source of truth; the frontmatter already
    matches Claude Code's agent format). A project domain reviewer goes in

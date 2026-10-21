@@ -274,3 +274,39 @@ describe('skillsAudited', () => {
     assert.equal(skillsAudited(dir), '2026-10-18');
   });
 });
+
+describe('modelReview', () => {
+  it('defaults to generation 5', () => {
+    putConfig({});
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.cfg.modelReview, { generation: 5 });
+  });
+
+  it('keeps a valid section', () => {
+    putConfig({ modelReview: { generation: 6 } });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.cfg.modelReview, { generation: 6 });
+  });
+
+  it('a bad section is a config error', () => {
+    for (const mr of ['x', { generation: 0 }, { generation: '6' }, { generation: 5.5 }]) {
+      putConfig({ modelReview: mr });
+      const r = loadSsddConfig(dir);
+      assert.match(r.error ?? '', /modelReview/, JSON.stringify(mr));
+      assert.deepEqual(r.cfg.modelReview, { generation: 5 }, JSON.stringify(mr));
+    }
+  });
+
+  const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', 'config.example.json');
+  it("config.example.json's modelReview is valid", { skip: !existsSync(EXAMPLE) }, () => {
+    const { modelReview } = JSON.parse(readFileSync(EXAMPLE, 'utf8'));
+    assert.ok(modelReview, 'the example has a modelReview section');
+    putConfig({ modelReview });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.equal(r.cfg.modelReview.generation, 5);
+  });
+});
+

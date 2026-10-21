@@ -25,6 +25,13 @@ reason; see `SPEC.md` → v3 → Part 5.
   is kept with a warning. A removal also deletes the folders it empties and
   any `.claude/skills` or `.claude/agents` link of SSDD's shape left
   pointing at nothing.
+- **The new-model reminder.** When a session starts on a newer Claude model
+  generation than the instructions were last reviewed for, the session view
+  adds one line pointing at the new-model checklist. The record is
+  `modelReview.generation` in `.ssdd/config.json` (default 5); raise it once
+  the checklist is done. Claude Code sends no model after `/clear`, so the
+  next fresh session shows it. `work-state.mjs --session-start` now reads the
+  hook's payload from stdin.
 
 ### Changed
 - **`/cleanup` is thin.** It resolves the scope and runs `/code-review`

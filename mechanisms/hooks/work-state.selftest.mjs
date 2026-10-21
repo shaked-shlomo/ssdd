@@ -39,8 +39,8 @@ function initRepo(root) {
   sh(root, ['config', 'user.email', 't@t']);
   sh(root, ['config', 'user.name', 't']);
 }
-function run(args = [], { cwd = dir, extraEnv = {} } = {}) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', env: { ...env(), ...extraEnv } });
+function run(args = [], { cwd = dir, extraEnv = {}, input } = {}) {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', env: { ...env(), ...extraEnv }, input });
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 // A plan in SSDD's format. status: the Status line text; ac: criteria IDs;
@@ -875,6 +875,51 @@ describe('next plan', () => {
     const { code, out } = run(['--next-plan']);
     assert.equal(code, 0);
     assert.equal(out, 'next plan: .ssdd/plans/01-<slug>.md\n');
+  });
+});
+
+describe('the new-model reminder', () => {
+  const LINE = (model, n) => `  ! this session runs ${model}, newer than the generation the instructions were reviewed for (${n}): ` +
+    'see SSDD\'s README → "When a new model generation ships", then set modelReview.generation';
+  const start = (payload, args = ['--session-start']) =>
+    run(args, { input: typeof payload === 'string' ? payload : JSON.stringify({ hook_event_name: 'SessionStart', ...payload }) });
+
+  it('a newer generation adds one line', () => {
+    const { code, out } = start({ model: 'claude-opus-6' });
+    assert.equal(code, 0);
+    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
+  });
+
+  it('nothing for the same or an older generation, another model, no model, or no JSON', () => {
+    for (const p of [{ model: 'claude-opus-5-5' }, { model: 'claude-sonnet-4-5' }, { model: 'gpt-5' }, { model: 'default' }, {}, 'not json', '']) {
+      const { code, out } = start(p);
+      assert.equal(code, 0, JSON.stringify(p));
+      assert.doesNotMatch(out, /newer than/, JSON.stringify(p));
+      assert.match(out, /^SSDD · /, JSON.stringify(p));
+    }
+  });
+
+  it('the record comes from the config', () => {
+    put('.ssdd/config.json', '{ "modelReview": { "generation": 6 } }\n');
+    assert.doesNotMatch(start({ model: 'claude-opus-6' }).out, /newer than/);
+    assert.ok(start({ model: 'claude-fable-7' }).out.split('\n').includes(LINE('claude-fable-7', 6)));
+  });
+
+  it("Cursor: model or model_id, dotted too", () => {
+    for (const [p, model] of [[{ model: 'default', model_id: 'claude-opus-6' }, 'claude-opus-6'], [{ model: 'claude-6.1-sonnet' }, 'claude-6.1-sonnet']]) {
+      const { code, out } = start({ ...p, hook_event_name: 'sessionStart' }, ['--session-start=cursor']);
+      assert.equal(code, 0);
+      assert.ok(JSON.parse(out).additional_context.split('\n').includes(LINE(model, 5)), out);
+    }
+  });
+
+  it('the line survives the cap', () => {
+    for (let i = 1; i <= 40; i++) put(`.ssdd/plans/${String(i).padStart(2, '0')}-plan-with-a-longish-name.md`, planText({ status: 'DRAFT', open: ['q'] }));
+    commitAll('40 drafts');
+    const { out } = start({ model: 'claude-opus-6' });
+    assert.ok(out.trimEnd().split('\n').length <= 12, out);
+    assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
+    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
   });
 });
 
