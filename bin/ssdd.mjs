@@ -354,7 +354,7 @@ function nextSteps(target, adapters, armed, packs = [], parts = []) {
   const steps = [
     ...(armed ? [] : [`git -C '${target}' config core.hooksPath .githooks`]),
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
-    'Fill the Documentation Map and Harnesses rows in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
+    'Fill the Documentation Map and Gotchas in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
     ...(parts.includes('drift-audit') ? ['Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md'] : []),
     'Run /skills-audit to pick the stack\'s best-practice skills (in Claude Code it also offers the automation recommender)',
   ];

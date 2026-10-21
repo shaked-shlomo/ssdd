@@ -571,6 +571,15 @@ describe('framework files', () => {
     assert.equal(readlinkSync(join(tgt, '.claude/agents/gate-reviewer.md')), '../../.ssdd/reviewers/gate-reviewer.md');
     assert.doesNotMatch(get('.ssdd/config.json'), /gate-reviewer/);
   });
+  it('the AGENTS step names only sections the template has', () => {
+    const template = readFileSync(join(dirname(SCRIPT), '..', 'adapters', 'generic', 'AGENTS.md'), 'utf8');
+    const r = ssdd('install', tgt);
+    const step = r.out.split('\n').find((l) => /Fill .*AGENTS\.md/.test(l));
+    assert.ok(step, r.out);
+    for (const name of ['Documentation Map', 'Harnesses', 'Gotchas']) {
+      if (step.includes(name)) assert.ok(template.includes(`## ${name}`), `${name} is named, and the template has no such section`);
+    }
+  });
   it('no installed hook file matches a test runner\'s default pattern', () => {
     const dir = join(dirname(SCRIPT), '..', 'mechanisms', 'hooks');
     const hits = readdirSync(dir).filter((f) => DEFAULT_TEST_PATTERNS.some((re) => re.test(f)));
