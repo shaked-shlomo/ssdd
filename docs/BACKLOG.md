@@ -5,7 +5,7 @@ next work is the rest of v3 (`SPEC.md` →
 v3), Part 5, one plan, agreed
 2026-10-17 from a read-only survey of prizma and Hatedate. Not hardening.
 When an item ships, delete it here and record it in `CHANGELOG.md`. When one
-is planned, it gets a `SPEC.md` section first.
+is planned, it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
 
 **Threat model.** The harness hooks keep a cooperating agent on the process;
 they aren't a sandbox. A new evasion shape is out of scope unless an agent

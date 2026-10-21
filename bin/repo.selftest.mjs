@@ -1,0 +1,73 @@
+// SSDD's own invariants: the spec index, links and citations between its docs.
+// Not installed into injected repos (bin/ never ships).
+// Run: node --test bin/repo.selftest.mjs
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (rel) => readFileSync(join(REPO, rel), 'utf8');
+// The repo's files: tracked, plus new ones git doesn't ignore.
+const tracked = () => execFileSync('git', ['-C', REPO, 'ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' })
+  .split('\n').filter((p) => p && existsSync(join(REPO, p)));
+// GitHub's heading anchor.
+const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').replace(/ /g, '-');
+const headings = (text) => text.replace(/^```[\s\S]*?^```/gm, '').match(/^#{1,6} .+$/gm)?.map((h) => h.replace(/^#+ /, '')) ?? [];
+// Markdown links and HTML href/src/srcset outside code: → [{ target, anchor }]. URLs are skipped.
+function links(text) {
+  const prose = text.replace(/^```[\s\S]*?^```/gm, '').replace(/`[^`\n]*`/g, '');
+  const raw = [
+    ...[...prose.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((m) => m[1]),
+    ...[...prose.matchAll(/\b(?:href|src|srcset)="([^"]+)"/g)].map((m) => m[1]),
+  ];
+  return raw.filter((t) => !/^[a-z][a-z+.-]*:/i.test(t)).map((t) => {
+    const [target, anchor] = t.split('#');
+    return { target, anchor };
+  });
+}
+
+describe('the spec index', () => {
+  const index = read('SPEC.md');
+  const rows = [...index.matchAll(/^\| (v[\d.]+) \| \[[^\]]+\]\((docs\/specs\/[^)]+)\)/gm)].map((m) => [m[1], m[2]]);
+  const files = () => readdirSync(join(REPO, 'docs/specs')).filter((f) => f.endsWith('.md')).map((f) => `docs/specs/${f}`);
+
+  it('SPEC.md is an index of docs/specs/', () => {
+    assert.ok(index.split('\n').length <= 60, `SPEC.md is ${index.split('\n').length} lines`);
+    assert.deepEqual(rows.map(([, f]) => f).sort(), files().sort(), 'one row per file');
+    for (const [, f] of rows) assert.match(read(f), /^# /, `${f} starts with its heading`);
+  });
+
+  it('every SPEC.md citation resolves', () => {
+    const byVersion = new Map(rows);
+    const re = /SPEC\.md`?\s*(?:→|,)?\s*(?:`#\s*|")?(v\d+(?:\.\d+)?)\b(?:[^\n]{0,20}?(?:→|,)\s*Part (\d+))?/g;
+    const bad = []; let checked = 0;
+    for (const f of tracked().filter((p) => /\.(md|mjs)$/.test(p))) {
+      for (const m of read(f).matchAll(re)) {
+        checked++;
+        const file = byVersion.get(m[1]);
+        if (!file) bad.push(`${f}: ${m[0]} — no ${m[1]} in the index`);
+        else if (m[2] && !new RegExp(`^## Part ${m[2]}\\b`, 'm').test(read(file))) bad.push(`${f}: ${m[0]} — no Part ${m[2]} in ${file}`);
+      }
+    }
+    assert.deepEqual(bad, []);
+    assert.ok(checked >= 30, `only ${checked} citations found`);
+  });
+});
+
+describe('links', () => {
+  it('every relative link resolves', () => {
+    const docs = ['SPEC.md', 'README.md', ...tracked().filter((p) => /^docs\/.*\.md$/.test(p) && !p.startsWith('docs/superpowers/'))];
+    const bad = [];
+    for (const f of docs) {
+      for (const { target, anchor } of links(read(f))) {
+        const rel = target ? normalize(join(dirname(f), target)) : f;
+        if (!existsSync(join(REPO, rel))) { bad.push(`${f}: ${target} — missing`); continue; }
+        if (anchor && rel.endsWith('.md') && !headings(read(rel)).some((h) => slug(h) === anchor)) bad.push(`${f}: ${target}#${anchor} — no such heading`);
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+});
