@@ -14,4 +14,4 @@ version gets its file and a row here before its plan.
 | v2.4 | [v2.4 — `/skills-audit`: best-practice skills catalog and automation recommender](docs/specs/v2.4.md) | 2.4.0 |
 | v2.5 | [v2.5 — close the remaining gate weaknesses](docs/specs/v2.5.md) | 2.5.0 (untagged) |
 | v2.6 | [v2.6 — simplify the gate to its threat model](docs/specs/v2.6.md) | 2.6.0 (untagged) |
-| v3 | [v3 — SSDD knows where the work is](docs/specs/v3.md) | 3.0.0–3.2.1 (Parts 1–4); Part 5 in progress as 3.3.0 |
+| v3 | [v3 — SSDD knows where the work is](docs/specs/v3.md) | 3.0.0–3.2.1 (Parts 1–4); Part 5 built as 3.3.0, unreleased |
