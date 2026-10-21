@@ -15,9 +15,11 @@ the target, so upgrade steps belong here and not only in commit messages.
 ### Fixed
 - An `echo` or `printf` piped into a shell asks again: `echo supabase db
   push | sh` passed in 3.2.0, which judged echo and printf as text. They're
-  text only when nothing in the call reads text as commands (a shell,
-  `source`, `eval`, `xargs`, `ssh`), and only by their bare names. The
-  same holds for `productionGuard.extraRules`. Nothing to do by hand.
+  text only by their bare names, and only when every other command in the
+  call is a known text reader (`grep`, `tail`, `jq`, `cat` …); otherwise
+  what they print is judged as a command (`| sh`, `| sudo bash`, `| awk
+  '{system($0)}'`). The same holds for `productionGuard.extraRules`. Nothing
+  to do by hand.
 - A selftest failed on Linux, where the scratch repo lives under `/tmp`: its
   "a directory" case used a directory named `tmp`, whose name then appeared
   twice in its own path, so the guard asked for that reason instead. CI

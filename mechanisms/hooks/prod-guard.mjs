@@ -110,13 +110,14 @@ const claimed = (mod, call, subject) =>
 // single word (`"vercel"`, `'--prod'`) is read as the shell reads it.
 const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] && /\s/.test(w) ? '""' : w)).join(' ');
 // echo / printf (by their bare names) only print their words: text, not a
-// command — unless something in the call reads text as commands (a shell,
-// source, eval, xargs, ssh), as in `echo … | sh`. A feeder counts at any
-// position, so `| sudo sh` or `| env -i bash` is one.
+// command — but only when every other command in the call is a known text
+// reader. Anything else might run what they print (`| sh`, `| sudo bash`,
+// `| awk '{system($0)}'`), so then their words are judged.
 const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
 const prints = (words) => ['echo', 'printf'].includes(runWord(words));
-const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel', 'busybox']);
-const feeds = (commands) => commands.some((w) => w.some((x) => FEEDERS.has(String(x).split('/').pop())));
+const TEXT_READERS = new Set(['echo', 'printf', 'cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'wc', 'jq', 'sort', 'uniq',
+  'cut', 'tr', 'column', 'less', 'more', 'true', 'false', ':', 'test', '[', 'cd', 'pwd', 'ls', 'date', 'sleep']);
+const feeds = (commands) => commands.some((w) => !TEXT_READERS.has(runWord(w)));
 
 async function main() {
   const payload = parseHookStdin(readFileSync(0, 'utf8'));

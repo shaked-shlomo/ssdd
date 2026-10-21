@@ -592,6 +592,8 @@ describe('found by the final review', () => {
   });
   it('echo and printf are text, not commands', () => {
     expectPass(L, 'echo Run supabase db push after merge');
+    expectPass(L, 'echo supabase db push | tail -1');
+    expectPass(L, 'cd /tmp && echo Run supabase db push; ls');
     expectPass(L, "printf '%s\\n' run supabase functions deploy x");
     expectAsk(L, 'echo hi && supabase db push', WRITES);
   });
@@ -605,6 +607,9 @@ describe('found by the final review', () => {
       'echo supabase db push | env -i bash',
       'echo supabase db push | timeout 5 sh',
       'echo supabase db push | busybox sh',
+      "echo supabase db push | awk '{system($0)}'",
+      'echo supabase db push | $SHELL',
+      'echo supabase db push | doas -s',
       '/tmp/x/echo supabase db push',
     ]) expectAsk(L, c, WRITES);
   });
