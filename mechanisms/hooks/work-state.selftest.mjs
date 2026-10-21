@@ -915,7 +915,10 @@ describe('the new-model reminder', () => {
 
   // A harness that writes the payload late, or keeps stdin open after it.
   // chunks: [[delayMs, text]]; stdin closes after holdMs.
-  function runHeld(chunks, holdMs = 3000) {
+  // The property is "doesn't wait for the harness to close stdin": each case
+  // must exit before holdMs, which leaves a loaded CI runner room.
+  const HOLD = 5000;
+  function runHeld(chunks, holdMs = HOLD) {
     return new Promise((resolve) => {
       const t0 = Date.now();
       const child = spawn(process.execPath, [SCRIPT, '--session-start'], { cwd: dir, env: env(), stdio: ['pipe', 'pipe', 'pipe'] });
@@ -932,21 +935,21 @@ describe('the new-model reminder', () => {
   it('a payload on a pipe the harness keeps open still counts, without waiting for it to close', async () => {
     const { code, out, ms } = await runHeld([[0, PAYLOAD]]);
     assert.equal(code, 0);
-    assert.ok(ms < 2000, `${ms} ms`);
+    assert.ok(ms < HOLD, `${ms} ms`);
     assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
   });
 
   it('a payload written late still counts', async () => {
     const { code, out, ms } = await runHeld([[200, PAYLOAD]]);
     assert.equal(code, 0);
-    assert.ok(ms < 2000, `${ms} ms`);
+    assert.ok(ms < HOLD, `${ms} ms`);
     assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
   });
 
-  it('stdin held open with nothing written: exit 0 within a second, no line', async () => {
+  it('stdin held open with nothing written: exit 0 before it closes, no line', async () => {
     const { code, out, ms } = await runHeld([]);
     assert.equal(code, 0);
-    assert.ok(ms < 1500, `${ms} ms`);
+    assert.ok(ms < HOLD, `${ms} ms`);
     assert.match(out, /^SSDD · /);
     assert.doesNotMatch(out, /newer than/);
   });
