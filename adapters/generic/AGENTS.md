@@ -1,6 +1,5 @@
-<!-- SSDD template for the one instructions file every harness reads (Claude
-Code through `@AGENTS.md` in CLAUDE.md). Keep it short: what the repo is, its
-gotchas, the Documentation Map. Detail lives in .ssdd/process/SDD.md. -->
+<!-- SSDD template. Every harness reads this file (Claude Code through CLAUDE.md's
+`@AGENTS.md`); keep it short, detail lives in .ssdd/process/SDD.md. -->
 
 # <Project> — instructions
 
@@ -9,45 +8,30 @@ everything (e.g. `npm run check`).>
 
 ## Workflow: SSDD
 
-Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan in the
-plans folder (`paths.plans` in `.ssdd/config.json`, default `.ssdd/plans`;
-`/new-plan`), a clarify pass and acceptance criteria before code, a ledger
-per multi-task plan, and verification that closes each criterion with real
-command output.
+Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan (`/new-plan`),
+a clarify pass and acceptance criteria before code, a ledger per multi-task
+plan, and verification with real command output.
 Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.
 
-- **Evidence:** before reporting progress, check each claim against a tool
-  result from this session; say what isn't verified yet. Numbers come from
-  commands, not memory.
-- **Docs move with code:** a change that trips a Documentation Map trigger
-  updates that doc in the same commit.
-- **Class fixes cover the class:** fixing one instance of a describable bug
-  means finding every instance, or fixing it at the root.
+- Before reporting progress, check each claim against a tool result from this
+  session, and say what isn't verified yet.
+- A change that trips a Documentation Map trigger updates that doc in the same commit.
+- Fixing one instance of a describable bug means finding every instance, or
+  fixing it at the root.
 
-## Review gate
+## Review gate and git
 
-Commits touching paths routed in `.ssdd/config.json` are blocked until the
-reviewers routed to those files have reviewed them. The block message says
-exactly what to run. Stamping without running the reviewers is forbidden;
-`SSDD_REVIEW_SKIP=1` needs the user's go-ahead. Stage and commit in separate
-calls. Reviews happen at the gate and in the final whole-plan review. Don't
-start other review rounds unless asked.
+A commit touching paths routed in `.ssdd/config.json` is blocked until their
+reviewers have reviewed them; the block message says what to run. Never stamp
+without running the reviewers; `SSDD_REVIEW_SKIP=1` needs the user's go-ahead.
+Reviews happen at the gate and in the final whole-plan review; don't start
+others unless asked. Stage files by path, and commit in a separate call. No
+`--no-verify`/`-n`, `--amend`, force-push or `core.hooksPath` changes. The
+pre-commit hook blocks while untracked files exist.
 
-## Git
-
-Stage files by path. No `--no-verify`/`-n`, `--amend`, force-push, or
-`core.hooksPath` changes (the guard blocks them and says why). The pre-commit
-hook blocks while untracked files exist.
-
-## Harnesses <!-- keep the rows for the harnesses this repo uses -->
-
-| Harness | Instructions | Hooks | Reviewers |
-|---|---|---|---|
-| Claude Code | `CLAUDE.md` → `@AGENTS.md` | `.claude/settings.json` | Agent tool, `.claude/agents/` (symlinks) |
-| Cursor | `AGENTS.md`, `.cursor/rules/ssdd.mdc` | `.cursor/hooks.json` | Task tool, same names |
-| Other | `AGENTS.md` | git pre-commit | `.ssdd/reviewers/*.md` as checklists |
-
-Skills live in `.agents/skills/` only (`.claude/skills/` holds symlinks).
+Reviewers are `.ssdd/reviewers/*.md`: subagents of the same name (Claude Code's
+`.claude/agents/` links to them), or checklists where there are none. Skills
+live in `.agents/skills/` (`.claude/skills/` holds symlinks).
 
 ## Gotchas
 

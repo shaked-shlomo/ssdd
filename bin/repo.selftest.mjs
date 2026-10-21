@@ -149,6 +149,25 @@ describe('text budgets', () => {
     assert.deepEqual(bad, []);
   });
 
+  it('the AGENTS template is at most 45 lines', () => {
+    const n = read('adapters/generic/AGENTS.md').split('\n').length - 1;
+    assert.ok(n <= 45, `${n} lines`);
+  });
+
+  it('new-plan fits 1,500 bytes; the handover template 1,000', () => {
+    assert.ok(bytes('skills/new-plan/SKILL.md') <= 1500, `new-plan is ${bytes('skills/new-plan/SKILL.md')}`);
+    assert.ok(bytes('process/templates/handover-template.md') <= 1000, `handover is ${bytes('process/templates/handover-template.md')}`);
+  });
+
+  it('a default Claude Code install loads at most 5,000 bytes', () => {
+    // AGENTS.md and CLAUDE.md load whole; skills and reviewers by description.
+    // docs-drift-audit is opt-in (--with drift-audit); the template isn't an agent.
+    const descs = [...skills().filter((f) => !f.includes('docs-drift-audit')), ...reviewers().filter((f) => !f.includes('template'))]
+      .reduce((n, f) => n + frontmatter(f).description.length, 0);
+    const total = bytes('adapters/generic/AGENTS.md') + bytes('adapters/claude-code/CLAUDE.md') + descs;
+    assert.ok(total <= 5000, `${total} bytes`);
+  });
+
   it('skills-audit fits 6,200 bytes, SDD.md 11,000', () => {
     assert.ok(bytes('skills/skills-audit/SKILL.md') <= 6200, `skills-audit is ${bytes('skills/skills-audit/SKILL.md')}`);
     assert.ok(bytes('process/SDD.md') <= 11000, `SDD.md is ${bytes('process/SDD.md')}`);

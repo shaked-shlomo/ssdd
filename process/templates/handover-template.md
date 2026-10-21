@@ -7,32 +7,25 @@ verified against that commit; re-verify line numbers before citing them.
 ---
 
 You are picking up <what> in <project>. Read the project instructions file and
-`.ssdd/process/SDD.md` first. This is <a spec → plan piece of work | a plan's
-next task | a drive-by fix>, because <why>. <Use a git worktree if the checkout
-is shared.> The next free numbers are spec `NN` and plan `NN` — check
-the specs folder (`paths.specs` in `.ssdd/config.json`, default `.ssdd/specs`),
-the plans folder (`paths.plans`, default `.ssdd/plans`) and open branches
-before taking them; `node .ssdd/hooks/work-state.mjs --next-plan` gives the
-plan number.
+`.ssdd/process/SDD.md` first. <Why; whether to use a git worktree.> The next
+plan number is what `node .ssdd/hooks/work-state.mjs --next-plan` prints.
 
 ## The problem
 
-<What is wrong or wanted, with file:line evidence for every claim. Separate
-what is measured from what is inferred.>
+<File:line evidence for every claim; what's measured apart from what's inferred.>
 
 ## What is decided
 
-<Owner rulings and constraints already settled — with where they were made.>
+<Owner rulings and settled constraints, with where they were made.>
 
 ## What is open
 
-<The questions this session must answer (from a source, or by asking).>
+<The questions this session must answer.>
 
 ## Out of scope
 
-<Adjacent work NOT to do here, and where it is tracked.>
+<Adjacent work not to do here, and where it's tracked.>
 
 ## Done looks like
 
-<The acceptance criteria as far as they are known, or "write them in the
-plan's clarify pass".>
+<The acceptance criteria so far, or "write them in the plan's clarify pass".>
