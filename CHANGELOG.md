@@ -10,6 +10,56 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.3.0] — unreleased
+
+v3 Part 5, trimming: SSDD is only as big as what it does. It keeps facts,
+commands, scripts and gotchas, and cuts text that tells the model how to
+reason; see `SPEC.md` → v3 → Part 5.
+
+### Added
+- **Optional parts.** `install --with drift-audit` installs the drift-audit
+  runbook and `/docs-drift-audit`; without it, neither. The lock records the
+  parts in `with`, and `status` prints them. `update` keeps them, and a repo
+  installed before 3.3.0 keeps the drift audit it has. `update --with
+  a,b|none` adds or removes one: an unedited file is deleted, an edited one
+  is kept with a warning. A removal also deletes the folders it empties and
+  any `.claude/skills` or `.claude/agents` link of SSDD's shape left
+  pointing at nothing.
+
+### Changed
+- **`/cleanup` is thin.** It resolves the scope and runs `/code-review`
+  (Cursor: its bug-review skill) with the user's target, effort and
+  `--comment`. It adds the SSDD reviewers the config routes (and
+  `docs-sync-reviewer` for docs or config no route covers), checks their
+  findings against the files, and presents one plan. Nothing changes until
+  the user approves. Its own effort levels, `--fix` and verifier agents are
+  gone: `/code-review` has them.
+  - Back from prizma's and Hatedate's copies: a PR's scratch worktree links
+    the dependencies and copies no env file, every agent gets the worktree
+    path, Cursor's checkout and stash steps are skipped, MCP output comes
+    from the main session, a data claim is checked against the data,
+    `ReportFindings` gets the merged list and the outcomes, and no `pkill
+    -f`.
+- **Less text at session start.** A default Claude Code install loads 4,690
+  bytes of SSDD text, down from 6,153:
+  - the AGENTS template is 45 lines (from 60), leaving the gate's procedure
+    to its block message
+  - CLAUDE.md keeps one fact, and every skill and reviewer description is
+    one line of at most 300 characters
+  - `AGENTS.md` and `CLAUDE.md` are project-owned, so `update` only prints
+    how their templates changed; port what you want
+- **The D3 pass.** `new-plan` (2,268 → 1,255 bytes) runs `work-state.mjs
+  --next-plan` and points at SDD.md for the rest. The handover template
+  takes the plan number from the same command. `skills-audit` (6,696 →
+  6,153) and SDD.md (12,105 → 10,998) drop text that restated a template, a
+  script's output or another section, or said how to reason. The reviewers
+  keep their checks.
+- **Node 22 is the floor.** CI runs Node 22 and 24. Nothing uses an API
+  newer than Node 18's yet, so a repo still on Node 20 keeps running.
+- **SSDD's own docs** (not installed): SPEC.md is an index of one spec per
+  version in `docs/specs/`, and the README is one page, with the detail in
+  `docs/usage.md` and `docs/limitations.md`.
+
 ## [3.2.1] — 2026-10-21
 
 ### Fixed
