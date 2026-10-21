@@ -10,7 +10,7 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.2.1] — unreleased
+## [3.2.1] — 2026-10-21
 
 ### Fixed
 - An `echo` or `printf` piped into a shell asks again: `echo supabase db

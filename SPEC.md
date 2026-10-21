@@ -1158,7 +1158,8 @@ Parts 1 and 2 SHIPPED as 3.0.0, tagged and pushed 2026-10-20 (the
 after-`/compact` check is DEFERRED to the first real repo migration, see
 Part 1 → Verification); Part 3 SHIPPED as 3.1.0, tagged and pushed
 2026-10-20, with its deferred minors and a Linux-only selftest fix in 3.1.1;
-Part 4 SHIPPED as 3.2.0, tagged and pushed 2026-10-21 ·
+Part 4 SHIPPED as 3.2.0, tagged and pushed 2026-10-21, with an echo fix and a
+Linux-only selftest fix in 3.2.1 ·
 **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
