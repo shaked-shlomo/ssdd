@@ -95,3 +95,40 @@ describe('Node floor', () => {
     assert.deepEqual(bad, []);
   });
 });
+
+// → { name, description, block } from a skill's or reviewer's frontmatter.
+function frontmatter(rel) {
+  const fm = read(rel).match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
+  const desc = fm.match(/^description:(.*)$/m)?.[1].trim() ?? '';
+  return { name: fm.match(/^name: (.+)$/m)?.[1], description: desc, block: /^[>|]/.test(desc) };
+}
+
+describe('cleanup skill', () => {
+  const FILE = 'skills/cleanup/SKILL.md';
+
+  it('thin', () => {
+    const bytes = Buffer.byteLength(read(FILE));
+    assert.ok(bytes <= 3500, `${bytes} bytes`);
+    const { name, description, block } = frontmatter(FILE);
+    assert.equal(name, 'cleanup');
+    assert.ok(!block, 'a plain one-line description');
+    assert.ok(description.length <= 300, `description is ${description.length} chars`);
+    assert.ok(!description.includes(': '), 'plain YAML value contains ": "');
+    assert.ok(description.includes('/code-review'));
+  });
+
+  it('keeps what SSDD adds', () => {
+    const text = read(FILE).replace(/\s+/g, ' ');
+    for (const s of ['/code-review', 'effort', '--comment', '.ssdd/config.json', 'known list', 'docs-sync-reviewer',
+      'ReportFindings', 'pkill -f', 'git stash', 'worktree', 'approve', 'NO DIFF']) assert.ok(text.includes(s), s);
+  });
+
+  it('every step it cites exists', () => {
+    const text = read(FILE);
+    // "step 3" needs "## 3."; "Phase 3" needs "## Phase 3". (§ is SDD.md's.)
+    for (const m of text.matchAll(/\b(Phase|step) (\d+)/gi)) {
+      const heading = /^phase$/i.test(m[1]) ? `^## Phase ${m[2]}\\b` : `^## ${m[2]}\\.`;
+      assert.match(text, new RegExp(heading, 'm'), m[0]);
+    }
+  });
+});
