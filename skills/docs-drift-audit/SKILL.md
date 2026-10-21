@@ -1,13 +1,9 @@
 ---
 name: docs-drift-audit
-description: >-
-  Audits the whole repo for docs that drifted from the code: parallel read-only passes, one per
-  doc↔code domain, every finding re-verified, then the docs fixed. Use for "audit the docs" or a
-  map staleness check; per-diff coupling is docs-sync-reviewer's job.
+description: Audits the whole repo for docs that drifted from the code, one read-only pass per doc↔code domain, every finding re-verified, then fixes the docs. Use for "audit the docs" or a map staleness check; per-diff coupling is docs-sync-reviewer's job.
 ---
 
-Run the full-repo docs-drift audit. The procedure is `.ssdd/drift-audit.md` — read it and
-follow it; this skill is the invocation surface, the runbook is the procedure.
+Follow `.ssdd/drift-audit.md`.
 
 Project-specific domain list for Phase 1 (derive the rest from AGENTS.md → Documentation Map):
 

@@ -53,5 +53,4 @@ lens. Ask which to create.
 3. Claude Code: `ln -s ../../.ssdd/reviewers/<name>-reviewer.md .claude/agents/<name>-reviewer.md`.
    Cursor needs nothing; the Task tool uses the name.
 4. Tell the user: once the route is staged, the gate requires this reviewer
-   on those paths, starting with the commit that adds it. The new files go through the gate like any other
-   change.
+   on those paths, starting with the commit that adds it.

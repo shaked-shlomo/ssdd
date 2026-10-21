@@ -20,29 +20,25 @@ brainstorm ──▶ spec ──▶ plan (clarify pass, criteria first) ──�
 
 ## 0. Brainstorm
 
-Dialogue before design. Understand purpose, constraints, and success criteria;
-propose 2–3 approaches with trade-offs; converge on one. For work spanning
-multiple independent subsystems, decompose first — each sub-project gets its
-own spec → plan → implementation cycle.
+Purpose, constraints and success criteria are settled with the user, and one
+of two or three approaches is chosen. Work spanning independent subsystems
+gets one spec → plan → implementation cycle per subsystem.
 
 ## 1. Spec (`<specs>/NN-<slug>-spec.md`)
 
 The validated design, written **before** the plan, from
-[templates/spec-template.md](templates/spec-template.md). The load-bearing
-section is **Scope: In / Out** — the Out list ("deferred", with a reason) is
-what keeps plans shippable. Specs record *decisions* ("chosen over X to avoid
-Y"), not just outcomes.
+[templates/spec-template.md](templates/spec-template.md). Its Out list
+(deferred, with a reason) is what keeps plans shippable.
 
 Small work may skip the spec and go straight to a plan; never skip the plan.
 
 ## 2. Plan (`<plans>/NN-<slug>.md`)
 
-One numbered markdown file per plan, `NN-kebab-slug.md`. Next number = highest
-existing `NN-` prefix + 1 (check with a command, not memory:
-`node .ssdd/hooks/work-state.mjs --next-plan`) — across `main` **and open
-branches/PRs**, since parallel worktrees race for the same number.
-Never reuse, skip, or backfill numbers; never add unnumbered files to the
-plans directory. Work this checkout can't see (an unfetched branch, another
+One numbered markdown file per plan, `NN-kebab-slug.md`. The next number
+comes from `node .ssdd/hooks/work-state.mjs --next-plan`, which reads every
+worktree and every ref git knows, since parallel worktrees race for the same
+number. Never reuse, skip, or backfill numbers; never add unnumbered files to
+the plans directory. Work this checkout can't see (an unfetched branch, another
 machine) can still take the same number; the session view reports two plans
 with one number, and the later one is renumbered, with its references.
 
@@ -63,15 +59,11 @@ Template: [templates/plan-template.md](templates/plan-template.md).
 
 ## 3. Task ledger (`<ledgers>/NN-<slug>-ledger.md`)
 
-For multi-task plans, the ledger is the cross-session execution record — one
-checkbox line per task carrying: the commit hash(es), spec-compliance ✅,
-quality-review ✅, test counts, and **triaged findings** (Critical/Important
-fixed inline with the fix commit; Minor recorded with an explicit
-fix-now / defer / final-review decision). Deferred
-items get a home (a follow-up section, a spawned task, or the requirements
-checklist) before the plan closes. A row that claims a fix is verified
-against the staged file before it is written — §4, "Findings are records".
-Owner decisions made mid-execution go in the ledger's **Rulings** section.
+For multi-task plans, the ledger is the cross-session execution record: one
+line per task with its commits, review verdicts, test counts and **triaged
+findings** (Critical/Important fixed with the fix commit; each Minor fixed,
+deferred or left for the final review). Deferred items get a home before the
+plan closes. Owner decisions made mid-execution go in the ledger's **Rulings** section.
 
 Template: [templates/task-ledger-template.md](templates/task-ledger-template.md).
 
@@ -131,8 +123,7 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   every intended ledger row — "fixed by X", "test added", "doc says Y" — is
   checked against the staged blob (`git show :path`) by an agent other than
   the one that wrote the fix, refute-by-default: a row stands only when the
-  staged file demonstrably contains what it claims. Only then is the ledger
-  section written. (Rows written from intention once recorded fixes that
+  staged file demonstrably contains what it claims. (Rows written from intention once recorded fixes that
   never landed.)
 - **Doc coupling is same-commit, not best-effort.** The project's
   Documentation Map names each canonical doc and its update trigger; a change
@@ -147,12 +138,10 @@ pass are the review rounds; don't start others unless the user asks.
 
 ## 6. Verification
 
-Fill the plan's Verification section: **one entry per AC ID**
-(`- **AC1** — <command> → <output>`), each closed with the command/check
-actually run and its **real output pasted from this session**. If a criterion
-can't be verified (operator-gated deploy, missing credentials), its entry says
-so: `- **AC4** — DEFERRED (operator): <what's left>` ("BUILD-then-DEFER"), with
-the operator checklist recorded.
+**One entry per AC ID** in the plan's Verification section:
+`- **AC1** — <command> → <real output from this session>`, or, for a criterion
+that can't be checked yet (an operator-gated deploy, missing credentials),
+`- **AC4** — DEFERRED (operator): <what's left>` with the operator checklist.
 
 ## 7. Sync back
 
@@ -168,24 +157,19 @@ the operator checklist recorded.
 - Update the requirements/production checklist if the work affects readiness.
 - When the instructions, skills or reviewers changed — or a new model
   generation is adopted — run Claude Code's `/doctor prompt-audit` and act on
-  what it finds (instructions written for older models, contradictions,
-  dead references).
+  what it finds.
 
 ## Handover (work that crosses sessions)
 
-When work must continue in a fresh session before it has a plan — or a plan's
-next step needs a clean context — write `<specs>/HANDOVER-<slug>.md` from
-[templates/handover-template.md](templates/handover-template.md): a
-self-contained opening prompt, verified against a named commit, that states
-the problem with file:line evidence, what is decided, what is not, and the
-next free spec/plan numbers to check. The receiving session re-verifies before
-citing anything in it.
+When work must continue in a fresh session before it has a plan, or a plan's
+next step needs a clean context, write `<specs>/HANDOVER-<slug>.md` from
+[templates/handover-template.md](templates/handover-template.md). The
+receiving session re-verifies before citing anything in it.
 
 **Where the work is.** `node .ssdd/hooks/work-state.mjs` lists every open plan
-across the default branch, other branches and worktrees: its status, the next
-task from its ledger, the criteria verified, open questions, and a plan whose
-Status says IN PROGRESS while nothing is working on it. The harness hooks print
-it at session start. Read it before reading plans to find your place.
+across branches and worktrees (status, next task, criteria verified, open
+questions, an IN PROGRESS nothing is working on). The harness hooks print it
+at session start. Read it before reading plans to find your place.
 
 **Production.** Production changes go one sanctioned way (the project's
 `productionGuard.writePath`, e.g. migrations merged to `main`). The
@@ -199,8 +183,7 @@ than an inline query, so the database enforces the read.
 1. **Evidence, not memory.** Before stating a fact or reporting progress,
    check it against the source or a tool result from this session; every
    number in a plan, ledger, commit or PR comes from a command. Say what
-   isn't verified yet. Report outcomes as they are — failing tests with
-   their output, skipped steps as skipped.
+   isn't verified yet.
 2. **Class-of-bug fixes cover the class.** Fixing one instance of a
    describable defect class means an inventory of every instance, or a
    root-level fix that covers them all.

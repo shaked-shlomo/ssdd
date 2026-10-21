@@ -5,36 +5,28 @@ description: Finds the stack's best-practice skills in the SSDD catalog, reads e
 
 # Skills audit
 
-Upstream best-practice skills are written for someone else's repo. Every
-source audited so far ships rules a hook or reviewer here would block, so
-none installs wholesale. This skill finds candidates, reads them at a pinned
-sha, and proposes a verdict per skill. It changes nothing until the user
-approves, except recording that it ran (step 7). The lifecycle it serves is in `.ssdd/process/SDD.md`.
+Upstream best-practice skills are written for someone else's repo, so each
+is read at a pinned sha and checked against this repo's rules before
+anything is adopted. Nothing changes until the user approves, except
+recording that the audit ran (step 7).
 
 ## 1. Candidates (read-only)
 
-`node .agents/skills/skills-audit/skills-audit.mjs` prints:
+`node .agents/skills/skills-audit/skills-audit.mjs` prints the stack
+signals, the candidate sources with their skills and hazards, each source's
+sha drift, and name clashes. `--offline` skips the upstream check.
 
-- **Stack signals:** the ones matched in `package.json` and the top-level
-  files. In a workspace, read the app packages' manifests too; the script
-  reads only the root.
-- **Candidate sources:** each source's distribution, its matching skills,
-  where each is already present (`present:` is what shows a skill is
-  installed here; the `ships as:` label is only how the source distributes
-  it), and the catalog's hazards.
-- **Sha drift:** each source's recorded sha against the full upstream HEAD
-  sha. The
-  recorded sha comes from the ledger `.ssdd/skills.json`, else from the
+- It reads only the root `package.json`; in a workspace, read the app
+  packages' manifests too.
+- `present:` is what shows a skill is installed here; the `ships as:` label
+  is only how the source distributes it.
+- The recorded sha comes from the ledger `.ssdd/skills.json`, else from the
   catalog's audit.
-- **Name clashes:** skill names shipped by two or more candidates. Two
-  skills with one name on the same trigger words can't coexist; pick one.
-
-`--offline` skips the upstream check.
+- Two skills with one name on the same trigger words can't coexist; pick one.
 
 ## 2. Read each source at a pinned sha
 
-Clone outside the repo, into a fresh `mktemp -d` directory (or under
-`${TMPDIR:-/tmp}`), and check out the full upstream sha step 1 printed. The
+Clone outside the repo, into a fresh `mktemp -d` directory, and check out the full upstream sha step 1 printed. The
 shell may not persist between commands, so reuse the literal path `mktemp`
 printed in later steps:
 
@@ -126,8 +118,6 @@ collisions, verdict, and a one-line reason. Then list any project-side findings 
 - **Routing:** if `AGENTS.md` routes situations to skills, add the adopted
   ones there.
 
-These edits then go through the review gate like any other change.
-
 ## 6. Automation recommender (Claude Code only)
 
 Skip this step outside Claude Code. Run it in the proposing pass, before
@@ -150,9 +140,8 @@ End every run with:
 node .agents/skills/skills-audit/skills-audit.mjs record
 ```
 
-That includes a run that found no candidates in step 1, and one where the
-user approved nothing: even one that matched nothing is a run. It sets
-`"audited"` to today in `.ssdd/skills.json` (creating the ledger if it's
-missing). Until it's set, `ssdd.mjs update`, `status` and the session-start
+Every run counts, even one that matched nothing or where the user approved
+nothing. It sets `"audited"` to today in `.ssdd/skills.json` (creating the
+ledger if it's missing). Until it's set, `ssdd.mjs update`, `status` and the session-start
 view say `/skills-audit hasn't run here`. Commit the ledger with the rest of
 the run's changes.

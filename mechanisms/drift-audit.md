@@ -37,7 +37,7 @@ from the project's Documentation Map — typical domains:
 
 Each searcher returns raw findings as
 `❌|⚠️ <doc:row> — claim vs reality (file:line evidence)` plus `✅ <dimension>`
-per clean dimension — no prose padding.
+per clean dimension.
 
 ## Phase 2 — Synthesize & verify
 

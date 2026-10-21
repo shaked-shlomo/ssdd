@@ -14,8 +14,8 @@ general lenses and you flag when a domain lens should exist but doesn't.
 
 1. `git diff --staged` (or the named range). Open actual files; trace data
    flows end to end — the leak is usually one hop away from the diff.
-2. Rate findings Critical / Important / Minor with a concrete exploit path
-   ("attacker does X → sees Y"), not vibes.
+2. Rate findings Critical / Important / Minor, each with a concrete exploit
+   path ("attacker does X → sees Y").
 3. Report `❌ <severity> <finding> — file:line — <fix>`, `⚠️` for hardening
    suggestions, `✅ <lens>` for clean lenses.
    End with **`SECURE`** or **`N RISK(S)`**. Do NOT edit.

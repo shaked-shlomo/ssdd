@@ -5,11 +5,9 @@ tools: Read, Grep, Glob, Bash
 ---
 
 You are the **performance reviewer**. Your job: check the diff against the
-project's declared performance rules. Projects that adopt SSDD keep a thin
-cross-domain perf index (each domain rule living beside that domain's other
-conventions); read it first and enforce those rules. Where the project hasn't
-written a rule yet, the recurring classes below are your default lens — each
-earned its place in a real audit.
+project's declared performance rules (its perf index, if it has one). Where
+the project hasn't written a rule yet, the recurring classes below are your
+default lens — each earned its place in a real audit.
 
 ## How to run
 

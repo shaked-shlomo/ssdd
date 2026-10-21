@@ -132,3 +132,25 @@ describe('cleanup skill', () => {
     }
   });
 });
+
+describe('text budgets', () => {
+  const bytes = (rel) => Buffer.byteLength(read(rel));
+  const skills = () => readdirSync(join(REPO, 'skills')).map((d) => `skills/${d}/SKILL.md`).filter((f) => existsSync(join(REPO, f)));
+  const reviewers = () => readdirSync(join(REPO, 'reviewers')).filter((f) => f.endsWith('.md')).map((f) => `reviewers/${f}`);
+
+  it('every skill and reviewer description is short and plain', () => {
+    const bad = [];
+    for (const f of [...skills(), ...reviewers()]) {
+      const { description, block } = frontmatter(f);
+      if (block || !description) bad.push(`${f}: not a one-line description`);
+      else if (description.length > 300) bad.push(`${f}: ${description.length} chars`);
+      else if (description.includes(': ')) bad.push(`${f}: ": " in a plain YAML value`);
+    }
+    assert.deepEqual(bad, []);
+  });
+
+  it('skills-audit fits 6,200 bytes, SDD.md 11,000', () => {
+    assert.ok(bytes('skills/skills-audit/SKILL.md') <= 6200, `skills-audit is ${bytes('skills/skills-audit/SKILL.md')}`);
+    assert.ok(bytes('process/SDD.md') <= 11000, `SDD.md is ${bytes('process/SDD.md')}`);
+  });
+});
