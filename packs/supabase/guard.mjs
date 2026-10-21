@@ -71,8 +71,13 @@ export function validate(o) {
 export const mentions = (text) => /supabase/i.test(String(text ?? ''));
 
 const base = (w) => String(w ?? '').split('/').pop();
-// echo / printf only print their words: `echo Run supabase db push` is text.
-const prints = (words) => ['echo', 'printf'].includes(base(words.find((w) => !/^[A-Za-z_]\w*=/.test(w))));
+// echo / printf (by their bare names) only print their words: `echo Run
+// supabase db push` is text — unless something in the call reads text as
+// commands (a shell, source, eval, xargs, ssh), as in `echo … | sh`.
+const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
+const prints = (words) => ['echo', 'printf'].includes(runWord(words));
+const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel']);
+const feeds = (commands) => commands.some((w) => FEEDERS.has(base(runWord(w))));
 // A psql backslash command outside strings and comments (\gexec, \gset, \i …):
 // the client runs it, and the SQL check can't see what it does.
 const metaCommand = (sql) => /\\[A-Za-z!?]/.test(lexSql(String(sql)).code);
@@ -471,8 +476,9 @@ function isDbRead(script, ctx) {
 
 export function judgeShell(ctx) {
   const out = [];
+  const fed = feeds(ctx.commands);
   for (const [k, words] of ctx.commands.entries()) {
-    if (prints(words)) continue;
+    if (prints(words) && !fed) continue;
     const i = words.findIndex(isCli);
     const v = i >= 0 ? judgeCli(words, i, ctx, k) : null;
     if (v) out.push(v);

@@ -109,9 +109,13 @@ const claimed = (mod, call, subject) =>
 // a message or a script, not part of the command, so it's blanked. A quoted
 // single word (`"vercel"`, `'--prod'`) is read as the shell reads it.
 const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] && /\s/.test(w) ? '""' : w)).join(' ');
-// echo / printf only print their words: text, not a command.
-const PRINTS = new Set(['echo', 'printf']);
-const prints = (words) => PRINTS.has(String(words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '').split('/').pop());
+// echo / printf (by their bare names) only print their words: text, not a
+// command — unless something in the call reads text as commands (a shell,
+// source, eval, xargs, ssh), as in `echo … | sh`.
+const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
+const prints = (words) => ['echo', 'printf'].includes(runWord(words));
+const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel']);
+const feeds = (commands) => commands.some((w) => FEEDERS.has(String(runWord(w)).split('/').pop()));
 
 async function main() {
   const payload = parseHookStdin(readFileSync(0, 'utf8'));
@@ -161,8 +165,9 @@ async function main() {
       Object.assign(ctx, shellCommands(command));
       for (const r of rules) {
         const re = tryRegex(r.match);
+        const fed = feeds(ctx.commands);
         for (const words of ctx.commands) {
-          if (!prints(words) && re?.test(ruleText(words))) verdicts.push({ decision: r.decision, kind: 'rule', what: words.join(' '), why: r.reason ?? `matches /${r.match}/` });
+          if ((fed || !prints(words)) && re?.test(ruleText(words))) verdicts.push({ decision: r.decision, kind: 'rule', what: words.join(' '), why: r.reason ?? `matches /${r.match}/` });
         }
         for (const text of ctx.unparsed) {
           if (re?.test(text)) verdicts.push({ decision: 'ask', kind: 'unclear', what: 'this command', why: `it can't be parsed, and it matches productionGuard.extraRules /${r.match}/` });

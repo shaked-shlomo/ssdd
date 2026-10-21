@@ -10,6 +10,15 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.2.1] — unreleased
+
+### Fixed
+- An `echo` or `printf` piped into a shell asks again: `echo supabase db
+  push | sh` passed in 3.2.0, which judged echo and printf as text. They're
+  text only when nothing in the call reads text as commands (a shell,
+  `source`, `eval`, `xargs`, `ssh`), and only by their bare names. The
+  same holds for `productionGuard.extraRules`. Nothing to do by hand.
+
 ## [3.2.0] — 2026-10-21
 
 v3 Part 4, the production guard and the Supabase pack: production changes go

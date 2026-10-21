@@ -591,4 +591,13 @@ describe('found by the final review', () => {
     expectPass(L, "printf '%s\\n' run supabase functions deploy x");
     expectAsk(L, 'echo hi && supabase db push', WRITES);
   });
+  it('…unless a shell or a feeder reads them, or they are given by path', () => {
+    for (const c of [
+      'echo supabase db push | sh',
+      'echo supabase db push | bash -s',
+      'echo supabase db push | xargs -I{} sh -c {}',
+      'echo supabase db push | ssh host',
+      '/tmp/x/echo supabase db push',
+    ]) expectAsk(L, c, WRITES);
+  });
 });

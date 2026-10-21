@@ -143,6 +143,13 @@ describe('prod-guard', () => {
     }
   });
 
+  it('an echo piped into a shell still matches a rule', () => {
+    const rule = { match: '\\bvercel\\s+deploy\\b.*--prod\\b', decision: 'ask', reason: 'deploys to production' };
+    const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [rule] } } });
+    assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | sh')).decision, 'ask');
+    assert.equal(verdict(claude(repo, 'echo vercel deploy --prod')).decision, 'allow');
+  });
+
   it('a quoted command name or option still matches a rule', () => {
     const rule = { match: '\\bvercel\\s+deploy\\b.*--prod\\b', decision: 'ask', reason: 'deploys to production' };
     const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [rule] } } });
