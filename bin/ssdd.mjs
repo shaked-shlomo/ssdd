@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // SSDD installer / updater — zero deps, Node >= 22, git CLI.
 //
-//   ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs <a,b>|none] [--force]
-//   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--packs <a,b>|none] [--force]
+//   ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs <a,b>|none] [--with <a,b>|none] [--force]
+//   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--packs <a,b>|none] [--with <a,b>|none] [--force]
 //   ssdd.mjs adopt   <target> --base <ref> [--to <ref>] [--adapters <a,b>]
 //   ssdd.mjs status  <target> [--skills]
 //
@@ -13,6 +13,10 @@
 // `packs`; `update` installs what the lock lists and never detects, so packs
 // can't appear or vanish between updates; `status` says when the repo now
 // matches a pack it doesn't have. --packs a,b or --packs none overrides both.
+// parts: optional framework files (drift-audit: the runbook and
+// /docs-drift-audit), installed only with --with and recorded in the lock's
+// `with`. `update` keeps the lock's parts (a lock from before `with` keeps
+// the ones whose files it manages); --with a,b or --with none changes them.
 //
 // Content always comes from a git ref of this repo — by default the newest
 // vX.Y.Z tag — never from the working tree, so the lock's commit is exactly
@@ -30,7 +34,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
-  readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
+  readlinkSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -48,6 +52,8 @@ const ADAPTERS = ['claude-code', 'cursor', 'generic'];
 // Source paths that moved between versions: [current prefix, older prefix].
 // Used only to find a pre-lock install's base copy (`adopt`).
 const LEGACY_SOURCES = [['skills/', 'adapters/claude-code/skills/']];
+// Optional parts → the source paths each owns (a trailing / is a folder).
+const PARTS = { 'drift-audit': ['mechanisms/drift-audit.md', 'skills/docs-drift-audit/'] };
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -64,8 +70,8 @@ const SRC = resolve(opt.source || process.env.SSDD_SOURCE || join(dirname(fileUR
 
 function die(msg) { console.error(`ssdd: ${msg}`); process.exit(2); }
 function usage() {
-  die('usage: ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs a,b|none] | update <target> [--to <ref>] ' +
-      '[--adapters a,b] [--packs a,b|none] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target> [--skills]');
+  die('usage: ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs a,b|none] [--with a,b|none] | update <target> [--to <ref>] ' +
+      '[--adapters a,b] [--packs a,b|none] [--with a,b|none] [--force] | adopt <target> --base <ref> [--to <ref>] [--adapters a,b] | status <target> [--skills]');
 }
 
 // ── git / fs helpers ─────────────────────────────────────────────────────────
@@ -171,6 +177,28 @@ function parsePacks(value, tree) {
   return [...new Set(list)].sort();
 }
 
+// ── optional parts ───────────────────────────────────────────────────────────
+function partOf(src) {
+  for (const [now, then] of LEGACY_SOURCES) if (src.startsWith(then)) src = now + src.slice(then.length);
+  return Object.keys(PARTS).find((n) => PARTS[n].some((p) => (p.endsWith('/') ? src.startsWith(p) : src === p))) ?? null;
+}
+// --with a,b | none → the names.
+function parseWith(value) {
+  const list = String(value ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  const known = Object.keys(PARTS).join(', ');
+  if (!list.length) die(`--with needs a part (${known}) or none`);
+  if (list.length === 1 && list[0] === 'none') return [];
+  for (const n of list) if (!PARTS[n]) die(`unknown part: ${n} (known parts: ${known})`);
+  return [...new Set(list)].sort();
+}
+// The lock's parts. A lock from before `with` (3.2.1 and older) installed every
+// part, so it has the ones whose files it manages.
+function partsFromLock(lock) {
+  if (Array.isArray(lock.with)) return lock.with.filter((n) => PARTS[n]).sort();
+  const srcs = Object.values(lock.managed ?? {}).map((m) => m?.src ?? '');
+  return Object.keys(PARTS).filter((n) => srcs.some((s) => partOf(s) === n));
+}
+
 function writeFile(dst, buf, modeFrom) {
   mkdirSync(dirname(dst), { recursive: true });
   writeFileSync(dst, buf);
@@ -178,7 +206,7 @@ function writeFile(dst, buf, modeFrom) {
 }
 
 // ── the one source → target mapping (install, update and adopt share it) ─────
-function plan(tree, adapters, packs = []) {
+function plan(tree, adapters, packs = [], parts = []) {
   const managed = {};
   const seeded = {};
   const add = (map, target, src) => { if (existsSync(join(tree, src))) map[target] = src; };
@@ -193,6 +221,10 @@ function plan(tree, adapters, packs = []) {
   if (adapters.includes('cursor')) {
     add(managed, '.cursor/hooks.json', 'adapters/cursor/hooks.json');
     add(managed, '.cursor/rules/ssdd.mdc', 'adapters/cursor/rules/ssdd.mdc');
+  }
+  for (const [t, s] of Object.entries(managed)) {
+    const part = partOf(s);
+    if (part && !parts.includes(part)) delete managed[t];
   }
   add(seeded, '.ssdd/config.json', 'mechanisms/config.example.json');
   add(seeded, '.ssdd/skills.json', 'mechanisms/skills.example.json');
@@ -237,6 +269,24 @@ function linkAll(target, adapters, log) {
       if (e.isDirectory()) link(`../../.agents/skills/${e.name}`, `.claude/skills/${e.name}`);
     }
   }
+  // A link of SSDD's own shape whose target is gone (a part or file removed) goes too.
+  for (const [dir, shape] of [['.claude/skills', /^\.\.\/\.\.\/\.agents\/skills\/[^/]+$/], ['.claude/agents', /^\.\.\/\.\.\/\.ssdd\/reviewers\/[^/]+\.md$/]]) {
+    const abs = join(target, dir);
+    if (!existsSync(abs)) continue;
+    for (const e of readdirSync(abs, { withFileTypes: true })) {
+      const p = join(abs, e.name);
+      if (e.isSymbolicLink() && shape.test(readlinkSync(p)) && !existsSync(p)) {
+        unlinkSync(p); log(`unlinked  ${dir}/${e.name} (target gone)`);
+      }
+    }
+  }
+}
+
+// After a removal, the folders it emptied go too, up to the top-level one.
+function pruneEmpty(target, t) {
+  for (let d = dirname(t); d.includes('/'); d = dirname(d)) {
+    try { if (readdirSync(join(target, d)).length) return; rmdirSync(join(target, d)); } catch { return; }
+  }
 }
 
 function seedOne(target, t, tree, s, log) {
@@ -255,12 +305,12 @@ function writeLock(target, lock) {
   mkdirSync(join(target, '.ssdd'), { recursive: true });
   writeFileSync(join(target, LOCK), JSON.stringify(lock, null, 2) + '\n');
 }
-function lockFrom(version, ref, commit, adapters, packs, p, tree) {
+function lockFrom(version, ref, commit, adapters, packs, parts, p, tree) {
   const managed = {};
   for (const [t, s] of Object.entries(p.managed)) managed[t] = { src: s, sha256: sha(readFileSync(join(tree, s))) };
   const seeded = {};
   for (const [t, s] of Object.entries(p.seeded)) seeded[t] = { src: s };
-  return { ssdd: version, ref, commit, adapters, packs, updatedAt: new Date().toISOString(), managed, seeded };
+  return { ssdd: version, ref, commit, adapters, packs, with: parts, updatedAt: new Date().toISOString(), managed, seeded };
 }
 
 // Arm the portable pre-commit layer: set core.hooksPath to .githooks when it
@@ -300,12 +350,12 @@ function armHook(target, log) {
   return true;
 }
 
-function nextSteps(target, adapters, armed, packs = []) {
+function nextSteps(target, adapters, armed, packs = [], parts = []) {
   const steps = [
     ...(armed ? [] : [`git -C '${target}' config core.hooksPath .githooks`]),
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
     'Fill the Documentation Map and Harnesses rows in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
-    'Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md',
+    ...(parts.includes('drift-audit') ? ['Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md'] : []),
     'Run /skills-audit to pick the stack\'s best-practice skills (in Claude Code it also offers the automation recommender)',
   ];
   if (existsSync(join(target, 'package.json'))) {
@@ -331,7 +381,8 @@ async function install(target) {
   const version = versionOf(commit, tree);
   const detected = opt.packs === undefined ? await detectPacks(tree, target) : null;
   const packs = detected ? detected.map((d) => d.name) : parsePacks(opt.packs, tree);
-  const p = plan(tree, adapters, packs);
+  const parts = 'with' in opt ? parseWith(opt.with) : [];
+  const p = plan(tree, adapters, packs, parts);
   const clash = Object.entries(p.managed)
     .filter(([t, s]) => existsSync(join(target, t)) && !same(read(join(target, t)), read(join(tree, s))))
     .filter(([t]) => !(t === SP_GITIGNORE && isSuperpowersDefault(read(join(target, t)))))
@@ -346,6 +397,7 @@ async function install(target) {
   console.log(detected
     ? `  packs: ${detected.length ? detected.map((d) => `${d.name} (${d.evidence})`).join(', ') : 'none detected'}`
     : `  packs: ${packs.join(', ') || 'none'} (--packs)`);
+  console.log(`  with: ${parts.join(', ') || 'none'}`);
   for (const [t, s] of Object.entries(p.managed)) writeFile(join(target, t), readFileSync(join(tree, s)), join(tree, s));
   log(`wrote     ${Object.keys(p.managed).length} framework file(s)`);
   for (const [t, s] of Object.entries(p.seeded)) seedOne(target, t, tree, s, log);
@@ -353,9 +405,9 @@ async function install(target) {
   const paths = loadSsddConfig(target)?.cfg?.paths ?? DEFAULT_PATHS;
   for (const d of Object.values(paths)) mkdirSync(join(target, d), { recursive: true });
   linkAll(target, adapters, log);
-  writeLock(target, lockFrom(version, ref, commit, adapters, packs, p, tree));
+  writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
-  nextSteps(target, adapters, armHook(target, log), packs);
+  nextSteps(target, adapters, armHook(target, log), packs, parts);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
 }
@@ -432,7 +484,8 @@ function update(target) {
       return false;
     });
   }
-  const p = plan(newTree, adapters, packs);
+  const parts = 'with' in opt ? parseWith(opt.with) : partsFromLock(lock);
+  const p = plan(newTree, adapters, packs, parts);
   const targets = [...new Set([...Object.keys(lock.managed), ...Object.keys(p.managed)])].sort();
 
   if (tryGit(target, 'rev-parse', '--is-inside-work-tree') === 'true') {
@@ -461,7 +514,7 @@ function update(target) {
 
     if (up === null) { // removed upstream
       if (local === null) continue;
-      if (same(local, base)) { rmSync(abs); rows.removed.push(t); }
+      if (same(local, base)) { rmSync(abs); pruneEmpty(target, t); rows.removed.push(t); }
       else rows.kept.push(`${t} (removed upstream; kept — locally modified)`);
       continue;
     }
@@ -497,9 +550,10 @@ function update(target) {
     }
   }
   linkAll(target, adapters, log);
-  writeLock(target, lockFrom(version, ref, commit, adapters, packs, p, newTree));
+  writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, newTree));
   armHook(target, log);
   log(`packs     ${packs.join(', ') || 'none'}`);
+  log(`with      ${parts.join(', ') || 'none'}`);
 
   const label = { updated: 'updated', added: 'added', merged: 'merged (project edits kept)', kept: 'kept (project-only edit)',
     removed: 'removed', conflict: 'CONFLICT — resolve markers', sidecar: 'NEW VERSION BESIDE YOURS — reconcile, then delete', skipped: 'skipped' };
@@ -528,7 +582,11 @@ function adopt(target) {
   const { ref, commit } = resolveRef(opt.base);
   const baseTree = exportTree(commit);
   const head = resolveRef(opt.to);
-  const p = plan(exportTree(head.commit), adapters);
+  const headTree = exportTree(head.commit);
+  // The parts whose files the target has.
+  const parts = Object.keys(PARTS).filter((n) => Object.entries(plan(headTree, adapters, [], [n]).managed)
+    .some(([t, s]) => partOf(s) === n && existsSync(join(target, t))));
+  const p = plan(headTree, adapters, [], parts);
   const log = (m) => console.log(`  ${m}`);
   console.log(`Adopting ${target} as SSDD ${ref} (${commit.slice(0, 7)}) — adapters: ${adapters.join(',')}`);
   // Map each current target to where its source lived in <base>.
@@ -558,7 +616,7 @@ function adopt(target) {
   const seeded = {};
   for (const [t, s] of Object.entries(p.seeded)) if (existsSync(join(baseTree, s))) seeded[t] = { src: s };
   writeLock(target, {
-    ssdd: versionOf(commit, baseTree), ref, commit, adapters, updatedAt: new Date().toISOString(), managed, seeded,
+    ssdd: versionOf(commit, baseTree), ref, commit, adapters, with: parts, updatedAt: new Date().toISOString(), managed, seeded,
   });
   log(`locked    ${LOCK} @ ${ref} (${Object.keys(managed).length} managed file(s) traced to that version)`);
   console.log(`\nNext: commit, then  node ${join(SRC, 'bin/ssdd.mjs')} update ${target}${opt.to ? ` --to ${opt.to}` : ''}`);
@@ -633,6 +691,7 @@ async function status(target) {
   console.log(`SSDD v${lock.ssdd} (${lock.ref} ${lock.commit.slice(0, 7)}) — adapters: ${lock.adapters.join(',')}`);
   const installed = Array.isArray(lock.packs) ? lock.packs : [];
   console.log(`packs: ${installed.join(', ') || 'none'}`);
+  console.log(`with: ${partsFromLock(lock).join(', ') || 'none'}`);
   const custom = []; const missing = []; const conflicted = []; const sidecars = [];
   for (const [t, { sha256 }] of Object.entries(lock.managed)) {
     const local = read(join(target, t));

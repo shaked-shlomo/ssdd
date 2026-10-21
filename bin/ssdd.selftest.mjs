@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
 import {
   cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync,
-  rmSync, statSync, writeFileSync,
+  rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -41,7 +41,8 @@ function initRepo(dir) {
 }
 
 // v1.0.0: legacy layout (skill under adapters/claude-code/skills/, no VERSION).
-// v1.1.0: current layout. v2.0.0: upstream edits, an add, a removal, a new template.
+// v1.1.0: current layout, and the drift audit's skill (an optional part).
+// v2.0.0: upstream edits, an add, a removal (process/old.md), a new template.
 function buildSource() {
   initRepo(src);
   put(src, 'process/SDD.md', lines(20, 'sdd'));
@@ -51,6 +52,7 @@ function buildSource() {
   put(src, 'mechanisms/hooks/review-gate.mjs', 'gate v1\n');
   put(src, 'mechanisms/hooks/pre-commit', '#!/bin/sh\nexit 0\n', '755');
   put(src, 'mechanisms/drift-audit.md', 'audit\n');
+  put(src, 'process/old.md', 'old\n');
   put(src, 'mechanisms/config.example.json', '{\n  "routing": []\n}\n');
   put(src, 'adapters/generic/AGENTS.md', 'agents template\n');
   put(src, 'adapters/claude-code/settings-hooks.json', '{}\n');
@@ -63,6 +65,7 @@ function buildSource() {
   git(src, 'mv', 'adapters/claude-code/skills/new-plan', 'skills/new-plan');
   put(src, 'VERSION', '1.1.0\n');
   put(src, 'adapters/cursor/hooks.json', '{"version":1}\n');
+  put(src, 'skills/docs-drift-audit/SKILL.md', 'drift skill\n');
   commitAll(src, 'v1.1.0');
   git(src, 'tag', 'v1.1.0');
 
@@ -71,7 +74,7 @@ function buildSource() {
   put(src, 'mechanisms/hooks/review-gate.mjs', 'gate v2\n');
   put(src, 'mechanisms/hooks/review-gate.selftest.mjs', 'upstream test\n');
   put(src, 'reviewers/beta-reviewer.md', 'beta\n');
-  rmSync(join(src, 'mechanisms/drift-audit.md'));
+  rmSync(join(src, 'process/old.md'));
   put(src, 'skills/new-plan/SKILL.md', edit(lines(6, 'skill'), 6, 'skill 6 UPSTREAM'));
   put(src, 'mechanisms/config.example.json', '{\n  "routing": [],\n  "reviewGate": { "maxRoutedFiles": 10 }\n}\n');
   put(src, 'VERSION', '2.0.0\n');
@@ -182,7 +185,7 @@ describe('update', () => {
     assert.equal(get('.ssdd/hooks/review-gate.selftest.mjs'), 'project test\n');
     assert.equal(get('.ssdd/hooks/review-gate.selftest.mjs.ssdd-new'), 'upstream test\n');
     // removed upstream, unmodified locally → removed
-    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+    assert.ok(!existsSync(join(tgt, '.ssdd/process/old.md')));
     // added upstream → added and linked
     assert.equal(get('.ssdd/reviewers/beta-reviewer.md'), 'beta\n');
     assert.ok(lstatSync(join(tgt, '.claude/agents/beta-reviewer.md')).isSymbolicLink());
@@ -194,7 +197,7 @@ describe('update', () => {
     assert.doesNotMatch(r.out, /moved skills/);
     const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
     assert.equal(lock.ssdd, '2.0.0');
-    assert.ok(!lock.managed['.ssdd/drift-audit.md']);
+    assert.ok(!lock.managed['.ssdd/process/old.md']);
   });
 
   it('is a clean fast-forward when nothing was customized', () => {
@@ -521,6 +524,8 @@ describe('adopt (pre-lock install)', () => {
     const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
     assert.equal(lock.ssdd, '1.0.0');
     assert.equal(lock.managed['.agents/skills/new-plan/SKILL.md'].src, 'adapters/claude-code/skills/new-plan/SKILL.md');
+    assert.equal(lock.managed['.ssdd/drift-audit.md'].src, 'mechanisms/drift-audit.md');
+    assert.deepEqual(lock.with, ['drift-audit']);
     commitAll(tgt, 'adopt');
 
     r = ssdd('update', tgt);
@@ -913,5 +918,114 @@ export function detect(root) {
     const r = ssdd('update', tgt);
     assert.equal(r.code, 0, r.out);
     assert.deepEqual(lock().packs, []);
+  });
+});
+
+describe('optional parts', () => {
+  const lock = () => JSON.parse(get('.ssdd/ssdd.lock.json'));
+  const linked = (p) => { try { return readlinkSync(join(tgt, p)); } catch { return null; } };
+  function release210() {
+    put(src, 'mechanisms/drift-audit.md', 'audit v2\n');
+    put(src, 'VERSION', '2.1.0\n');
+    commitAll(src, 'v2.1.0');
+    git(src, 'tag', 'v2.1.0');
+  }
+
+  it('install without --with writes no drift audit', () => {
+    const r = ssdd('install', tgt, 'claude-code');
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+    assert.ok(!existsSync(join(tgt, '.agents/skills/docs-drift-audit')));
+    assert.equal(linked('.claude/skills/docs-drift-audit'), null);
+    assert.deepEqual(lock().with, []);
+    assert.doesNotMatch(r.out, /domain list/);
+  });
+
+  it('install --with drift-audit writes, links and records it', () => {
+    const r = ssdd('install', tgt, 'claude-code', '--with', 'drift-audit');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/drift-audit.md'), 'audit\n');
+    assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'drift skill\n');
+    assert.equal(linked('.claude/skills/docs-drift-audit'), '../../.agents/skills/docs-drift-audit');
+    assert.deepEqual(lock().with, ['drift-audit']);
+    assert.match(r.out, /Fill the project domain list/);
+  });
+
+  it('--with names only known parts', () => {
+    let r = ssdd('install', tgt, '--with', 'nope');
+    assert.equal(r.code, 2);
+    assert.match(r.out, /unknown part: nope \(known parts: drift-audit\)/);
+    r = ssdd('install', tgt, '--with', '');
+    assert.equal(r.code, 2);
+    assert.match(r.out, /--with needs a part/);
+    assert.ok(!existsSync(join(tgt, '.ssdd/ssdd.lock.json')));
+  });
+
+  it('update keeps drift-audit for a lock from before --with', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'v2.0.0', '--with', 'drift-audit').code, 0);
+    const l = lock();
+    delete l.with; // as a 3.2.1 installer wrote it
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(l, null, 2) + '\n');
+    commitAll(tgt, 'ssdd 2.0.0');
+    release210();
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/drift-audit.md'), 'audit v2\n');
+    assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'drift skill\n');
+    assert.deepEqual(lock().with, ['drift-audit']);
+  });
+
+  it('a lock with with: [] gets none', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'v2.0.0').code, 0);
+    commitAll(tgt, 'ssdd 2.0.0');
+    release210();
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+    assert.deepEqual(lock().with, []);
+  });
+
+  it('update --with none removes the files and the dangling link', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--with', 'drift-audit').code, 0);
+    symlinkSync('../../vendor/ext', join(tgt, '.claude/skills/ext'));
+    commitAll(tgt, 'ssdd');
+    const r = ssdd('update', tgt, '--with', 'none');
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+    assert.ok(!existsSync(join(tgt, '.agents/skills/docs-drift-audit')));
+    assert.equal(linked('.claude/skills/docs-drift-audit'), null);
+    assert.equal(linked('.claude/skills/ext'), '../../vendor/ext', "the project's own link stays");
+    assert.equal(linked('.claude/skills/new-plan'), '../../.agents/skills/new-plan');
+    assert.deepEqual(lock().with, []);
+  });
+
+  it('update --with none keeps an edited file', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--with', 'drift-audit').code, 0);
+    put(tgt, '.agents/skills/docs-drift-audit/SKILL.md', 'our domains\n');
+    commitAll(tgt, 'ssdd, domains filled in');
+    const r = ssdd('update', tgt, '--with', 'none');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'our domains\n');
+    assert.match(r.out, /\.agents\/skills\/docs-drift-audit\/SKILL\.md \(removed upstream; kept — locally modified\)/);
+    assert.equal(linked('.claude/skills/docs-drift-audit'), '../../.agents/skills/docs-drift-audit');
+    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+  });
+
+  it('update --with drift-audit adds it', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code').code, 0);
+    commitAll(tgt, 'ssdd');
+    const r = ssdd('update', tgt, '--with', 'drift-audit');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.ssdd/drift-audit.md'), 'audit\n');
+    assert.equal(linked('.claude/skills/docs-drift-audit'), '../../.agents/skills/docs-drift-audit');
+    assert.deepEqual(lock().with, ['drift-audit']);
+  });
+
+  it('status prints the parts', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code').code, 0);
+    assert.match(ssdd('status', tgt).out, /^with: none$/m);
+    commitAll(tgt, 'ssdd');
+    assert.equal(ssdd('update', tgt, '--with', 'drift-audit').code, 0);
+    assert.match(ssdd('status', tgt).out, /^with: drift-audit$/m);
   });
 });
