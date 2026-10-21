@@ -18,6 +18,10 @@ the target, so upgrade steps belong here and not only in commit messages.
   text only when nothing in the call reads text as commands (a shell,
   `source`, `eval`, `xargs`, `ssh`), and only by their bare names. The
   same holds for `productionGuard.extraRules`. Nothing to do by hand.
+- A selftest failed on Linux, where the scratch repo lives under `/tmp`: its
+  "a directory" case used a directory named `tmp`, whose name then appeared
+  twice in its own path, so the guard asked for that reason instead. CI
+  failed on `v3.2.0` for that reason alone; the guard asked either way.
 
 ## [3.2.0] — 2026-10-21
 

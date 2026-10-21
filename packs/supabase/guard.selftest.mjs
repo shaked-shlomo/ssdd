@@ -42,7 +42,11 @@ before(() => {
     proof: L.file('p.proof.sql', proofOf('ALTER TABLE t ADD COLUMN c int;\nSELECT true AS ok;')),
     spaced: L.file('a b/q.sql', 'select 1;\n'),
     big: L.file('big.sql', 'select 1;\n' + '-- pad\n'.repeat(160000)),
+    // a directory whose name appears nowhere else in its path (on Linux the
+    // scratch repo lives under /tmp, so L.tmp's own name, tmp, repeats)
+    dir: join(L.tmp, 'a-query-dir'),
   };
+  mkdirSync(F.dir);
 });
 after(() => L.cleanup());
 
@@ -198,7 +202,7 @@ describe('db query against production, by its SQL', () => {
   for (const [name, cmd, why] of [
     ['a missing file', () => `supabase db query --linked -f ${join(L.tmp, 'nope.sql')}`, /missing/],
     ['a file over 1 MiB', () => `supabase db query --linked -f ${F.big}`, /1 MiB/],
-    ['a directory', () => `supabase db query --linked -f ${L.tmp}`, /regular file/],
+    ['a directory', () => `supabase db query --linked -f ${F.dir}`, /regular file/],
     ['a $VAR path', () => 'S=/tmp; supabase db query --linked -f $S/q.sql', /isn't literal/],
     ['a file written in the same call', () => `cat > ${F.ro} <<'EOF'\ndelete from t;\nEOF\nsupabase db query --linked -f ${F.ro}`, /named elsewhere/],
     ['a file edited in the same call', () => `sed -i '' 's/a/b/' ${F.plain} && supabase db query --linked -f ${F.plain}`, /named elsewhere/],
