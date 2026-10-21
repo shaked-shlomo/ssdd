@@ -173,3 +173,25 @@ describe('text budgets', () => {
     assert.ok(bytes('process/SDD.md') <= 11000, `SDD.md is ${bytes('process/SDD.md')}`);
   });
 });
+
+describe('README', () => {
+  it('one page', () => {
+    const n = read('README.md').split('\n').length - 1;
+    assert.ok(n <= 120, `${n} lines`);
+  });
+
+  it('keeps the cited headings, each pointing at its detail', () => {
+    const sections = read('README.md').split(/^(?=## )/m);
+    for (const h of ['Quick start', 'Updating an injected repo', 'When a new model generation ships', 'Known limitations']) {
+      const s = sections.find((x) => x.startsWith(`## ${h}\n`));
+      assert.ok(s, h);
+      assert.match(s, /\]\(docs\/(usage|limitations)\.md(#[\w-]+)?\)/, `${h} links its detail`);
+    }
+  });
+
+  it('the BACKLOG cites docs/limitations.md', () => {
+    const backlog = read('docs/BACKLOG.md');
+    assert.doesNotMatch(backlog, /README → Known limitations/);
+    assert.match(backlog, /docs\/limitations\.md/);
+  });
+});

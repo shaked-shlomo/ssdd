@@ -51,7 +51,7 @@ Also next:
 
 ## Accepted limitations (no plan)
 
-These are documented in README → Known limitations. Listed here so they aren't
+These are documented in `docs/limitations.md`. Listed here so they aren't
 re-discovered as new.
 
 - The harness hooks can't see git run from a script *file*, a variable, an
@@ -71,6 +71,6 @@ re-discovered as new.
 - A re-stage that changes nothing keeps its stamps (by design since v2).
 - The production guard sees the command line, not what a script does; a
   call already sent can't be stopped; Cursor denies where Claude Code asks
-  (its hooks ignore `ask`). See README → Known limitations.
+  (its hooks ignore `ask`). See `docs/limitations.md`.
 - Injection is copy-based. A release that moves a *target* path needs a
   move entry in `bin/ssdd.mjs`, or `update` sees a removal plus an addition.
