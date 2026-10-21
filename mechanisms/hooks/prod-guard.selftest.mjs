@@ -147,6 +147,7 @@ describe('prod-guard', () => {
     const rule = { match: '\\bvercel\\s+deploy\\b.*--prod\\b', decision: 'ask', reason: 'deploys to production' };
     const repo = layout({ packs: {}, config: { productionGuard: { extraRules: [rule] } } });
     assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | sh')).decision, 'ask');
+    assert.equal(verdict(claude(repo, 'echo vercel deploy --prod | sudo -E bash')).decision, 'ask');
     assert.equal(verdict(claude(repo, 'echo vercel deploy --prod')).decision, 'allow');
   });
 

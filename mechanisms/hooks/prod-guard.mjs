@@ -111,11 +111,12 @@ const claimed = (mod, call, subject) =>
 const ruleText = (words) => words.map((w, i) => (words.quoted?.[i] && /\s/.test(w) ? '""' : w)).join(' ');
 // echo / printf (by their bare names) only print their words: text, not a
 // command — unless something in the call reads text as commands (a shell,
-// source, eval, xargs, ssh), as in `echo … | sh`.
+// source, eval, xargs, ssh), as in `echo … | sh`. A feeder counts at any
+// position, so `| sudo sh` or `| env -i bash` is one.
 const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
 const prints = (words) => ['echo', 'printf'].includes(runWord(words));
-const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel']);
-const feeds = (commands) => commands.some((w) => FEEDERS.has(String(runWord(w)).split('/').pop()));
+const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel', 'busybox']);
+const feeds = (commands) => commands.some((w) => w.some((x) => FEEDERS.has(String(x).split('/').pop())));
 
 async function main() {
   const payload = parseHookStdin(readFileSync(0, 'utf8'));

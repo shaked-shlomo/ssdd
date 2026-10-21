@@ -73,11 +73,12 @@ export const mentions = (text) => /supabase/i.test(String(text ?? ''));
 const base = (w) => String(w ?? '').split('/').pop();
 // echo / printf (by their bare names) only print their words: `echo Run
 // supabase db push` is text — unless something in the call reads text as
-// commands (a shell, source, eval, xargs, ssh), as in `echo … | sh`.
+// commands (a shell, source, eval, xargs, ssh), as in `echo … | sh`. A
+// feeder counts at any position, so `| sudo sh` or `| env -i bash` is one.
 const runWord = (words) => words.find((w) => !/^[A-Za-z_]\w*=/.test(w)) ?? '';
 const prints = (words) => ['echo', 'printf'].includes(runWord(words));
-const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel']);
-const feeds = (commands) => commands.some((w) => FEEDERS.has(base(runWord(w))));
+const FEEDERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'source', '.', 'eval', 'xargs', 'ssh', 'parallel', 'busybox']);
+const feeds = (commands) => commands.some((w) => w.some((x) => FEEDERS.has(base(x))));
 // A psql backslash command outside strings and comments (\gexec, \gset, \i …):
 // the client runs it, and the SQL check can't see what it does.
 const metaCommand = (sql) => /\\[A-Za-z!?]/.test(lexSql(String(sql)).code);

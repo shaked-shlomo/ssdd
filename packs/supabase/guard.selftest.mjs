@@ -601,6 +601,10 @@ describe('found by the final review', () => {
       'echo supabase db push | bash -s',
       'echo supabase db push | xargs -I{} sh -c {}',
       'echo supabase db push | ssh host',
+      'echo supabase db push | sudo sh',
+      'echo supabase db push | env -i bash',
+      'echo supabase db push | timeout 5 sh',
+      'echo supabase db push | busybox sh',
       '/tmp/x/echo supabase db push',
     ]) expectAsk(L, c, WRITES);
   });
