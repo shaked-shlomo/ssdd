@@ -90,3 +90,4 @@ Final: Ruling: "Cursor's stdio MCP payload may carry `command` rather than mcp_s
 Final: Ruling: "~30 ms on every Bash and MCP call" — accepted in Clarify 39 — cost if wrong: latency per call.
 Final: "SPEC Verification / Deviations not written yet" — written in the close commit.
 Final: SPEC Part 4 Verification and Deviations written at 9c47f1f's checks; suite 1262/1262; installed layout 1164 pass, 2 skipped; update from v3.1.1 clean.
+- After v3.2.0 (push-time security review): an echo piped into a shell passed once echo/printf became text (a regression from the I3 fix). Fixed test-first (2 cases RED→GREEN, suite 1264/1264; sweeps and replay unchanged), commit c6e5979, CHANGELOG ## [3.2.1] — unreleased. Ruling: the quoted form (`echo 'supabase db push' | sh`) stays out — the shell's input is one quoted word the guard doesn't re-split; it was declined in the final review as an evasion shape not seen — cost if wrong: that form runs unjudged.
