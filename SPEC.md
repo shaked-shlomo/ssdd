@@ -1159,7 +1159,8 @@ after-`/compact` check is DEFERRED to the first real repo migration, see
 Part 1 → Verification); Part 3 SHIPPED as 3.1.0, tagged and pushed
 2026-10-20, with its deferred minors and a Linux-only selftest fix in 3.1.1;
 Part 4 SHIPPED as 3.2.0, tagged and pushed 2026-10-21, with an echo fix and a
-Linux-only selftest fix in 3.2.1 ·
+Linux-only selftest fix in 3.2.1; Part 5 IN PROGRESS on
+`claude/v3-trimming-f3f1f8` as 3.3.0 (unreleased), 2026-10-21 ·
 **Branch:** `v3`
 
 Today SSDD enforces one moment, the commit. v3 makes it know the rest:
@@ -1177,7 +1178,7 @@ parts, each with its own plan:
 | 2 | Onboarding existing repos: the plan migration, `paths` everywhere, `/skills-audit` tracking | `docs/superpowers/plans/2026-10-18-v3-onboarding.md` | 3.0.0 |
 | 3 | A cheaper gate | `docs/superpowers/plans/2026-10-20-v3-cheaper-gate.md` | 3.1.0 |
 | 4 | The production guard and the Supabase pack | `docs/superpowers/plans/2026-10-21-v3-prod-guard.md` | 3.2.0 |
-| 5 | Trimming | Plan 5, not written yet | 3.3.0 |
+| 5 | Trimming | `docs/superpowers/plans/2026-10-21-v3-trimming.md` | 3.3.0 |
 
 Parts 1 and 2 carry acceptance criteria. Parts 3–5 record the evidence,
 decisions and scope; each plan writes its criteria after its own clarify
@@ -3509,3 +3510,219 @@ My calls.
   were last reviewed for, and have the session view say when the current
   model is newer. This needs the session-start payload to carry the
   model, which is unverified.
+  - **Checked 2026-10-21** (Clarify 51): Claude Code's SessionStart input
+    carries `model`, but not always; Cursor's carries it on every hook.
+    Building the reminder waits for the owner's ruling.
+
+### Clarify pass
+
+Sources: prizma's and Hatedate's `/cleanup` copies (read-only, at
+`f0f2600` and `795188aa`), Claude Code 2.1.304 (its `/code-review` skill,
+`/doctor prompt-audit` run headless in a scratch install), the Claude Code
+and Cursor hook docs, and the code at `v3.2.1`. All checked 2026-10-21.
+
+44. **SPEC.md, measured.** 3,511 lines (195 KB), not "about 1,700": v3
+    alone is 2,358. It holds nine sections: the extraction spec (v1),
+    v2–v2.6 and v3.
+    - Outside it, 42 citations, all prose: "`SPEC.md` → v3 → Part 4",
+      "`SPEC.md` → `# v2.4`", "`SPEC.md` → "v2.5 — …"". None links an anchor
+      (`git grep 'SPEC\.md#'` finds nothing). Inside it, two relative links
+      to `docs/model-era-review.md` (in v2 and v2.2) break when moved.
+    - So each section becomes `docs/specs/<version>.md` (`v1.md` for the
+      extraction spec), its heading unchanged. v3 stays one file: Decision 1
+      is per version. SPEC.md becomes the index, a title and a table from
+      version to file, so "SPEC.md → v3 → Part 4" still resolves, in two
+      steps.
+    - Code comments and the BACKLOG cite the new file. History (the
+      CHANGELOG, plans, ledgers, handovers) stays as written and resolves
+      through the index.
+    - `git mv SPEC.md docs/specs/v3.md` lands in its own commit, so `git log
+      --follow` keeps v3's history.
+45. **One page.** The README is 314 lines (17.4 KB). Known limitations is
+    its longest section (70 lines), then How it works (62) and Quick start
+    (55).
+    - One page means at most 120 lines.
+    - Two of its headings are cited elsewhere: "Known limitations" (BACKLOG,
+      v2.4, v2.5, CHANGELOG 2.5.0 and 2.6.0) and the new-model checklist
+      (Decision 5). They stay as headings, each a few lines that link to the
+      detail.
+    - The detail moves, its text kept, to `docs/usage.md` (setup,
+      updating, releases, a new model generation) and `docs/limitations.md`
+      (the threat model and every limit).
+46. **Optional parts.** Today `install` writes the drift-audit runbook and
+    `/docs-drift-audit` into every repo. The design mirrors `--packs`:
+    - `install --with drift-audit` installs `.ssdd/drift-audit.md` and
+      `.agents/skills/docs-drift-audit/`. Without it, neither, and the next
+      steps drop "Fill the project domain list".
+    - The lock records `with`, a list. `update` keeps it. A lock without
+      `with` (3.2.1 and older) keeps drift-audit when its files are in the
+      lock's `managed`.
+    - `update --with a,b|none` adds or removes a part. A removed file goes
+      the "removed upstream" way: deleted if unedited, else kept with a
+      warning. `linkAll` then deletes a `.claude/skills/<name>` or
+      `.claude/agents/<name>` link of SSDD's own shape whose target is gone.
+    - `adopt` takes the parts whose files are in the target, `status`
+      prints `with:`, and an unknown part is an error naming the known ones.
+    - `gate-reviewer` is already opt-in: shipped and linked, never routed
+      by the example config, and a selftest pins that. `/skills-audit`
+      stays, since Part 2 makes it an onboarding step, and is trimmed
+      (Clarify 48).
+47. **`/cleanup`, thin.** Claude Code 2.1.304's `/code-review` reviews the
+    current diff or a PR, branch or path target, at an effort from `low` to
+    `max`, with `--comment` and `--fix`. It verifies its own findings and
+    reports them through `ReportFindings`. So `/cleanup` passes the target,
+    the effort and `--comment` through, and drops its own definitions.
+    - **What comes back** from the project copies (prizma 11,565 B,
+      Hatedate 13,321 B):
+      - a PR's scratch worktree links the main checkout's dependencies
+        rather than installing them, and copies no env file (prizma: the
+        build prerenders against whatever database `.env.local` names)
+      - every agent is given the worktree path, since subagents start in the
+        main checkout
+      - in Cursor, the bug-review skill's checkout and stash steps are
+        skipped: they'd move the user's checkout
+      - a scope with docs or config that no route covers also gets
+        `docs-sync-reviewer` (Hatedate: the commit gate lets doc-only
+        commits through unreviewed, so a PR review is the only check)
+      - a reviewer that needs MCP output gets it from the main session
+        (subagents may not have the MCP tools)
+      - a claim about data is checked against the data
+      - findings dedupe by file and mechanism, keeping the more concrete
+        failure
+      - `ReportFindings`, when the session has it, is called once with the
+        merged list, and again with each item's outcome after the fixes
+      - no `pkill -f` (prizma: it killed every Next process on the machine)
+    - **What doesn't:** descriptions of 500–900 characters that claim to
+      outrank other skills, the "Red flags" tables (both against D6 and
+      D14), each project's "What to look for" lists (project content; SSDD
+      keeps the placeholder), and Phase 4's list of things not to do (D3).
+    - **The verify step.** `docs/model-era-review.md` → Remove keeps
+      cleanup's verify step. Decision 4 lists none, and `/code-review`
+      verifies only its own findings.
+      - Call: the orchestrator checks each SSDD reviewer's finding against
+        the cited file before the plan, and drops what the code refutes.
+        There are no per-finding verifier agents.
+      - The model-era row is updated to say so.
+48. **The D3 test, and what decides it.**
+    - `/doctor prompt-audit` runs headless (`claude -p "/doctor
+      prompt-audit"` in a scratch install). On `v3.2.1` (`claude-code,cursor`
+      on the session's model, `claude-sonnet-5-5`) it found:
+      - 1 rewrite: cleanup's "Phase 2 earns no stamps", though its steps
+        are numbered 1–5
+      - 5 flags: the AGENTS template's placeholders and docs-drift-audit's
+        empty domain list (template text, by design); skills-audit's "every
+        source audited so far ships rules…" (a claim that dates); cleanup's
+        empty project section; and a user-level
+        `~/.claude/agents/security-reviewer.md` (outside the repo)
+      - the six reviewers, `new-plan`, `new-reviewer` and `migrate-plans`
+        clean. It doesn't read `.cursor/rules/`.
+    - The README's new-model re-run (a recent plan's task on a new
+      generation, comparing rounds and tokens) needs a new generation and a
+      real project plan. It isn't run here.
+    - The rule, per file: keep facts, commands, scripts, gotchas, formats
+      (verdict lines, report shapes) and one-line reasons (D7). Cut text
+      that tells the model how to think or behave in general (D3, D4, D6),
+      and procedure restated from SDD.md or a block message.
+    - Always loaded at `v3.2.1`, in a default Claude Code install: the
+      AGENTS template (2,563 B), CLAUDE.md (596), six skill descriptions
+      (1,615 chars) and six reviewer descriptions (1,379). That's 6,153.
+      The projects' own instruction files are theirs (BACKLOG: a prizma
+      plan).
+49. **Templates and `new-plan`.** `work-state.mjs --next-plan` computes the
+    number since 3.0.0, and `new-plan` already calls it. What's left to cut:
+    - `new-plan`'s "Syncing back" restates SDD.md §6–7
+    - the handover template asks for the "next free numbers" by hand
+    - the AGENTS template (60 lines) restates what the gate's block message
+      says
+50. **Node 22.** Besides the four places Decision 7 names, seven files say
+    Node ≥ 18: `convention-lint.mjs`, `review-gate.mjs`, `pre-commit`,
+    three selftest headers, and CI's comment ("the oldest supported Node").
+    All move to 22. Nothing in this plan uses an API newer than Node 18, so
+    a repo still on Node 20 keeps working. That keeps it a MINOR.
+51. **The model at session start.**
+    - Claude Code's hooks doc: SessionStart's input has `model`, "The
+      active model identifier. It can be omitted, for example after
+      `/clear` or when a session is restored through conversation
+      recovery". Only SessionStart gets it; `PostModelSwitch` carries
+      `from_model` and `to_model`; there's no `$CLAUDE_MODEL`.
+    - Cursor's doc: every hook's input carries `model` (a legacy slug) and
+      `model_id`.
+    - Not checked live on 2.1.304: a throwaway SessionStart hook to log the
+      payload was refused by this session's permission check.
+    - So the reminder is feasible, except right after `/clear`. Building
+      it waits for the owner.
+
+### Acceptance criteria
+
+- **AC39 — The spec split.**
+  - `docs/specs/` holds `v1.md`, `v2.md`, `v2.1.md` … `v2.6.md` and
+    `v3.md`. Joined in order, they equal SPEC.md as it was before the split,
+    apart from the two rewritten links.
+  - SPEC.md is at most 60 lines: its title and a table with one row per
+    file.
+  - Every citation of the form `SPEC.md` → <version> (→ Part N) in the repo
+    resolves to a file through the index, and to a heading in that file.
+  - Every relative link in SPEC.md, the README and `docs/**/*.md` resolves,
+    and every `#anchor` names a heading.
+- **AC40 — Node 22.** CI runs `[22, 24]`. The README's badge and text say
+  22. No file outside history says Node 18. History is CHANGELOG entries
+  before 3.3.0, `docs/specs/`, `docs/superpowers/` and `.superpowers/`.
+- **AC41 — An optional drift audit.**
+  - `install` without `--with` writes no `.ssdd/drift-audit.md`, no
+    `.agents/skills/docs-drift-audit/` and no `.claude/skills/docs-drift-audit`
+    link. The lock says `with: []`, and there's no domain-list step.
+  - With `--with drift-audit` it writes all three, the lock says `with:
+    ["drift-audit"]`, and the step is there. `--with nope` exits 2,
+    naming `drift-audit`.
+  - `update` of a lock without `with` that has the files keeps and updates
+    them, and writes `with: ["drift-audit"]`. A lock with `with: []` gets
+    none.
+  - `update --with none`:
+    - deletes the unedited files and the dangling link
+    - keeps an edited SKILL.md, reported as "removed upstream; kept"
+    - leaves a link the project made itself
+  - `update --with drift-audit` adds them.
+  - `status` prints `with: drift-audit` or `with: none`. `adopt` of a target
+    holding `.ssdd/drift-audit.md` traces it and records it.
+- **AC42 — A thin `/cleanup`.**
+  - SKILL.md is at most 3,500 bytes. Its description is at most 300
+    characters, plain YAML, and names `/code-review`.
+  - It resolves the scope and runs the harness's review with the same
+    target and effort: `/code-review` in Claude Code, Cursor's bug-review
+    skill, or it says there's none.
+  - It dispatches the routed SSDD reviewers with the scope and the known
+    list, checks their findings against the files, and presents one merged
+    plan. It changes nothing until the user approves.
+  - Every line brought back from prizma's or Hatedate's copy is in Clarify
+    47. No "Phase" reference lacks a matching heading.
+- **AC43 — The D3 pass.**
+  - Verification lists every skill, reviewer, process file, template and
+    adapter instruction file, with its bytes at 3.2.1 and now, and what was
+    cut.
+  - `/doctor prompt-audit` on a scratch install of the branch head reports
+    no rewrite in an SSDD file. Any flag left is named, with why it stays.
+- **AC44 — Budgets,** checked by a selftest:
+  - every skill and reviewer description is at most 300 characters, plain
+    YAML, with no `": "`
+  - the default Claude Code always-loaded set (the AGENTS template,
+    CLAUDE.md, and every default skill's and reviewer's description) is at
+    most 5,000 bytes (6,153 at 3.2.1)
+  - the AGENTS template is at most 45 lines
+  - `new-plan` is at most 1,500 bytes, the handover template 1,000,
+    `skills-audit` 6,200, and SDD.md 11,000
+- **AC45 — The README on one page.**
+  - At most 120 lines. It keeps "Quick start", "Updating an injected repo",
+    "When a new model generation ships" and "Known limitations" as headings.
+  - Every paragraph cut from it is in `docs/usage.md` or
+    `docs/limitations.md`, checked by a script over the 3.2.1 README.
+  - BACKLOG's two citations name `docs/limitations.md`.
+- **AC46 — The new-model reminder.** Open records what each harness's
+  payload carries (Clarify 51) and the owner's ruling. The reminder is
+  built only if the owner approves; its criteria are written then.
+- **AC47 — Close.**
+  - The full suite passes, and so do the installed layout's selftests in a
+    scratch install of the branch head.
+  - `update` of a scratch `v3.2.1` install to the branch head exits 0 and
+    keeps drift-audit.
+  - The CHANGELOG has `## [3.3.0] — unreleased`.
+  - The BACKLOG's only v3 work is the end-of-v3 migrations.
