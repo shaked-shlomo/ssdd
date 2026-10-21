@@ -8,7 +8,7 @@
 // config.example.json is not a sibling); when it IS a sibling — in the
 // framework repo — one case checks the embedded copy has not drifted from it.
 //
-// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
+// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

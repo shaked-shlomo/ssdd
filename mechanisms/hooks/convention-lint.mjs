@@ -9,7 +9,7 @@
 // exclude}] — pattern/include/exclude are JS regex sources; pattern is tested
 // per line, include/exclude against the repo-relative path.
 //
-// Modes (no deps, Node >= 18):
+// Modes (no deps, Node >= 22):
 //   <file> [<file> …]     lint the given files whole (CI / manual)
 //   --staged              lint the lines the staged change adds (git pre-commit)
 //   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor afterFileEdit:

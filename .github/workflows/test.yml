@@ -1,5 +1,5 @@
-# SSDD's own tests: every *.selftest.mjs, on the oldest supported Node and a
-# current one. Zero dependencies, so there's nothing to install.
+# SSDD's own tests: every *.selftest.mjs, on the oldest supported Node (22)
+# and a current one. Zero dependencies, so there's nothing to install.
 name: test
 
 on:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 24]
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
         with:

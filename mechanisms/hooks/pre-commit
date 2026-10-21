@@ -3,7 +3,7 @@
 # Install: copy to <repo>/.githooks/pre-commit (chmod +x) and run
 #   git config core.hooksPath .githooks
 # Works under any agent/IDE/terminal because every harness ultimately runs
-# `git commit`. Node >= 18 required, no npm deps.
+# `git commit`. Node >= 22 required, no npm deps.
 
 set -e
 ROOT="$(git rev-parse --show-toplevel)"

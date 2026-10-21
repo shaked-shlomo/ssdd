@@ -3,7 +3,7 @@
 // writes a file, and feeds a Claude PostToolUse or Cursor afterFileEdit payload
 // on stdin: exit 2 = findings (the agent self-corrects), 0 = clean.
 //
-// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
+// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

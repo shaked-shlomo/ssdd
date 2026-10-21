@@ -31,7 +31,7 @@
 // The routing table is the working-tree .ssdd/config.json (ssdd-config.mjs).
 // A config that isn't valid JSON blocks.
 //
-// Modes (same script, no deps, Node >= 18):
+// Modes (same script, no deps, Node >= 22):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
 //                                   attest reviewers ran on the CURRENT staged
 //                                   change of every routed file they cover, or

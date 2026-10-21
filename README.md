@@ -14,7 +14,7 @@
   <a href="https://github.com/shaked-shlomo/ssdd/actions/workflows/test.yml"><img src="https://github.com/shaked-shlomo/ssdd/actions/workflows/test.yml/badge.svg" alt="tests"></a>
   <a href="https://github.com/shaked-shlomo/ssdd/tags"><img src="https://img.shields.io/github/v/tag/shaked-shlomo/ssdd?label=release&sort=semver" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A5%2018-339933" alt="node >= 18">
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-339933" alt="node >= 22">
   <img src="https://img.shields.io/badge/dependencies-0-blue" alt="zero dependencies">
   <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20·%20Cursor%20·%20Codex-7C5CFF" alt="works with Claude Code, Cursor, Codex">
 </p>
@@ -117,7 +117,7 @@ onboarding steps still open.
 
 ## Quick start
 
-Requires Node ≥ 18 and git. Nothing to `npm install`.
+Requires Node ≥ 22 and git. Nothing to `npm install`.
 
 ```bash
 git clone https://github.com/shaked-shlomo/ssdd ~/ssdd
@@ -299,7 +299,7 @@ node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs packs/*/*.selftes
 ```
 
 Tests are named `*.selftest.mjs` so no injected project's test runner
-collects them; CI runs them on Node 18 and 24.
+collects them; CI runs them on Node 22 and 24.
 
 **Releasing**: update `CHANGELOG.md` and `VERSION`, commit, then
 `git tag -a vX.Y.Z -m "…"` and `git push origin main --follow-tags`.

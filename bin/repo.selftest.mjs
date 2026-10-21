@@ -71,3 +71,27 @@ describe('links', () => {
     assert.deepEqual(bad, []);
   });
 });
+
+describe('Node floor', () => {
+  // History keeps the floors it shipped with.
+  const HISTORY = /^(CHANGELOG\.md$|docs\/specs\/|docs\/superpowers\/|docs\/handovers\/|\.superpowers\/)/;
+
+  it('CI runs Node 22 and 24', () => {
+    assert.match(read('.github/workflows/test.yml'), /^\s+node: \[22, 24\]$/m);
+  });
+
+  it('the README says 22', () => {
+    const readme = read('README.md');
+    assert.ok(readme.includes('node-%E2%89%A5%2022'), 'badge');
+    assert.ok(readme.includes('Node ≥ 22'), 'text');
+  });
+
+  it('nothing outside history says an older floor', () => {
+    const older = [/\bnode\b[^\n]{0,12}?(?:>=|≥|%E2%89%A5%20)\s*(?:1\d|20)\b/i, /\bNode (?:18|20)\b/, /node: \[18/];
+    const bad = [];
+    for (const f of tracked().filter((p) => !HISTORY.test(p) && !/\.(svg|png|jpg)$/.test(p))) {
+      read(f).split('\n').forEach((line, i) => { if (older.some((re) => re.test(line))) bad.push(`${f}:${i + 1}: ${line.trim()}`); });
+    }
+    assert.deepEqual(bad, []);
+  });
+});

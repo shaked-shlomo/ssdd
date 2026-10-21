@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SSDD installer / updater — zero deps, Node >= 18, git CLI.
+// SSDD installer / updater — zero deps, Node >= 22, git CLI.
 //
 //   ssdd.mjs install <target> [adapters] [--ref <ref>] [--packs <a,b>|none] [--force]
 //   ssdd.mjs update  <target> [--to <ref>] [--adapters <a,b>] [--packs <a,b>|none] [--force]

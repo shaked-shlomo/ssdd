@@ -4,7 +4,7 @@
 // stdin PreToolUse mode (exit 2 = blocked). The stamp file lives inside the
 // scratch repo's .git, so cases never see each other.
 //
-// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 18.
+// Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
