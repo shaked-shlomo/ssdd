@@ -42,7 +42,7 @@ describe('the spec index', () => {
 
   it('every SPEC.md citation resolves', () => {
     const byVersion = new Map(rows);
-    const re = /SPEC\.md`?\s*(?:→|,)?\s*(?:`#\s*|")?(v\d+(?:\.\d+)?)\b(?:[^\n]{0,20}?(?:→|,)\s*Part (\d+))?/g;
+    const re = /SPEC\.md`?\s*(?:→|,)?\s*(?:`#\s*|")?(v\d+(?:\.\d+)?)\b(?:[^\n]{0,20}?(?:→|,|\s)\s*Part (\d+))?/g;
     const bad = []; let checked = 0;
     for (const f of tracked().filter((p) => /\.(md|mjs)$/.test(p))) {
       for (const m of read(f).matchAll(re)) {
@@ -123,13 +123,11 @@ describe('cleanup skill', () => {
       'ReportFindings', 'pkill -f', 'git stash', 'worktree', 'approve', 'NO DIFF']) assert.ok(text.includes(s), s);
   });
 
-  it('every step it cites exists', () => {
-    const text = read(FILE);
-    // "step 3" needs "## 3."; "Phase 3" needs "## Phase 3". (§ is SDD.md's.)
-    for (const m of text.matchAll(/\b(Phase|step) (\d+)/gi)) {
-      const heading = /^phase$/i.test(m[1]) ? `^## Phase ${m[2]}\\b` : `^## ${m[2]}\\.`;
-      assert.match(text, new RegExp(heading, 'm'), m[0]);
-    }
+  it('every SDD.md section it cites exists', () => {
+    // "§4" needs "## 4." in process/SDD.md.
+    const cites = [...read(FILE).matchAll(/§(\d+)/g)];
+    assert.ok(cites.length, 'no § citation found');
+    for (const [cite, n] of cites) assert.match(read('process/SDD.md'), new RegExp(`^## ${n}\\. `, 'm'), cite);
   });
 });
 
@@ -199,14 +197,18 @@ describe('README', () => {
 describe('shipped text matches the defaults', () => {
   it('untracked files are a warning unless preCommit.blockUntracked says otherwise', () => {
     assert.match(read('mechanisms/config.example.json'), /"blockUntracked": false/);
-    const bad = [];
-    for (const f of tracked().filter((p) => /^(process|skills|adapters|reviewers)\/.*\.(md|mdc)$/.test(p))) {
-      const text = read(f).replace(/\s+/g, ' ');
-      for (const m of text.matchAll(/[^.]*\bblock[a-z]*\b[^.]*\buntracked\b[^.]*\./gi)) {
-        if (!/blockUntracked/.test(m[0])) bad.push(`${f}: ${m[0].trim()}`);
+    const shipped = (p) => /^(process|skills|adapters|reviewers|mechanisms)\/.*\.(md|mdc)$/.test(p) || /^(README\.md|docs\/[^/]+\.md)$/.test(p);
+    const bad = []; let said = 0;
+    for (const f of tracked().filter(shipped)) {
+      // A sentence ends at a stop before a space, so `preCommit.blockUntracked` doesn't end one.
+      for (const s of read(f).replace(/\s+/g, ' ').split(/(?<=[.!?]) /)) {
+        if (!/\buntracked\b/i.test(s)) continue;
+        said++;
+        if (/\bblock/i.test(s) && !/blockUntracked/.test(s)) bad.push(`${f}: ${s.trim()}`);
       }
     }
     assert.deepEqual(bad, []);
+    assert.ok(said >= 2, `only ${said} sentence(s) on untracked files found`);
   });
 });
 
