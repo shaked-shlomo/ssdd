@@ -1,9 +1,8 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-21 at v3.2.1, with
-v3 Part 5 built (3.3.0, unreleased; it waits for the owner's go-ahead to
-tag). All five parts of v3 (`SPEC.md` → v3) are built; what's left of v3 is
-the migrations below. Not hardening. When an item ships, delete it here and
+The single list of remaining SSDD work. Updated 2026-10-22 at v3.3.0. All
+five parts of v3 (`SPEC.md` → v3) have shipped; what's left of v3 is the
+migrations below. Not hardening. When an item ships, delete it here and
 record it in `CHANGELOG.md`. When one is planned, it gets a spec in
 `docs/specs/` and a row in `SPEC.md` first.
 

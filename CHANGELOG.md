@@ -10,7 +10,7 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.3.0] — unreleased
+## [3.3.0] — 2026-10-22
 
 v3 Part 5, trimming: SSDD is only as big as what it does. It keeps facts,
 commands, scripts and gotchas, and cuts text that tells the model how to
@@ -68,6 +68,12 @@ reason; see `SPEC.md` → v3 → Part 5.
 - **SSDD's own docs** (not installed): SPEC.md is an index of one spec per
   version in `docs/specs/`, and the README is one page, with the detail in
   `docs/usage.md` and `docs/limitations.md`.
+
+### Fixed
+- `convention-compliance-reviewer` applies a file-size limit the way the
+  project defines it: the project's exemptions (e.g. test files) and
+  allowed exceptions (e.g. a stated reason) hold, and it flags only what
+  the project's rule flags.
 
 ## [3.2.1] — 2026-10-21
 
