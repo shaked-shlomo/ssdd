@@ -1,6 +1,6 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-22 at v3.3.0. All
+The single list of remaining SSDD work. Updated 2026-10-22 at v3.3.1. All
 five parts of v3 (`SPEC.md` → v3) have shipped; what's left of v3 is the
 migrations below. Not hardening. When an item ships, delete it here and
 record it in `CHANGELOG.md`. When one is planned, it gets a spec in

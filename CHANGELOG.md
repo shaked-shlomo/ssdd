@@ -10,7 +10,7 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.3.1] — unreleased
+## [3.3.1] — 2026-10-22
 
 The minors v3 Part 5's final review deferred.
 
