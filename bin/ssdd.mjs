@@ -17,6 +17,9 @@
 // /docs-drift-audit), installed only with --with and recorded in the lock's
 // `with`. `update` keeps the lock's parts (a lock from before `with` keeps
 // the ones whose files it manages); --with a,b or --with none changes them.
+// A part turned off goes whole or not at all: with any file edited, all its
+// files stay, and their lock entries with them, so turning it back on can
+// tell an edit from a copy as installed.
 //
 // Content always comes from a git ref of this repo — by default the newest
 // vX.Y.Z tag — never from the working tree, so the lock's commit is exactly
@@ -37,7 +40,7 @@ import {
   readlinkSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ARM_HOOK, DEFAULT_PATHS, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
@@ -305,8 +308,8 @@ function writeLock(target, lock) {
   mkdirSync(join(target, '.ssdd'), { recursive: true });
   writeFileSync(join(target, LOCK), JSON.stringify(lock, null, 2) + '\n');
 }
-function lockFrom(version, ref, commit, adapters, packs, parts, p, tree) {
-  const managed = {};
+function lockFrom(version, ref, commit, adapters, packs, parts, p, tree, carried = {}) {
+  const managed = { ...carried };
   for (const [t, s] of Object.entries(p.managed)) managed[t] = { src: s, sha256: sha(readFileSync(join(tree, s))) };
   const seeded = {};
   for (const [t, s] of Object.entries(p.seeded)) seeded[t] = { src: s };
@@ -486,6 +489,10 @@ function update(target) {
   }
   const parts = 'with' in opt ? parseWith(opt.with) : partsFromLock(lock);
   const p = plan(newTree, adapters, packs, parts);
+  // update deletes a managed file that matches the lock's hash, so the lock's
+  // paths must stay inside the repo.
+  const outside = Object.keys(lock.managed).find((t) => isAbsolute(t) || t.split(/[\\/]/).includes('..'));
+  if (outside) die(`${LOCK} names a managed path outside the repo: ${outside} — fix the lock`);
   const targets = [...new Set([...Object.keys(lock.managed), ...Object.keys(p.managed)])].sort();
 
   if (tryGit(target, 'rev-parse', '--is-inside-work-tree') === 'true') {
@@ -500,11 +507,24 @@ function update(target) {
   console.log(`Updating SSDD v${lock.ssdd} (${lock.commit.slice(0, 7)}) → v${version} (${ref} ${commit.slice(0, 7)}) in ${target}`);
   const rows = { updated: [], added: [], merged: [], kept: [], removed: [], conflict: [], sidecar: [], skipped: [] };
   let unchanged = 0;
+  // As the lock last recorded it, i.e. as installed.
+  const pristine = (t, local) => local !== null && sha(local) === lock.managed[t]?.sha256;
+  // The part a lock entry belongs to, when --with turned it off.
+  const offPart = (t) => { const n = partOf(lock.managed[t]?.src ?? ''); return n && !parts.includes(n) ? n : null; };
+  const editedParts = new Set(Object.keys(lock.managed).filter((t) => offPart(t))
+    .filter((t) => { const local = read(join(target, t)); return local !== null && !pristine(t, local); }).map(offPart));
+  const carried = {};
+  // A path whose real folder is outside the repo (through a symlink) is never deleted.
+  const realTarget = realpathSync(target);
+  const escapes = (abs) => { const r = relative(realTarget, realpathSync(dirname(abs))); return r.startsWith('..') || isAbsolute(r); };
   for (const t of targets) {
     const abs = join(target, t);
     const baseSrc = lock.managed[t]?.src;
     const newSrc = p.managed[t];
-    const base = baseSrc ? read(join(baseTree, baseSrc)) : null;
+    let base = baseSrc ? read(join(baseTree, baseSrc)) : null;
+    // A part kept while off keeps the entry it was installed with; once the
+    // lock has moved on, the locked commit's copy may not be that.
+    if (base && partOf(baseSrc) && lock.managed[t].sha256 && sha(base) !== lock.managed[t].sha256) base = null;
     const up = newSrc ? read(join(newTree, newSrc)) : null;
     let isLink = false;
     try { isLink = lstatSync(abs).isSymbolicLink(); } catch { /* absent */ }
@@ -512,15 +532,24 @@ function update(target) {
     const local = read(abs);
     const modeFrom = newSrc ? join(newTree, newSrc) : null;
 
-    if (up === null) { // removed upstream
+    if (up === null) { // removed upstream, or its part turned off
       if (local === null) continue;
-      if (same(local, base)) { rmSync(abs); pruneEmpty(target, t); rows.removed.push(t); }
-      else rows.kept.push(`${t} (removed upstream; kept — locally modified)`);
+      // An off part goes whole: if any of its files is edited, all of them
+      // stay, lock entries and all; if none is, all of them go.
+      const off = offPart(t);
+      if (off && editedParts.has(off)) {
+        carried[t] = lock.managed[t];
+        rows.kept.push(`${t} (deselected (--with); ${pristine(t, local) ? "kept with the part's edited files" : 'kept — locally modified'})`);
+      } else if (off || same(local, base)) {
+        if (escapes(abs)) rows.skipped.push(`${t} (resolves outside the repo — left alone)`);
+        else { rmSync(abs); pruneEmpty(target, t); rows.removed.push(t); }
+      } else rows.kept.push(`${t} (removed upstream; kept — locally modified)`);
       continue;
     }
     if (base === null) { // new upstream (or new to this install)
       if (local === null) { writeFile(abs, up, modeFrom); rows.added.push(t); }
       else if (t === SP_GITIGNORE && isSuperpowersDefault(local)) { writeFile(abs, up, modeFrom); rows.added.push(`${t} (replaced Superpowers' default)`); }
+      else if (pristine(t, local) && !equivalent(local, up, t)) { writeFile(abs, up, modeFrom); rows.updated.push(t); } // an off part's, back on
       else if (!equivalent(local, up, t)) { writeFile(`${abs}.ssdd-new`, up, modeFrom); rows.sidecar.push(`${t}.ssdd-new`); }
       else unchanged++;
       continue;
@@ -550,7 +579,7 @@ function update(target) {
     }
   }
   linkAll(target, adapters, log);
-  writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, newTree));
+  writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, newTree, carried));
   armHook(target, log);
   log(`packs     ${packs.join(', ') || 'none'}`);
   log(`with      ${parts.join(', ') || 'none'}`);

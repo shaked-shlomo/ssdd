@@ -3,6 +3,7 @@
 // the way a user would. Run: node --test bin/ssdd.selftest.mjs
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync, execFileSync } from 'node:child_process';
 import {
   cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync,
@@ -1015,9 +1016,101 @@ describe('optional parts', () => {
     const r = ssdd('update', tgt, '--with', 'none');
     assert.equal(r.code, 0, r.out);
     assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'our domains\n');
-    assert.match(r.out, /\.agents\/skills\/docs-drift-audit\/SKILL\.md \(removed upstream; kept — locally modified\)/);
+    assert.match(r.out, /\.agents\/skills\/docs-drift-audit\/SKILL\.md \(deselected \(--with\); kept — locally modified\)/);
     assert.equal(linked('.claude/skills/docs-drift-audit'), '../../.agents/skills/docs-drift-audit');
-    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+    // The part stays whole, so the skill still has its runbook, and the lock
+    // still knows what it installed.
+    assert.equal(get('.ssdd/drift-audit.md'), 'audit\n');
+    assert.match(r.out, /\.ssdd\/drift-audit\.md \(deselected \(--with\); kept with the part's edited files\)/);
+    assert.deepEqual(lock().with, []);
+    assert.ok(lock().managed['.ssdd/drift-audit.md'] && lock().managed['.agents/skills/docs-drift-audit/SKILL.md']);
+    assert.match(ssdd('status', tgt).out, /customized in this project \(1\):\n {2}\.agents\/skills\/docs-drift-audit\/SKILL\.md/);
+  });
+
+  it('update refuses a lock that names a path outside the repo', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--with', 'drift-audit').code, 0);
+    put(root, 'outside.txt', 'not yours\n');
+    const l = lock();
+    l.managed['../outside.txt'] = { src: 'mechanisms/drift-audit.md', sha256: createHash('sha256').update('not yours\n').digest('hex') };
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(l, null, 2) + '\n');
+    commitAll(tgt, 'ssdd');
+    const r = ssdd('update', tgt, '--with', 'none');
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /outside the repo: \.\.\/outside\.txt/);
+    assert.equal(readFileSync(join(root, 'outside.txt'), 'utf8'), 'not yours\n');
+  });
+
+  it('update deletes nothing that resolves outside the repo', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--with', 'drift-audit').code, 0);
+    put(root, 'elsewhere/victim.txt', 'not yours\n');
+    symlinkSync(join(root, 'elsewhere'), join(tgt, 'ext'));
+    const l = lock();
+    l.managed['ext/victim.txt'] = { src: 'mechanisms/drift-audit.md', sha256: createHash('sha256').update('not yours\n').digest('hex') };
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(l, null, 2) + '\n');
+    commitAll(tgt, 'ssdd');
+    const r = ssdd('update', tgt, '--with', 'none');
+    assert.equal(readFileSync(join(root, 'elsewhere/victim.txt'), 'utf8'), 'not yours\n');
+    assert.match(r.out, /ext\/victim\.txt \(resolves outside the repo — left alone\)/);
+    assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')), 'the part itself still goes');
+  });
+
+  describe('turning a part kept that way back on', () => {
+    beforeEach(() => {
+      assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'v2.0.0', '--with', 'drift-audit').code, 0);
+      put(tgt, '.agents/skills/docs-drift-audit/SKILL.md', 'our domains\n');
+      commitAll(tgt, 'ssdd, domains filled in');
+      assert.equal(ssdd('update', tgt, '--to', 'v2.0.0', '--with', 'none').code, 0);
+      commitAll(tgt, 'drift audit off');
+      release210();
+    });
+
+    it('merges into the kept files, with no sidecar', () => {
+      const r = ssdd('update', tgt, '--with', 'drift-audit');
+      assert.equal(r.code, 0, r.out);
+      assert.doesNotMatch(r.out, /ssdd-new/);
+      assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'our domains\n');
+      assert.equal(get('.ssdd/drift-audit.md'), 'audit v2\n');
+      assert.deepEqual(lock().with, ['drift-audit']);
+    });
+
+    it('after an update in between, a file still as installed takes the new version', () => {
+      // The lock moves to 2.1.0, whose runbook isn't the one on disk.
+      let r = ssdd('update', tgt);
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, /\.agents\/skills\/docs-drift-audit\/SKILL\.md \(deselected \(--with\); kept — locally modified\)/);
+      assert.equal(get('.ssdd/drift-audit.md'), 'audit\n');
+      commitAll(tgt, 'ssdd 2.1.0');
+      r = ssdd('update', tgt, '--with', 'drift-audit');
+      assert.equal(r.code, 0, r.out);
+      assert.doesNotMatch(r.out, /ssdd-new/);
+      assert.equal(get('.ssdd/drift-audit.md'), 'audit v2\n');
+      assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'our domains\n');
+    });
+
+    it('after an update in between that changed an edited file upstream, it gets a sidecar, not a merge on the wrong base', () => {
+      put(src, 'skills/docs-drift-audit/SKILL.md', 'drift skill v2\n');
+      put(src, 'VERSION', '2.2.0\n');
+      commitAll(src, 'v2.2.0');
+      git(src, 'tag', 'v2.2.0');
+      assert.equal(ssdd('update', tgt).code, 0);
+      commitAll(tgt, 'ssdd 2.2.0');
+      const r = ssdd('update', tgt, '--with', 'drift-audit');
+      assert.equal(r.code, 1, r.out);
+      assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md'), 'our domains\n');
+      assert.equal(get('.agents/skills/docs-drift-audit/SKILL.md.ssdd-new'), 'drift skill v2\n');
+      assert.equal(get('.ssdd/drift-audit.md'), 'audit v2\n');
+    });
+
+    it('once the edited file is deleted, the next update removes the rest', () => {
+      git(tgt, 'rm', '-q', '.agents/skills/docs-drift-audit/SKILL.md');
+      commitAll(tgt, 'drop our domains');
+      const r = ssdd('update', tgt);
+      assert.equal(r.code, 0, r.out);
+      assert.ok(!existsSync(join(tgt, '.ssdd/drift-audit.md')));
+      assert.ok(!existsSync(join(tgt, '.agents/skills/docs-drift-audit')));
+      assert.equal(linked('.claude/skills/docs-drift-audit'), null);
+      assert.deepEqual(Object.keys(lock().managed).filter((t) => t.includes('drift')), []);
+    });
   });
 
   it('update --with drift-audit adds it', () => {

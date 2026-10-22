@@ -20,6 +20,15 @@ The minors v3 Part 5's final review deferred.
   routed to that reviewer, as staged when it started, whatever its prompt
   named, so a reviewer handed only some of the files it owes stamps the
   rest unread. Both now say so: name every file it owes.
+- `update --with none` with the drift audit's domain list filled in kept the
+  edited `SKILL.md` ("removed upstream") but deleted the runbook it points
+  at, and turning the part back on then wrote a `.ssdd-new` beside it and
+  exited 1. A part turned off now goes whole: if any of its files is edited,
+  all of them stay, still in the lock, reported as "deselected (--with)",
+  and `update --with drift-audit` merges into them as usual. `git rm` your
+  edited files and the next `update` removes the rest. `update` now refuses
+  a lock whose managed paths leave the repo, and never deletes a file whose
+  folder resolves outside it through a symlink.
 
 ### Upgrade (optional)
 - `CLAUDE.md` is project-owned: `update` prints its template's change; port

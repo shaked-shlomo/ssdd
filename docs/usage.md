@@ -131,6 +131,7 @@ framework file three ways (your locked version, yours, the new release):
 | both edited, same lines | conflict markers: resolve, then commit |
 | you added a file the release now ships | `<file>.ssdd-new` beside yours: reconcile, delete it |
 | removed upstream | deleted if you never edited it, else kept with a warning |
+| its part turned off (`--with`) | all of the part's files deleted if you edited none, else all kept (still in the lock): `git rm` your edited ones and the next `update` removes the rest |
 
 `update` keeps the packs the lock lists and never detects new ones; `status`
 says when the repo now matches a pack it lacks, and `update --packs a,b`
