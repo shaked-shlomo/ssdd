@@ -209,3 +209,19 @@ describe('shipped text matches the defaults', () => {
     assert.deepEqual(bad, []);
   });
 });
+
+describe('shipped text matches the hooks', () => {
+  it('a completion stamp covers the routed staged files, not what the dispatch named', () => {
+    // review-gate.mjs's SubagentStart snapshots every staged file routed to the
+    // reviewer's type; the prompt plays no part.
+    for (const f of ['adapters/claude-code/CLAUDE.md', 'process/SDD.md']) {
+      const said = read(f).replace(/\s+/g, ' ').split(/(?<=\.) /).filter((s) => /verdict line/.test(s) && /\bstamps\b/.test(s));
+      assert.ok(said.length, `${f}: no sentence on completion stamps`);
+      for (const s of said) {
+        assert.match(s, /\brouted\b/, `${f}: ${s}`);
+        assert.match(s, /\bstaged\b/, `${f}: ${s}`);
+        assert.doesNotMatch(s, /dispatched on/, `${f}: ${s}`);
+      }
+    }
+  });
+});

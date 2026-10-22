@@ -10,6 +10,21 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.3.1] — unreleased
+
+The minors v3 Part 5's final review deferred.
+
+### Fixed
+- `CLAUDE.md` and `SDD.md` §4 said a reviewer subagent's completion stamp
+  covers the files it was dispatched on. The hook stamps every staged file
+  routed to that reviewer, as staged when it started, whatever its prompt
+  named, so a reviewer handed only some of the files it owes stamps the
+  rest unread. Both now say so: name every file it owes.
+
+### Upgrade (optional)
+- `CLAUDE.md` is project-owned: `update` prints its template's change; port
+  the stamping sentence into yours.
+
 ## [3.3.0] — 2026-10-22
 
 v3 Part 5, trimming: SSDD is only as big as what it does. It keeps facts,

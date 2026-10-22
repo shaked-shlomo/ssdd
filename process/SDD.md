@@ -92,9 +92,10 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
      reviewers are read-only: no edits, commits, stamps, or `git stash`.
   3. Fix or triage the findings, re-stage, then stamp. In Claude Code with
      the subagent hooks wired, a reviewer that ends with its verdict line
-     stamps the files it was dispatched on (a file edited during its review
-     stays owed; a review on a model outside `reviewGate.reviewerModels`
-     stamps nothing). Otherwise:
+     stamps all its routed staged files, whatever its input named, so name
+     every file it owes (one staged or edited during its review stays owed;
+     a review on a model outside `reviewGate.reviewerModels` stamps
+     nothing). Otherwise:
      `node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>`, adding
      `--files <path,…>` when a reviewer re-read only those files and
      `--repo <path>` for another work tree (the message prints it). With
@@ -115,8 +116,7 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   Stamping without running the reviewers is forbidden; `SSDD_REVIEW_SKIP=1`
   is for emergencies, with the user's explicit go-ahead. Over
   `reviewGate.maxRoutedFiles` routed files the gate warns: split the commit
-  rather than run another round. (A whole-diff stamp once forced six full
-  rounds over 29 files.)
+  rather than run another round.
 - **Findings are records; ledger rows are verified before they are written.**
   Each review round's findings are collected as structured records (finding,
   reviewer(s), severity, file), fixes are applied from that list, and then
