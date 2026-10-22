@@ -23,9 +23,11 @@ against them. Dimensions that recur across projects:
 2. **Naming** — follows the project's declared source of truth for names
    (e.g. a design file, an API schema). Never silently "correct" an upstream
    name in code — flag mismatches instead.
-3. **File-size / structure limits** — e.g. a max-lines-per-file rule: files
-   the diff grows past the limit are findings even when pre-existing (report
-   as pre-existing + the growth added).
+3. **File-size / structure limits** — e.g. a max-lines-per-file rule, applied
+   exactly as the project defines it: honor its exemptions (e.g. test files)
+   and its allowed exceptions (e.g. a stated reason for going over). Flag only
+   what that definition flags; a file already over the limit that the diff
+   grows is reported as pre-existing + the growth added.
 4. **State-management contract** — new state lives in the sanctioned layer
    (server state vs. client state split, store shape conventions, no ad-hoc
    caches where a declared mechanism exists).
