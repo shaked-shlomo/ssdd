@@ -16,3 +16,4 @@ version gets its file and a row here before its plan.
 | v2.6 | [v2.6 — simplify the gate to its threat model](docs/specs/v2.6.md) | 2.6.0 (untagged) |
 | v3 | [v3 — SSDD knows where the work is](docs/specs/v3.md) | 3.0.0–3.3.1 (Parts 1–5) |
 | v3.4 | [v3.4 — findings have outcomes](docs/specs/v3.4.md) | — (draft) |
+| v3.5 | [v3.5 — one backlog](docs/specs/v3.5.md) | — (draft) |
