@@ -13,6 +13,8 @@ that incident.
 
 ## Next: the end of v3
 
+- **v3.4 — findings have outcomes** (`SPEC.md` → v3.4, draft) ships
+  before the migrations (owner, 2026-10-22), so each project migrates once.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
