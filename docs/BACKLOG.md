@@ -17,7 +17,8 @@ that incident.
   before the migrations (owner, 2026-10-22), so each project migrates once.
   Trimmed 2026-10-23 to the re-review list, `[pre-existing]` and the round
   cap; blocking on open findings and the commit-message record are
-  deferred in its Out list.
+  deferred in its Out list. Revised 2026-10-30 to read findings from
+  `--stamp --report` on any harness, built on v3.6.
 - **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
   `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
   ships before the migrations is its Open 1.
@@ -26,8 +27,8 @@ that incident.
   simple). The pre-commit is the review gate and the harness review gate
   goes; `--stamp` is the only way to stamp and accepts a review before
   `git add`; a comment-only change carries clean stamps; amend, bulk add
-  and lint warn instead of block; nine unused config keys go. Its Open 3
-  puts it before v3.4, which needs revising to `--stamp --report`.
+  and lint warn instead of block; nine unused config keys go. It ships
+  before v3.4, which builds on its gate.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
