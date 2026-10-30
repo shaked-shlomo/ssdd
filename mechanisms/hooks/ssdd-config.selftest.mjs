@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { OBSOLETE_KEYS, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 
 let dir;
 function git(...args) {
@@ -53,43 +53,71 @@ describe('loadSsddConfig', () => {
     assert.deepEqual(reviewers(loadSsddConfig(dir).cfg), ['b']);
   });
 
-  it('bakes the global exclude into each route', () => {
+  it('the nine removed keys are ignored and named', () => {
     putConfig({
-      routing: [{ reviewer: 'a', paths: ['^src/'] }, { reviewer: 'b', paths: ['^src/'], exclude: ['gen/'] }],
-      reviewGate: { exclude: ['\\.test\\.ts$'] },
+      routing: [{ reviewer: 'a', paths: ['^src/'], exclude: ['gen/'] }],
+      reviewGate: { stamping: 'hooks', reviewerModels: ['opus'], exclude: ['\\.test\\.ts$'], maxRoutedFiles: 3 },
+      preCommit: { blockUntracked: true },
+      gitGuard: { blockBulkAdd: false, blockNoVerify: false, blockAmend: true, blockHooksPath: false, extraRules: [{ pattern: 'x' }] },
+      modelReview: { generation: 6 },
     });
-    const { cfg } = loadSsddConfig(dir);
-    assert.deepEqual(cfg.routing.find((x) => x.reviewer === 'a').exclude, ['\\.test\\.ts$']);
-    assert.deepEqual(cfg.routing.find((x) => x.reviewer === 'b').exclude, ['\\.test\\.ts$', 'gen/']);
-    assert.deepEqual(cfg.reviewGate.exclude, []);
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, OBSOLETE_KEYS);
+    assert.equal(OBSOLETE_KEYS.length, 9);
+    assert.deepEqual(r.cfg.routing[0].exclude, ['gen/']);
+    assert.equal(r.cfg.reviewGate.maxRoutedFiles, 3);
+    assert.deepEqual(r.cfg.gitGuard.extraRules.map((x) => x.pattern), ['x']);
   });
 
-  it('returns the settings as given; guard toggles default on', () => {
-    putConfig({
-      reviewGate: { stamping: 'hooks', reviewerModels: ['opus'], maxRoutedFiles: 3 },
-      gitGuard: { blockAmend: false, extraRules: [{ pattern: 'x' }] },
-    });
+  it('only the removed keys the file holds are named, in the same order', () => {
+    putConfig({ gitGuard: { blockAmend: true }, reviewGate: { stamping: 'manual' }, modelReview: { generation: 5 } });
+    assert.deepEqual(loadSsddConfig(dir).obsolete, ['reviewGate.stamping', 'gitGuard.blockAmend', 'modelReview.generation']);
+    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }] });
+    assert.deepEqual(loadSsddConfig(dir).obsolete, []);
+  });
+
+  it("a wrong-typed removed section isn't an error", () => {
+    putConfig({ modelReview: 'x', preCommit: 1 });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, []);
+  });
+
+  it('a malformed removed key is not an error either', () => {
+    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }], reviewGate: { exclude: ['('], reviewerModels: 'x' }, modelReview: { generation: 0 } });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, ['reviewGate.reviewerModels', 'reviewGate.exclude', 'modelReview.generation']);
+    assert.deepEqual(r.cfg.routing.map((x) => x.exclude), [[]]);
+  });
+
+  it('returns the settings as given', () => {
+    putConfig({ reviewGate: { maxRoutedFiles: 3 }, gitGuard: { extraRules: [{ pattern: 'x' }] } });
     const { cfg } = loadSsddConfig(dir);
-    assert.equal(cfg.reviewGate.stamping, 'hooks');
-    assert.deepEqual(cfg.reviewGate.reviewerModels, ['opus']);
-    assert.deepEqual(cfg.reviewGate.reviewerModelSets, [['opus']]);
     assert.equal(cfg.reviewGate.maxRoutedFiles, 3);
-    assert.equal(cfg.gitGuard.blockAmend, false);
-    for (const k of ['blockBulkAdd', 'blockNoVerify', 'blockHooksPath']) assert.equal(cfg.gitGuard[k], true);
     assert.deepEqual(cfg.gitGuard.extraRules.map((r) => r.pattern), ['x']);
   });
 
-  it('defaults: manual stamping, no model sets, no extra rules', () => {
+  it('defaults: no extra rules, no routes', () => {
     putConfig({});
-    const { cfg } = loadSsddConfig(dir);
-    assert.equal(cfg.reviewGate.stamping, 'manual');
-    for (const k of ['blockBulkAdd', 'blockNoVerify', 'blockHooksPath']) assert.equal(cfg.gitGuard[k], true, k);
-    assert.equal(cfg.gitGuard.blockAmend, false, 'an amend is local and reversible: off unless the config says true');
-    putConfig({ gitGuard: { blockAmend: true } });
-    assert.equal(loadSsddConfig(dir).cfg.gitGuard.blockAmend, true);
-    assert.deepEqual(cfg.reviewGate.reviewerModelSets, []);
-    assert.deepEqual(cfg.gitGuard.extraRules, []);
-    assert.deepEqual(cfg.routing, []);
+    const r = loadSsddConfig(dir);
+    assert.deepEqual(r.cfg.gitGuard, { extraRules: [] });
+    assert.deepEqual(r.cfg.routing, []);
+    assert.deepEqual(r.obsolete, []);
+  });
+
+  it('commentReviewer defaults to docs-sync-reviewer', () => {
+    putConfig({});
+    assert.equal(loadSsddConfig(dir).cfg.reviewGate.commentReviewer, 'docs-sync-reviewer');
+    putConfig({ reviewGate: { commentReviewer: 'doc-reviewer' } });
+    assert.equal(loadSsddConfig(dir).cfg.reviewGate.commentReviewer, 'doc-reviewer');
+    for (const v of ['', '  ', 7, null, ['x'], {}]) {
+      putConfig({ reviewGate: { commentReviewer: v } });
+      const r = loadSsddConfig(dir);
+      assert.equal(r.error, undefined, JSON.stringify(v));
+      assert.equal(r.cfg.reviewGate.commentReviewer, 'docs-sync-reviewer', JSON.stringify(v));
+    }
   });
 
   it('a broken config is an error', () => {
@@ -150,29 +178,6 @@ describe('loadSsddConfig', () => {
       assert.match(r.error ?? '', why, JSON.stringify(route));
       assert.deepEqual(r.cfg.routing, []);
     }
-  });
-
-  it('a reviewGate.exclude that is not a list of regex sources is a config error', () => {
-    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }], reviewGate: { exclude: ['('] } });
-    const r = loadSsddConfig(dir);
-    assert.match(r.error, /reviewGate\.exclude: "\(" isn't a valid regex/);
-    assert.deepEqual(r.cfg.routing.map((x) => x.exclude), [[]]);
-  });
-
-  it('preCommit.blockUntracked defaults to false and reads true', () => {
-    putConfig({});
-    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: false });
-    putConfig({ preCommit: { blockUntracked: true } });
-    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: true });
-    putConfig({ preCommit: { blockUntracked: 'yes' } });
-    assert.equal(loadSsddConfig(dir).cfg.preCommit.blockUntracked, false);
-  });
-
-  it('a non-object preCommit is a config error', () => {
-    putConfig({ preCommit: true });
-    const r = loadSsddConfig(dir);
-    assert.match(r.error, /"preCommit" must be an object/);
-    assert.equal(r.cfg.preCommit.blockUntracked, false);
   });
 
   it('a "root" key does not move the repo root', () => {
@@ -264,6 +269,14 @@ describe('productionGuard', () => {
     assert.equal(r.error, undefined);
     assert.equal(r.cfg.productionGuard.writePath, 'migrations on merge to main');
   });
+  it('config.example.json holds none of the removed keys and loads clean', { skip: !existsSync(EXAMPLE) }, () => {
+    putConfig(readFileSync(EXAMPLE, 'utf8'));
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, []);
+    assert.deepEqual(Object.keys(r.cfg.gitGuard), ['extraRules']);
+    assert.ok(r.cfg.routing.length && r.cfg.routing.every((x) => x.exclude.includes('\\.test\\.')), 'each route excludes test files');
+  });
 });
 
 describe('skillsAudited', () => {
@@ -278,39 +291,3 @@ describe('skillsAudited', () => {
     assert.equal(skillsAudited(dir), '2026-10-18');
   });
 });
-
-describe('modelReview', () => {
-  it('defaults to generation 5', () => {
-    putConfig({});
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.deepEqual(r.cfg.modelReview, { generation: 5 });
-  });
-
-  it('keeps a valid section', () => {
-    putConfig({ modelReview: { generation: 6 } });
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.deepEqual(r.cfg.modelReview, { generation: 6 });
-  });
-
-  it('a bad section is a config error', () => {
-    for (const mr of ['x', { generation: 0 }, { generation: '6' }, { generation: 5.5 }]) {
-      putConfig({ modelReview: mr });
-      const r = loadSsddConfig(dir);
-      assert.match(r.error ?? '', /modelReview/, JSON.stringify(mr));
-      assert.deepEqual(r.cfg.modelReview, { generation: 5 }, JSON.stringify(mr));
-    }
-  });
-
-  const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', 'config.example.json');
-  it("config.example.json's modelReview is valid", { skip: !existsSync(EXAMPLE) }, () => {
-    const { modelReview } = JSON.parse(readFileSync(EXAMPLE, 'utf8'));
-    assert.ok(modelReview, 'the example has a modelReview section');
-    putConfig({ modelReview });
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.equal(r.cfg.modelReview.generation, 5);
-  });
-});
-

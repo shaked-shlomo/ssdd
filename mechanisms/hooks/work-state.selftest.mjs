@@ -1,7 +1,7 @@
 // Tests for work-state: the view across branches and worktrees, the stale-status
 // rule, ledgers, warnings, and the session-start and close-check modes.
 // Run: node --test mechanisms/hooks/work-state.selftest.mjs
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -658,27 +658,21 @@ describe('close check (--staged)', () => {
     const ok = commit('x');
     assert.equal(ok.status, 0, ok.stderr);
     assert.match(ok.stderr, /1 untracked file isn't in this commit[\s\S]*• notes\.txt/);
-    assert.match(ok.stderr, /preCommit\.blockUntracked/);
     assert.doesNotMatch(ok.stderr, /• \.superpowers/);
     assert.match(ok.stderr, /reminder: git add \.superpowers\/sdd\/p\/progress\.md/);
   });
 
-  it('pre-commit: preCommit.blockUntracked restores the block', { skip: !PRE_COMMIT }, () => {
+  it('pre-commit: preCommit.blockUntracked no longer blocks', { skip: !PRE_COMMIT }, () => {
     armPreCommit();
     put('.ssdd/config.json', JSON.stringify({ preCommit: { blockUntracked: true } }));
     stage('.ssdd/config.json');
-    put('.superpowers/sdd/p/progress.md', progress('.ssdd/plans/01-p.md', ['Task 1: complete (x)']));
+    put('notes.txt', 'stray\n');
     put('README.md', 'z\n');
     stage('README.md');
     const ok = commit('x');
-    assert.equal(ok.status, 0, ok.stderr); // the ledger alone is exempt
-    put('notes.txt', 'stray\n');
-    put('README.md', 'w\n');
-    stage('README.md');
-    const blocked = commit('y');
-    assert.equal(blocked.status, 1);
-    assert.match(blocked.stderr, /untracked files exist[\s\S]*notes\.txt/);
-    assert.doesNotMatch(blocked.stderr, /• \.superpowers/);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stderr, /\[ssdd-pre-commit\] note: 1 untracked file isn't in this commit:[\s\S]*• notes\.txt/);
+    assert.doesNotMatch(ok.stderr, /untracked files exist|blockUntracked/);
   });
 
   it('the untracked list stops at 10', () => {
@@ -912,90 +906,3 @@ describe('next plan', () => {
     assert.equal(out, 'next plan: .ssdd/plans/01-<slug>.md\n');
   });
 });
-
-describe('the new-model reminder', () => {
-  const LINE = (model, n) => `  ! this session runs ${model}, newer than the generation the instructions were reviewed for (${n}): ` +
-    'see SSDD\'s README → "When a new model generation ships", then set modelReview.generation';
-  const start = (payload, args = ['--session-start']) =>
-    run(args, { input: typeof payload === 'string' ? payload : JSON.stringify({ hook_event_name: 'SessionStart', ...payload }) });
-
-  it('a newer generation adds one line', () => {
-    const { code, out } = start({ model: 'claude-opus-6' });
-    assert.equal(code, 0);
-    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
-  });
-
-  it('nothing for the same or an older generation, another model, no model, or no JSON', () => {
-    for (const p of [{ model: 'claude-opus-5-5' }, { model: 'claude-sonnet-4-5' }, { model: 'gpt-5' }, { model: 'default' }, {}, 'not json', '']) {
-      const { code, out } = start(p);
-      assert.equal(code, 0, JSON.stringify(p));
-      assert.doesNotMatch(out, /newer than/, JSON.stringify(p));
-      assert.match(out, /^SSDD · /, JSON.stringify(p));
-    }
-  });
-
-  it('the record comes from the config', () => {
-    put('.ssdd/config.json', '{ "modelReview": { "generation": 6 } }\n');
-    assert.doesNotMatch(start({ model: 'claude-opus-6' }).out, /newer than/);
-    assert.ok(start({ model: 'claude-fable-7' }).out.split('\n').includes(LINE('claude-fable-7', 6)));
-  });
-
-  it("Cursor: model or model_id, dotted too", () => {
-    for (const [p, model] of [[{ model: 'default', model_id: 'claude-opus-6' }, 'claude-opus-6'], [{ model: 'claude-6.1-sonnet' }, 'claude-6.1-sonnet']]) {
-      const { code, out } = start({ ...p, hook_event_name: 'sessionStart' }, ['--session-start=cursor']);
-      assert.equal(code, 0);
-      assert.ok(JSON.parse(out).additional_context.split('\n').includes(LINE(model, 5)), out);
-    }
-  });
-
-  // A harness that writes the payload late, or keeps stdin open after it.
-  // chunks: [[delayMs, text]]; stdin closes after holdMs.
-  // The property is "doesn't wait for the harness to close stdin": each case
-  // must exit before holdMs, which leaves a loaded CI runner room.
-  const HOLD = 5000;
-  function runHeld(chunks, holdMs = HOLD) {
-    return new Promise((resolve) => {
-      const t0 = Date.now();
-      const child = spawn(process.execPath, [SCRIPT, '--session-start'], { cwd: dir, env: env(), stdio: ['pipe', 'pipe', 'pipe'] });
-      let out = '';
-      child.stdout.on('data', (d) => { out += d; });
-      child.stdin.on('error', () => {});
-      const timers = chunks.map(([delay, text]) => setTimeout(() => child.stdin.write(text), delay));
-      timers.push(setTimeout(() => child.stdin.end(), holdMs));
-      child.on('exit', (code) => { timers.forEach(clearTimeout); child.stdin.destroy(); resolve({ code, out, ms: Date.now() - t0 }); });
-    });
-  }
-  const PAYLOAD = JSON.stringify({ hook_event_name: 'SessionStart', model: 'claude-opus-6' });
-
-  it('a payload on a pipe the harness keeps open still counts, without waiting for it to close', async () => {
-    const { code, out, ms } = await runHeld([[0, PAYLOAD]]);
-    assert.equal(code, 0);
-    assert.ok(ms < HOLD, `${ms} ms`);
-    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
-  });
-
-  it('a payload written late still counts', async () => {
-    const { code, out, ms } = await runHeld([[200, PAYLOAD]]);
-    assert.equal(code, 0);
-    assert.ok(ms < HOLD, `${ms} ms`);
-    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
-  });
-
-  it('stdin held open with nothing written: exit 0 before it closes, no line', async () => {
-    const { code, out, ms } = await runHeld([]);
-    assert.equal(code, 0);
-    assert.ok(ms < HOLD, `${ms} ms`);
-    assert.match(out, /^SSDD · /);
-    assert.doesNotMatch(out, /newer than/);
-  });
-
-  it('the line survives the cap', () => {
-    for (let i = 1; i <= 40; i++) put(`.ssdd/plans/${String(i).padStart(2, '0')}-plan-with-a-longish-name.md`, planText({ status: 'DRAFT', open: ['q'] }));
-    commitAll('40 drafts');
-    const { out } = start({ model: 'claude-opus-6' });
-    assert.ok(out.trimEnd().split('\n').length <= 12, out);
-    assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
-    assert.ok(out.split('\n').includes(LINE('claude-opus-6', 5)), out);
-  });
-});
-

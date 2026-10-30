@@ -24,10 +24,6 @@ const NODE = process.execPath;
 
 // Mirrors mechanisms/config.example.json → gitGuard (minus $comment keys).
 const GIT_GUARD = {
-  blockBulkAdd: true,
-  blockNoVerify: true,
-  blockAmend: false,
-  blockHooksPath: true,
   extraRules: [
     {
       // --force (not --force-with-lease / --force-if-includes), bundled short -f, +refspec.
@@ -220,9 +216,7 @@ const ALLOWED = [
 describe('git-guard', () => {
   it('the embedded gitGuard block matches config.example.json', { skip: !existsSync(EXAMPLE_CONFIG) }, () => {
     const { gitGuard } = JSON.parse(readFileSync(EXAMPLE_CONFIG, 'utf8'));
-    for (const toggle of ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath']) {
-      assert.strictEqual(gitGuard[toggle], GIT_GUARD[toggle], toggle);
-    }
+    assert.deepStrictEqual(Object.keys(gitGuard).filter((k) => k !== '$comment'), ['extraRules']);
     assert.deepStrictEqual(
       gitGuard.extraRules.map(({ pattern, message }) => ({ pattern, message })),
       GIT_GUARD.extraRules,

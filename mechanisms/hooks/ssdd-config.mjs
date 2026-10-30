@@ -10,30 +10,25 @@
 // A wrong-type section is dropped and the rest still builds, so git-guard
 // (which reads cfg, not error) keeps the rules that are well-formed. Routing
 // is checked to the regex: each route needs a reviewer name and `paths` (and
-// any `exclude`, and reviewGate.exclude) as lists of sources that compile, or
-// the routing (or that exclude) is dropped with an error. A hook that built
-// the regexes itself could throw, and a harness reads a throw as "allow".
+// any `exclude`) as lists of sources that compile, or the routing is dropped
+// with an error. A hook that built the regexes itself could throw, and a
+// harness reads a throw as "allow".
 //
 // The returned cfg keeps the shape callers read:
-//   routing                 each route with reviewGate.exclude baked into its
-//                           own exclude
-//   reviewGate.stamping     "hooks" or "manual" (default)
-//   reviewGate.reviewerModelSets  [reviewerModels] when it is a non-empty list
-//   gitGuard.block*         off only when the config says false, except
-//                           blockAmend: on only when it says true (an amend
-//                           is local and reversible)
+//   routing                 each route, with an `exclude` list (maybe empty)
+//   reviewGate.commentReviewer  the reviewer a comment-only change needs
+//                           (default "docs-sync-reviewer")
 //   gitGuard.extraRules     as given
 //   paths.plans / .specs / .ledgers  repo-relative; defaults .ssdd/plans,
 //                           .ssdd/specs, .ssdd/ledgers
-//   preCommit.blockUntracked  true only when the config says true: the
-//                           pre-commit then refuses while an untracked file
-//                           exists (otherwise it lists them as a warning)
 //   productionGuard         { writePath (default "migrations on merge to
 //                           main"), extraRules (default []), ...one object
 //                           per pack, which the pack validates }
-//   modelReview.generation  the Claude model generation the instructions
-//                           were last reviewed for (default 5); the session
-//                           view says when a session runs a newer one
+//
+// Nine keys that earlier versions read are gone (OBSOLETE_KEYS). A config that
+// still holds one is not broken: the key is ignored, and `obsolete` lists the
+// ones the file has, for `status` and `update` to name. Nothing rewrites the
+// file. A removed section (preCommit, modelReview) isn't type-checked either.
 //
 // A section-scoped error is also in `sectionErrors[section]`, so a hook that
 // reads one section (prod-guard) can tell its own error from another's. A
@@ -44,8 +39,18 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PATH = '.ssdd/config.json';
-// Each git-guard toggle and its default.
-const GUARD_TOGGLES = { blockBulkAdd: true, blockNoVerify: true, blockAmend: false, blockHooksPath: true };
+// Config keys that were read once and no longer are, as `section.key`.
+export const OBSOLETE_KEYS = Object.freeze([
+  'reviewGate.stamping',
+  'reviewGate.reviewerModels',
+  'reviewGate.exclude',
+  'preCommit.blockUntracked',
+  'gitGuard.blockBulkAdd',
+  'gitGuard.blockNoVerify',
+  'gitGuard.blockAmend',
+  'gitGuard.blockHooksPath',
+  'modelReview.generation',
+]);
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // A section that is present must have its type. A string spread as an object
@@ -55,13 +60,10 @@ const SECTIONS = [
   ['gitGuard', isObject, 'an object'],
   ['routing', (v) => Array.isArray(v) && v.every(isObject), 'a list of objects'],
   ['paths', isObject, 'an object'],
-  ['preCommit', isObject, 'an object'],
   ['productionGuard', isObject, 'an object'],
-  ['modelReview', isObject, 'an object'],
 ];
 export const DEFAULT_WRITE_PATH = 'migrations on merge to main';
-// SSDD's own text was last reviewed for the Claude 5 generation (v3 Part 5).
-export const DEFAULT_REVIEWED_GENERATION = 5;
+export const DEFAULT_COMMENT_REVIEWER = 'docs-sync-reviewer';
 
 // Where plans, specs and ledgers live, repo-relative. A key that isn't a
 // non-empty string keeps its default.
@@ -74,7 +76,7 @@ function buildPaths(paths) {
   }
   return out;
 }
-const broken = (root, error) => ({ root, cfg: { root }, error });
+const broken = (root, error) => ({ root, cfg: { root }, obsolete: [], error });
 
 // '' when every entry is a string that compiles as a regex, else why not.
 function regexListError(v) {
@@ -120,39 +122,30 @@ const gitText = (repo, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 16 * 1024 * 1024 });
 
 function build(root, config) {
-  const global = Array.isArray(config.reviewGate?.exclude) ? config.reviewGate.exclude : [];
   const routing = (Array.isArray(config.routing) ? config.routing : [])
-    .map((r) => ({ ...r, exclude: [...global, ...(Array.isArray(r?.exclude) ? r.exclude : [])] }));
-  const models = config.reviewGate?.reviewerModels;
-  const gitGuard = { extraRules: Array.isArray(config.gitGuard?.extraRules) ? config.gitGuard.extraRules : [] };
-  for (const [k, on] of Object.entries(GUARD_TOGGLES)) {
-    gitGuard[k] = on ? config.gitGuard?.[k] !== false : config.gitGuard?.[k] === true;
-  }
+    .map((r) => ({ ...r, exclude: Array.isArray(r?.exclude) ? r.exclude : [] }));
+  const commentReviewer = config.reviewGate?.commentReviewer;
   // root goes last, so a "root" key in the file can't move the repo root.
   return {
     ...config,
     routing,
     reviewGate: {
       ...(config.reviewGate ?? {}),
-      exclude: [],
-      stamping: config.reviewGate?.stamping === 'hooks' ? 'hooks' : 'manual',
-      reviewerModelSets: Array.isArray(models) && models.length ? [models] : [],
+      commentReviewer: typeof commentReviewer === 'string' && commentReviewer.trim() ? commentReviewer.trim() : DEFAULT_COMMENT_REVIEWER,
     },
-    gitGuard: { ...(config.gitGuard ?? {}), ...gitGuard },
+    gitGuard: { ...(config.gitGuard ?? {}), extraRules: Array.isArray(config.gitGuard?.extraRules) ? config.gitGuard.extraRules : [] },
     paths: buildPaths(config.paths),
-    preCommit: { ...(config.preCommit ?? {}), blockUntracked: config.preCommit?.blockUntracked === true },
     productionGuard: {
       ...(config.productionGuard ?? {}),
       writePath: typeof config.productionGuard?.writePath === 'string' && config.productionGuard.writePath.trim()
         ? config.productionGuard.writePath.trim() : DEFAULT_WRITE_PATH,
       extraRules: Array.isArray(config.productionGuard?.extraRules) ? config.productionGuard.extraRules : [],
     },
-    modelReview: { ...(config.modelReview ?? {}), generation: config.modelReview?.generation ?? DEFAULT_REVIEWED_GENERATION },
     root,
   };
 }
 
-// → null (no repo, or no config) | { root, cfg, error? }
+// → null (no repo, or no config) | { root, cfg, obsolete, error? }
 export function loadSsddConfig(repo) {
   let root;
   try { root = gitText(repo, 'rev-parse', '--show-toplevel').trim(); } catch { return null; }
@@ -168,6 +161,10 @@ export function loadSsddConfig(repo) {
   } catch (e) {
     return broken(root, `${PATH} is not valid JSON: ${e.message}`);
   }
+  const obsolete = OBSOLETE_KEYS.filter((k) => {
+    const [section, key] = k.split('.');
+    return isObject(config[section]) && key in config[section];
+  });
   const sectionErrors = {};
   const fail = (section, why) => { sectionErrors[section] ??= why; };
   for (const [key, ok, type] of SECTIONS) {
@@ -175,20 +172,12 @@ export function loadSsddConfig(repo) {
   }
   const routing = Array.isArray(config.routing) ? routingError(config.routing) : '';
   if (routing) { fail('routing', routing); delete config.routing; }
-  if (config.reviewGate && 'exclude' in config.reviewGate) {
-    const why = regexListError(config.reviewGate.exclude);
-    if (why) { fail('reviewGate', `reviewGate.exclude: ${why}`); delete config.reviewGate.exclude; }
-  }
   const pg = isObject(config.productionGuard) ? productionGuardError(config.productionGuard) : '';
   if (pg) { fail('productionGuard', `productionGuard: ${pg}`); delete config.productionGuard; }
-  const gen = config.modelReview?.generation;
-  if (gen !== undefined && !(Number.isInteger(gen) && gen > 0)) {
-    fail('modelReview', 'modelReview.generation must be a positive whole number'); delete config.modelReview;
-  }
   const cfg = build(root, config);
   const errors = Object.values(sectionErrors);
-  if (!errors.length) return { root, cfg };
-  return { root, cfg, error: `${PATH}: ${errors.join('; ')}`, sectionErrors };
+  if (!errors.length) return { root, cfg, obsolete };
+  return { root, cfg, obsolete, error: `${PATH}: ${errors.join('; ')}`, sectionErrors };
 }
 
 // The portable pre-commit layer runs only while core.hooksPath points at a

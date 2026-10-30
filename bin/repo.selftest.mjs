@@ -204,8 +204,8 @@ describe('README', () => {
 });
 
 describe('shipped text matches the defaults', () => {
-  it('untracked files are a warning unless preCommit.blockUntracked says otherwise', () => {
-    assert.match(read('mechanisms/config.example.json'), /"blockUntracked": false/);
+  it('untracked files are a warning, never a block', () => {
+    assert.doesNotMatch(read('mechanisms/config.example.json'), /blockUntracked/);
     const shipped = (p) => /^(process|skills|adapters|reviewers|mechanisms)\/.*\.(md|mdc)$/.test(p) || /^(README\.md|docs\/[^/]+\.md)$/.test(p);
     const bad = []; let said = 0;
     for (const f of tracked().filter(shipped)) {

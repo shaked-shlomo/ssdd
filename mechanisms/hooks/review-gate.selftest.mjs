@@ -346,7 +346,7 @@ describe('--stamp before git add', () => {
     assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before);
   });
   it('paths are literal pathspecs: a glob-named file does not drag in other files', () => {
-    const cfg = { reviewGate: { exclude: [String.raw`\.gen\.ts$`] }, routing: [{ reviewer: 'beta', paths: ['^src/'] }] };
+    const cfg = { routing: [{ reviewer: 'beta', paths: ['^src/'], exclude: [String.raw`\.gen\.ts$`] }] };
     const r = makeRepo(cfg);
     try {
       put(r, 'src/*.ts', 'star\n'); // routed; as a glob it would match every .ts under src/
@@ -554,6 +554,17 @@ describe('route exclude', () => {
     const s = run(r, ['--stamp', 'alpha']);
     assert.strictEqual(s.status, 1);
     assert.match(s.stderr, /no changed file routes to alpha/);
+  });
+  it('an obsolete reviewGate.exclude is ignored', () => {
+    const o = makeRepo({ reviewGate: { exclude: [String.raw`\.test\.ts$`] }, routing: [{ reviewer: 'alpha', paths: ['^src/'] }] });
+    try {
+      write(o, 'src/x.test.ts', 'x\n');
+      const pc = preCommit(o);
+      assert.strictEqual(pc.status, 1);
+      assert.match(pc.stderr, /alpha/);
+    } finally {
+      rmSync(o, { recursive: true, force: true });
+    }
   });
   it('everything else still routes', () => {
     write(r, 'src/z.ts', 'z\n');

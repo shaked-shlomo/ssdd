@@ -2,13 +2,16 @@
   "$comment": "SSDD per-project config — the injection contract. Seeded as <repo>/.ssdd/config.json by `bin/ssdd.mjs install` (project-owned: updates never overwrite it); fill in the project's routing/rules. All 'paths' / 'include' / 'exclude' values are JS regex sources tested against repo-relative POSIX paths.",
 
   "routing": [
-    { "reviewer": "convention-compliance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$"] },
+    { "reviewer": "convention-compliance-reviewer", "paths": ["^src/.+\\.(ts|tsx)$"], "exclude": ["\\.test\\.", "__tests__/"] },
     { "reviewer": "performance-reviewer", "paths": ["^src/components/", "^server/", "^package\\.json$"],
+      "exclude": ["\\.test\\.", "__tests__/"],
       "$comment": "Where cost shows up: rendering, the server's queries, dependency weight. Not every source file." },
-    { "reviewer": "resilience-reviewer", "paths": ["^src/(stores|services|hooks|lib)/.+\\.(ts|tsx)$"] },
+    { "reviewer": "resilience-reviewer", "paths": ["^src/(stores|services|hooks|lib)/.+\\.(ts|tsx)$"], "exclude": ["\\.test\\.", "__tests__/"] },
     { "reviewer": "docs-sync-reviewer", "paths": ["^package\\.json$", "^server/routes/", "^\\.env\\.example$"],
+      "exclude": ["\\.test\\.", "__tests__/"],
       "$comment": "What the docs describe (scripts, endpoints, settings), not all source; the final whole-plan review catches the rest." },
     { "reviewer": "security-reviewer", "paths": ["^server/", "^src/(services|lib)/"],
+      "exclude": ["\\.test\\.", "__tests__/"],
       "$comment": "Any route may carry a $comment recording WHY a path is in this lens (e.g. the incident that showed it was missing). The gate ignores it." }
   ],
 
@@ -19,16 +22,10 @@
     "ledgers": ".ssdd/ledgers"
   },
 
-  "preCommit": {
-    "$comment": "blockUntracked: refuse a commit while an untracked file exists (Superpowers ledgers excepted). Default false: the pre-commit lists the files as a warning.",
-    "blockUntracked": false
-  },
-
   "reviewGate": {
-    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. exclude: regexes removed from EVERY route (here, test files); a route can also carry its own \"exclude\". stamping: \"manual\" (default; --stamp attests) or \"hooks\" (the agent cannot run --stamp). Either way, in Claude Code a reviewer subagent's completion stamps its files. Optional reviewerModels (Claude Code only, unset by default — the harness decides): a completion stamp lands only if every turn of the review ran on an allowed model. Entries: \"<family>\" (any version), \"<family>>=<major>.<minor>\" (that family at or above), or a substring of the model id; e.g. [\"opus>=5.5\", \"sonnet>=5.5\"].",
+    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. commentReviewer: the reviewer that still re-reviews a comment-only change to a file it is routed to (every other reviewer's clean stamp carries over it). Default \"docs-sync-reviewer\". A route's \"exclude\" drops files from that route, e.g. test files, which is why every route above carries one.",
     "maxRoutedFiles": 10,
-    "exclude": ["\\.test\\.", "__tests__/"],
-    "stamping": "manual"
+    "commentReviewer": "docs-sync-reviewer"
   },
 
   "productionGuard": {
@@ -38,10 +35,6 @@
   },
 
   "gitGuard": {
-    "blockBulkAdd": true,
-    "blockNoVerify": true,
-    "blockAmend": false,
-    "blockHooksPath": true,
     "extraRules": [
       {
         "$comment": "Matches --force (not --force-with-lease / --force-if-includes), bundled short -f, and +refspec — within the push command only (stops at ; & | newline).",
@@ -60,9 +53,5 @@
       "include": "^src/.+\\.(ts|tsx)$",
       "exclude": "(tokens/|\\.test\\.|__tests__/)"
     }
-  ],
-  "modelReview": {
-    "$comment": "The Claude model generation the instructions (AGENTS.md, CLAUDE.md, the skills and reviewers) were last reviewed for. A session that starts on a newer one gets a line in the session view; run the new-model checklist (SSDD's README: When a new model generation ships), then raise this.",
-    "generation": 5
-  }
+  ]
 }

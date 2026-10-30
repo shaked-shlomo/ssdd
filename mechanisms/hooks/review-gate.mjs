@@ -82,16 +82,14 @@ const brokenMessage = (error) =>
   `[ssdd-review-gate] ${error}\n` +
   "The gate fails closed on a config it can't use. Fix .ssdd/config.json and retry.\n";
 // [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
-// of the route's `paths` and neither the route's `exclude` nor the global
-// `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
-// Routes naming the same reviewer merge.
+// of the route's `paths` and not the route's `exclude`. Routes naming the same
+// reviewer merge.
 const rx = (list) => (list ?? []).map((p) => new RegExp(p));
 const routes = (cfg) => {
-  const global = rx(cfg?.reviewGate?.exclude);
   const byName = new Map();
   for (const { reviewer, paths, exclude } of cfg?.routing ?? []) {
     const inc = rx(paths);
-    const exc = [...global, ...rx(exclude)];
+    const exc = rx(exclude);
     const one = (f) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f));
     const prev = byName.get(reviewer);
     byName.set(reviewer, prev ? (f) => prev(f) || one(f) : one);
