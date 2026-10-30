@@ -42,10 +42,11 @@ the plans directory. Work this checkout can't see (an unfetched branch, another
 machine) can still take the same number; the session view reports two plans
 with one number, and the later one is renumbered, with its references.
 
-**The clarify pass comes before the criteria.** List the assumptions the
-design makes; the kinds that have bitten before are empty/error/loading
-states, design coverage of every state, data shape and authorization,
-platform differences, paid/permission gates, and degraded or offline modes.
+**The clarify pass comes before the criteria** (required for a multi-task
+plan, optional for a single-task one). List the assumptions the design
+makes; the kinds that have bitten before are empty/error/loading states,
+design coverage of every state, data shape and authorization, platform
+differences, paid/permission gates, and degraded or offline modes.
 Resolve each from a source (design file, schema, code) or ask the user, and
 record it in `## Clarify pass` with that source. An unresolved assumption
 goes to `## Open questions`, not into a criterion; the plan stays DRAFT while
@@ -60,10 +61,10 @@ Template: [templates/plan-template.md](templates/plan-template.md).
 ## 3. Task ledger (`<ledgers>/NN-<slug>-ledger.md`)
 
 For multi-task plans, the ledger is the cross-session execution record: one
-line per task with its commits, review verdicts, test counts and **triaged
-findings** (Critical/Important fixed with the fix commit; each Minor fixed,
-deferred or left for the final review). Deferred items get a home before the
-plan closes. Owner decisions made mid-execution go in the ledger's **Rulings** section.
+line per task (commits, review verdicts, test count, fixes with their commit)
+and one line per deferred Minor, which gets a home before the plan closes.
+Detail goes in the commit message. Owner decisions made mid-execution go in
+the ledger's **Rulings** section.
 
 Template: [templates/task-ledger-template.md](templates/task-ledger-template.md).
 
@@ -117,14 +118,14 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   is for emergencies, with the user's explicit go-ahead. Over
   `reviewGate.maxRoutedFiles` routed files the gate warns: split the commit
   rather than run another round.
-- **Findings are records; ledger rows are verified before they are written.**
-  Each review round's findings are collected as structured records (finding,
-  reviewer(s), severity, file), fixes are applied from that list, and then
-  every intended ledger row — "fixed by X", "test added", "doc says Y" — is
-  checked against the staged blob (`git show :path`) by an agent other than
-  the one that wrote the fix, refute-by-default: a row stands only when the
-  staged file demonstrably contains what it claims. (Rows written from intention once recorded fixes that
-  never landed.)
+- **Findings are records.** Each review round's findings are collected as
+  structured records (finding, reviewer(s), severity, file) and fixes are
+  applied from that list. A ledger row that claims a fix ("fixed by X", "test
+  added") is checked against the staged blob (`git show :path`) by an agent
+  other than the one that wrote the fix, refute-by-default: it stands only
+  when the staged file demonstrably contains what it claims. Other rows
+  aren't re-checked. (prizma plan 24's verifier caught recorded fixes that
+  had never landed.)
 - **Doc coupling is same-commit, not best-effort.** The project's
   Documentation Map names each canonical doc and its update trigger; a change
   that trips a trigger updates the doc in the same commit.
@@ -133,8 +134,9 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
 
 After the last task, one review pass over the plan's whole diff: cross-task
 integration bugs hide in the seams between per-task reviews. Findings are
-fixed and independently re-verified before the plan closes. The gate and this
-pass are the review rounds; don't start others unless the user asks.
+fixed and re-verified by the refute-by-default check (§4) before the plan
+closes. The gate and this pass are the review rounds; don't start others
+unless the user asks.
 
 ## 6. Verification
 
