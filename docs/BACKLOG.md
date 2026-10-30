@@ -21,6 +21,14 @@ that incident.
 - **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
   `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
   ships before the migrations is its Open 1.
+- **v3.6 — the gate costs what its threat model buys** (`SPEC.md` → v3.6,
+  draft, from the 2026-10-23 audit): a comment-only change carries clean
+  stamps; the harness stops refusing command shapes when the pre-commit is
+  armed; git-guard drops its file-tool entry and the `core.hooksPath`
+  shapes no agent used; completion stamps cover the work tree and fail
+  loudly; `update` merges new hook wiring. Its Open 3 proposes it ships
+  before the migrations, after v3.4, since the migrated projects need its
+  SubagentStop wiring.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
