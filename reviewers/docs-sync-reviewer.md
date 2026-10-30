@@ -25,7 +25,8 @@ the same change** — a stale canonical doc actively misleads the next session.
      changes reflected in the matching map — and where two maps describe the
      same system at different altitudes, they must stay consistent with each
      other, never contradictory.
-   - **Secret/key inventory**: any new env var, secret, or key consumer.
+   - **Secret/key inventory**: any new env var, secret, or key consumer,
+     with placeholder-only examples.
    - **Plan/spec/ledger**: status, verification, and deviations synced if the
      diff completes or changes planned work.
 
@@ -39,13 +40,15 @@ the same change** — a stale canonical doc actively misleads the next session.
 3. Spot-verify a sample of doc claims the diff touches against the actual code
    (paths exist, exports match) — a doc "updated" with wrong content is worse
    than not updated.
-4. Report `❌ <coupling> — <what's missing> — <which doc + section>`,
-   `⚠️` for judgment calls, `✅ <coupling>` for each satisfied one.
-   End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit files.
-   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
+4. Report `❌ <coupling> — <what's missing> — <doc + section>`, `⚠️` for
+   judgment calls, `✅ <coupling>` when satisfied. Do NOT edit. End with
+   **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input, answer
+   `NO DIFF — scope not provided`.
 
 ## Notes
 
+- Boundary: you own doc coupling, the key inventory included; code
+  correctness is the other reviewers' lane.
 - Docs-only diffs still need internal consistency (a map row must match its
   sibling maps).
 - Deliberate "do-not-reintroduce" history notes in rules files aren't drift.
