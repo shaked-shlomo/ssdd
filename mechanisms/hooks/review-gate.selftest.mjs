@@ -315,6 +315,51 @@ describe('--stamp before git add', () => {
     git(dir, 'add', 'src/a.ts');
     assert.strictEqual(preCommit(dir).status, 0);
   });
+  it('a staged edit reverted in the work tree is not stamped; the commit stays owed', () => {
+    write(dir, 'src/a.ts', 'good\n');
+    commit(dir);
+    write(dir, 'src/a.ts', 'EVIL\n'); // staged
+    put(dir, 'src/a.ts', 'good\n'); // work tree back to what HEAD holds
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.throws(() => readStamp(dir));
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+  it('a staged new file deleted from the work tree is not stamped; the commit stays owed', () => {
+    write(dir, 'src/b.ts', 'b\n'); // staged
+    rmSync(join(dir, 'src', 'b.ts'));
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.throws(() => readStamp(dir));
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+  it('stat-dirty tracked files do not make --stamp rewrite the real index', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    const later = Date.now() / 1000 + 100;
+    for (const f of ['src/a.ts', 'src/b.ts']) utimesSync(join(dir, f), later, later); // content unchanged
+    put(dir, 'src/c.ts', 'c\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'beta', 'src/c.ts');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before);
+  });
+  it('paths are literal pathspecs: a glob-named file does not drag in other files', () => {
+    const cfg = { reviewGate: { exclude: [String.raw`\.gen\.ts$`] }, routing: [{ reviewer: 'beta', paths: ['^src/'] }] };
+    const r = makeRepo(cfg);
+    try {
+      put(r, 'src/*.ts', 'star\n'); // routed; as a glob it would match every .ts under src/
+      put(r, 'src/z.gen.ts', 'only a glob would stage this\n'); // excluded: not on the path list
+      const s = stamp(r, 'beta');
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(Object.keys(readStamp(r).reviewers.beta), ['src/*.ts']);
+      const blob = git(r, 'hash-object', 'src/z.gen.ts').trim();
+      assert.throws(() => git(r, 'cat-file', '-e', blob)); // the scratch add never hashed it
+    } finally {
+      rmSync(r, { recursive: true, force: true });
+    }
+  });
   it('an untracked routed file is stamped', () => {
     put(dir, 'src/a.ts', 'new\n');
     const s = stamp(dir, 'alpha,beta');

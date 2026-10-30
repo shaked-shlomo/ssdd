@@ -61,7 +61,7 @@
 //     ["issues"] } } } }
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join, isAbsolute, resolve } from 'node:path';
 import { hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
@@ -169,11 +169,19 @@ function stagedOwed() {
 // → { changes: Map<path, key>, merged }, merge-clean paths already out.
 function workTreeChanges(cfg) {
   const matches = routes(cfg).map(([, m]) => m);
-  const list = (...args) => git(...args).split('\0').filter(Boolean);
+  // Reads only. `git diff HEAD` refreshes (rewrites and locks) the real index
+  // when tracked files are merely stat-dirty, even with --no-optional-locks;
+  // `diff-index` never does. Unrefreshed, it also lists stat-dirty files whose
+  // content is unchanged: harmless extras, the scratch add finds nothing in them.
+  const list = (...args) => git('--no-optional-locks', ...args).split('\0').filter(Boolean);
   const unborn = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'], { stdio: 'ignore' }).status !== 0;
-  const changed = unborn
-    ? [...list('diff', '--cached', '--name-only', '--no-renames', '-z'), ...list('ls-files', '-z')]
-    : list('diff', 'HEAD', '--name-only', '--no-renames', '-z');
+  // The staged paths always join the list: a staged change whose work tree was
+  // put back (or deleted) is absent from `git diff HEAD`, and its staged blob
+  // must not reach the keys. The scratch `add -A` replaces it with the work tree's.
+  const changed = [
+    ...list('diff', '--cached', '--name-only', '--no-renames', '-z'),
+    ...(unborn ? list('ls-files', '-z') : list('diff-index', '--name-only', '--no-renames', '-z', 'HEAD')),
+  ];
   const paths = [...new Set([...changed, ...list('ls-files', '--others', '--exclude-standard', '-z')])]
     .filter((p) => matches.some((m) => m(p)));
   const gitDir = git('rev-parse', '--absolute-git-dir').trim();
@@ -183,15 +191,17 @@ function workTreeChanges(cfg) {
     const realIndex = isAbsolute(real) ? real : join(repo, real);
     if (existsSync(realIndex)) {
       copyFileSync(realIndex, tmp);
-      // A copy is newer than every entry, so git would trust a stat-matching
-      // entry; an edit made in the same instant as the stage (same size, same
-      // mtime) would keep its stale blob. Dated 1970-01-01T00:00:01 (git reads
-      // a zero timestamp as unset), every entry is racy and git re-reads the
-      // file, as it does against the real index.
-      utimesSync(tmp, 1, 1);
+      // The copy keeps the real index's own times. A newer copy would make git
+      // trust a stat-matching entry, so an edit made in the same instant as the
+      // stage (same size, same mtime) would keep its stale blob; with the real
+      // index's mtime, git's racy-entry check decides exactly as it does there.
+      const st = statSync(realIndex);
+      utimesSync(tmp, st.atime, st.mtime);
     }
     if (paths.length) {
-      gitIn({ ...onIndex(tmp), input: paths.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
+      // Literal pathspecs: the paths on stdin are names, not globs or `:` magic.
+      const env = { ...onIndex(tmp).env, GIT_LITERAL_PATHSPECS: '1' };
+      gitIn({ env, input: paths.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
     }
     const changes = indexChanges(tmp);
     const merged = mergeClean(changes, tmp);
