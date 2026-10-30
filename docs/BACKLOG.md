@@ -21,14 +21,13 @@ that incident.
 - **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
   `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
   ships before the migrations is its Open 1.
-- **v3.6 — the gate costs what its threat model buys** (`SPEC.md` → v3.6,
-  draft, from the 2026-10-23 audit): a comment-only change carries clean
-  stamps; the harness stops refusing command shapes when the pre-commit is
-  armed; git-guard drops its file-tool entry and the `core.hooksPath`
-  shapes no agent used; a review before `git add` counts; `status` names
-  missing hook wiring. Every rule lives in git or the CLI, so any harness
-  gets the same gate (owner, 2026-10-30). It doesn't hold the migrations
-  (its Open 3).
+- **v3.6 — the gate lives in git** (`SPEC.md` → v3.6, draft, from the
+  2026-10-23 audit and the owner's 2026-10-30 rulings: harness-neutral,
+  simple). The pre-commit is the review gate and the harness review gate
+  goes; `--stamp` is the only way to stamp and accepts a review before
+  `git add`; a comment-only change carries clean stamps; amend, bulk add
+  and lint warn instead of block; nine unused config keys go. Its Open 3
+  puts it before v3.4, which needs revising to `--stamp --report`.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
