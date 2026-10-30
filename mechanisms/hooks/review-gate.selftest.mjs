@@ -963,21 +963,25 @@ describe('dormant pre-commit hook', () => {
 // .githooks/pre-commit in an installed repo (.ssdd/hooks/ is two levels down).
 const PRE_COMMIT = [join(dirname(HOOK), 'pre-commit'), join(dirname(HOOK), '..', '..', '.githooks', 'pre-commit')].find((p) => existsSync(p));
 
+// Arm the portable hook the way install does: pre-commit in .githooks/, the
+// hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
+function armPreCommit(d) {
+  const here = dirname(HOOK);
+  mkdirSync(join(d, '.githooks'));
+  writeFileSync(join(d, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
+  chmodSync(join(d, '.githooks', 'pre-commit'), 0o755);
+  mkdirSync(join(d, '.ssdd', 'hooks'));
+  for (const f of readdirSync(here)) {
+    if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(here, f), join(d, '.ssdd', 'hooks', f));
+  }
+  writeFileSync(join(d, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
+  git(d, 'config', 'core.hooksPath', '.githooks');
+  git(d, 'add', '.ssdd/config.json');
+}
+
 describe('the pre-commit layer is the backstop for shell hand-offs', () => {
   it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", { skip: !PRE_COMMIT }, () => {
-    // Arm the portable hook the way install does: pre-commit in .githooks/,
-    // the hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
-    const here = dirname(HOOK);
-    mkdirSync(join(dir, '.githooks'));
-    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
-    chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
-    mkdirSync(join(dir, '.ssdd', 'hooks'));
-    for (const f of readdirSync(here)) {
-      if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(here, f), join(dir, '.ssdd', 'hooks', f));
-    }
-    writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
-    git(dir, 'config', 'core.hooksPath', '.githooks');
-    git(dir, 'add', '.ssdd/config.json');
+    armPreCommit(dir);
     write(dir, 'src/a.ts', 'a\n');
     const head = git(dir, 'rev-parse', 'HEAD');
 
@@ -987,6 +991,22 @@ describe('the pre-commit layer is the backstop for shell hand-offs', () => {
     // Run for real, the commit is refused by git's pre-commit.
     const r = spawnSync('bash', ['-c', 'git commit -m x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
     assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /alpha/);
+    assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+  });
+});
+
+describe('the pre-commit runs every step', () => {
+  it('a lint finding does not hide what the review gate owes', { skip: !PRE_COMMIT }, () => {
+    writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({
+      ...CONFIG, lint: [{ name: 'no-todo', pattern: 'TODO', message: 'no TODOs', include: '^src/' }],
+    }));
+    armPreCommit(dir);
+    write(dir, 'src/a.ts', 'TODO\n');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
     assert.match(r.stderr, /alpha/);
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
   });
