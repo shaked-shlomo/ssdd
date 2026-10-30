@@ -10,6 +10,51 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.3.2] — 2026-10-30
+
+From the 2026-10-23 audit: the process cost more than it caught in places.
+Hard blocks stay where a mistake is irreversible or outward-facing; what an
+agent can undo warns or goes.
+
+### Changed
+- `pre-commit` runs every step and refuses the commit if any failed. With
+  `set -e` a lint finding hid what the review gate owed until the next try.
+- The edit-time convention lint reports only the lines that edit added,
+  and under Claude Code as a warning (exit 0, `additionalContext`) rather
+  than a tool error. Cursor keeps exit 2; the pre-commit still blocks. A
+  line holding `ssdd-lint-ignore` is skipped by every rule.
+- git-guard and the review gate print nothing on an allowed Bash call
+  under Claude Code. The dormant-hook note moves from every commit to the
+  session-start view, which also folds two or more "IN PROGRESS on main"
+  plans into one line.
+- `gitGuard.blockAmend` defaults to false, in the example and the loader:
+  an amend is local, and force-push is still blocked.
+- The example config routes fewer reviewers per file (a service gets
+  three, a util one), excludes test files from every route, and its
+  hex-colour rule no longer matches comments or `#1234`.
+- `/migrate-plans`, `/skills-audit` and `/new-reviewer` set
+  `disable-model-invocation`: you run them by name, and their descriptions
+  leave every session's context.
+- `SDD.md`: the second-agent check runs on ledger rows that claim a fix and
+  in the final review's fix pass, not on every row; the clarify pass is
+  optional for a single-task plan; a ledger is one line per task and per
+  deferred Minor. The ledger template and the AGENTS template match.
+- Reviewers: one owner per concern (tests and timeouts → resilience, the
+  key inventory → docs-sync); `effort: medium` for performance and
+  resilience; shorter boundary and report text, verdict words unchanged.
+  Security treats an evasion shape in the gate's own scripts that no agent
+  was seen using as a warning at most.
+- `usage.md` and `limitations.md` link instead of restating;
+  `model-era-review.md` is marked history.
+
+### Upgrade (optional)
+- `.ssdd/config.json` is project-owned, and a seeded one says
+  `"blockAmend": true`, so it keeps blocking amends. To take the new
+  defaults, set it to false, add `reviewGate.exclude` for tests, and
+  narrow your routes.
+- `AGENTS.md` is project-owned: `update` prints its template's change; port
+  the amend and clarify-pass lines.
+
 ## [3.3.1] — 2026-10-22
 
 The minors v3 Part 5's final review deferred.

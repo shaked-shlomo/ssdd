@@ -1,34 +1,56 @@
 #!/usr/bin/env node
 // SSDD convention lint — surfaces the clearest, greppable convention
 // violations EARLY (edit time / pre-commit) so they're fixed before review.
-// Advisory: prints findings and exits non-zero so the caller (agent or git
-// hook) reacts; NEVER auto-writes files (auto-fix would race the harness's
-// file-state tracking).
+// NEVER auto-writes files (auto-fix would race the harness's file-state
+// tracking).
 //
 // Rules live in .ssdd/config.json → lint: [{name, pattern, message, include,
 // exclude}] — pattern/include/exclude are JS regex sources; pattern is tested
-// per line, include/exclude against the repo-relative path.
+// per line, include/exclude against the repo-relative path. A line holding
+// `ssdd-lint-ignore` (in a comment, say) is skipped by every rule.
 //
 // Modes (no deps, Node >= 22):
-//   <file> [<file> …]     lint the given files whole (CI / manual)
-//   --staged              lint the lines the staged change adds (git pre-commit)
-//   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor afterFileEdit:
-//                         lint the lines added since HEAD; a file HEAD
-//                         doesn't have is linted whole
+//   <file> [<file> …]     lint the given files whole (CI / manual); exit 1
+//   --staged              lint the lines the staged change adds (git
+//                         pre-commit); exit 1 blocks the commit
+//   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor
+//                         afterFileEdit: lint the lines THIS edit added
 // Only added lines: an old violation isn't flagged again on every edit (in
 // the source project, most lint firings were old lines). `--staged` reads the
 // staged content from the diff, not the file on disk, and detects renames,
 // so a moved file isn't new.
+//
+// The edit hook reads the edit from the payload: Edit's (or MultiEdit's, or
+// Cursor's `edits`) old_string → new_string, undone on the file on disk to
+// get the file before it; Write's tool_response.originalFile, else HEAD's
+// copy (none → the whole file is new). A payload with neither is diffed
+// against HEAD. Under Claude Code findings are a warning: exit 0 with
+// hookSpecificOutput.additionalContext, which reaches the agent beside the
+// tool result (plain output at exit 0 doesn't; exit 2 reads as a tool
+// error). Under Cursor: stderr, exit 2. The pre-commit is where they block.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
-import { hookFilePath, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { hookFilePath, hookHarness, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 
 const stdinMode = process.argv.length <= 2;
 const payload = stdinMode ? parseHookStdin(readFileSync(0, 'utf8')) : null;
 const repo = resolveHookRepo(payload);
 const git = (...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+
+const PREFIX = '[ssdd-convention-lint] ';
+const claude = stdinMode && hookHarness(payload) === 'claude';
+// Findings, or a config that can't be used: a warning at edit time, a block
+// on the command line and in the pre-commit.
+function fail(message, exitCode) {
+  if (claude) {
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } }) + '\n');
+    process.exit(0);
+  }
+  process.stderr.write(message);
+  process.exit(exitCode);
+}
 
 // No repo or no config → nothing to lint (exit 0). A config that isn't valid
 // JSON, or a rule whose regex doesn't compile, is reported as a finding: an
@@ -51,11 +73,11 @@ try {
       exclude: r.exclude ? new RegExp(r.exclude) : null,
     }));
 } catch (e) {
-  process.stderr.write(`[ssdd-convention-lint] .ssdd/config.json can't be used (${e.message}) — fix it; lint rules are not running.\n`);
-  process.exit(failCode);
+  fail(`${PREFIX}.ssdd/config.json can't be used (${e.message}) — fix it; lint rules are not running.\n`, failCode);
 }
 if (!rules.length) process.exit(0);
 
+const IGNORE = /ssdd-lint-ignore/;
 // lines: [[lineNo, text]].
 function lintLines(relPath, lines) {
   const findings = [];
@@ -63,7 +85,7 @@ function lintLines(relPath, lines) {
     if (rule.include && !rule.include.test(relPath)) continue;
     if (rule.exclude && rule.exclude.test(relPath)) continue;
     for (const [n, line] of lines) {
-      if (rule.pattern.test(line)) {
+      if (rule.pattern.test(line) && !IGNORE.test(line)) {
         findings.push(`${relPath}:${n} [${rule.name}] ${rule.message}\n    ${line.trim()}`);
       }
     }
@@ -138,13 +160,58 @@ const atRoot = (...args) =>
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
 const inHead = (rel) => { try { atRoot('cat-file', '-e', `HEAD:${rel}`); return true; } catch { return false; } };
 
-function report(findings, exitCode) {
+function report(findings, exitCode, scope = '') {
   if (!findings.length) process.exit(0);
-  process.stderr.write(`[ssdd-convention-lint] ${findings.length} finding(s):\n` + findings.join('\n') + '\n');
-  process.exit(exitCode);
+  fail(`${PREFIX}${findings.length} finding(s)${scope}:\n` + findings.join('\n') + '\n' +
+    'A deliberate exception: put `ssdd-lint-ignore` in a comment on its line.\n', exitCode);
 }
 
 const toRel = (p) => (isAbsolute(p) ? relative(root, p) : p).split('\\').join('/');
+
+// The lines of `after` that `before` doesn't have → [[lineNo, text]]: the
+// common head and tail are dropped, and in what's left a line `before` also
+// has (as often) isn't new.
+function newLines(before, after) {
+  const a = before.split('\n'); const b = after.split('\n');
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const had = new Map();
+  for (const l of a.slice(head, a.length - tail)) had.set(l, (had.get(l) ?? 0) + 1);
+  const out = [];
+  b.slice(head, b.length - tail).forEach((l, i) => {
+    if (had.get(l)) had.set(l, had.get(l) - 1);
+    else if (l !== '') out.push([head + i + 1, l]);
+  });
+  return out;
+}
+
+// The file as it was before this edit, from the payload; undefined when the
+// payload doesn't say what the edit was.
+function before(rel, now) {
+  const input = payload?.tool_input ?? payload ?? {};
+  const edits = Array.isArray(input.edits) ? input.edits
+    : typeof input.new_string === 'string' ? [input] : null;
+  if (edits) {
+    // Undo the edits last to first. One whose new text isn't in the file
+    // (changed since) is left as it is.
+    let text = now;
+    for (const e of [...edits].reverse()) {
+      const neu = String(e?.new_string ?? ''); const old = String(e?.old_string ?? '');
+      if (!neu || !text.includes(neu)) continue;
+      text = e.replace_all ? text.split(neu).join(old) : text.replace(neu, () => old);
+    }
+    return text;
+  }
+  if (typeof input.content === 'string') {
+    const orig = payload?.tool_response?.originalFile;
+    if (typeof orig === 'string') return orig;
+    if (payload?.tool_response?.type === 'create' || !inHead(rel)) return '';
+    return atRoot('show', `HEAD:${rel}`);
+  }
+  return undefined;
+}
 
 if (process.argv[2] === '--staged') {
   report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 1);
@@ -155,6 +222,10 @@ if (process.argv[2] === '--staged') {
   if (!path) process.exit(0);
   const rel = toRel(path);
   if (rel.startsWith('..')) process.exit(0); // outside the repo
-  // exit 2 → the agent self-corrects
-  report(inHead(rel) ? lintAdded(atRoot(...DIFF, 'HEAD', '--', rel)) : lintFile(rel), 2);
+  let now;
+  try { now = readFileSync(join(root, rel), 'utf8'); } catch { process.exit(0); }
+  const prev = before(rel, now);
+  const findings = prev !== undefined ? lintLines(rel, newLines(prev, now))
+    : inHead(rel) ? lintAdded(atRoot(...DIFF, 'HEAD', '--', rel)) : lintFile(rel);
+  report(findings, 2, prev !== undefined ? ' in the lines this edit added' : '');
 }

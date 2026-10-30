@@ -79,9 +79,13 @@ replacement.
   sent. An Esc on a call already sent doesn't: the server may finish it.
 - The PreToolUse gate and the git pre-commit hook are idempotent together:
   whichever fires first blocks; stamps satisfy both (same stamp file).
-- Hook stdout is a JSON permission body (`{"permission":"allow"|"deny",…}`)
-  for Cursor's `failClosed`; Claude Code acts on the exit code (2 = block,
-  stderr is fed back to the agent).
+- Claude Code acts on a hook's exit code (2 = block, stderr is fed back to
+  the agent), so git-guard and the review gate print nothing on an allow;
+  the JSON permission body (`{"permission":"allow"|"deny",…}`) is for
+  Cursor's `failClosed`. convention-lint's findings on an edit arrive as
+  `additionalContext` beside the tool result: a warning, which the
+  pre-commit turns into a block. A dormant pre-commit hook is named once,
+  in the `SessionStart` view, not on every commit.
 - Subagents may lack MCP access the main session has. If a reviewer's
   protocol needs MCP output (e.g. a platform's advisor/lint API), run that
   call in the MAIN session and paste the output into the reviewer's prompt.

@@ -270,7 +270,7 @@ describe('completion stamps', () => {
     const h = commitHook();
     assert.equal(h.status, 0, h.stderr);
     const out = JSON.parse(h.stdout);
-    assert.equal(out.permission, 'allow');
+    assert.deepEqual(Object.keys(out), ['hookSpecificOutput']); // Claude Code: the note, no permission body
     assert.match(out.hookSpecificOutput.additionalContext, /alpha-reviewer reported 1 finding/);
     assert.match(preCommit().stderr, /triaged/);
   });
@@ -346,6 +346,7 @@ describe('the guard follows the working-tree config', () => {
     makeRepo();
     writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
     assert.equal(guard('git add -A').status, 2);
-    assert.equal(guard('git commit --amend').status, 2);
+    assert.equal(guard('git commit --no-verify').status, 2);
+    assert.equal(guard('git commit --amend').status, 0); // blockAmend is off by default
   });
 });

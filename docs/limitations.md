@@ -50,14 +50,9 @@ an agent was seen using it in a real project.
   default, and the only mode in Cursor) `--stamp` is an attestation the gate
   can't verify, including which model ran the review.
 - **The production guard asks; it isn't a sandbox.** It judges the command
-  line, so a script *file*, a variable holding a command, or a key used from
-  code goes unseen, as for git. A call already sent can't be stopped: an Esc
-  on an MCP call in flight doesn't undo it on the server. A read without
-  `READ ONLY` can write through a view or policy that calls a writing
-  function; `db-read` closes that. Cursor's hooks ignore `ask`, so in Cursor
-  the guard denies and the owner runs the command in their own terminal. In
-  Claude Code it runs on every MCP call (the settings can't follow which
-  packs are installed). Details in the [pack's README](../packs/supabase/README.md).
+  line, as the git guard does, and in Claude Code runs on every MCP call (the
+  settings can't follow which packs are installed); see [the pack's known
+  limits](../packs/supabase/README.md#known-limits).
 - **Copies, not a live link.** Each repo carries its own editable copy;
   updates arrive only when you run `update`. A release that moves a *target*
   path needs a move entry in `bin/ssdd.mjs`, or `update` sees a removal plus

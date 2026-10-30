@@ -9,8 +9,8 @@ everything (e.g. `npm run check`).>
 ## Workflow: SSDD
 
 Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan (`/new-plan`),
-a clarify pass and acceptance criteria before code, a ledger per multi-task
-plan, and verification with real command output.
+acceptance criteria before code (after a clarify pass, for a multi-task plan),
+a ledger per multi-task plan, and verification with real command output.
 Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.
 
 - Before reporting progress, check each claim against a tool result from this
@@ -26,7 +26,8 @@ reviewers have reviewed them; the block message says what to run. Never stamp
 without running the reviewers; `SSDD_REVIEW_SKIP=1` needs the user's go-ahead.
 Reviews happen at the gate and in the final whole-plan review; don't start
 others unless asked. Stage files by path, and commit in a separate call. No
-`--no-verify`/`-n`, `--amend`, force-push or `core.hooksPath` changes.
+`--no-verify`/`-n`, force-push or `core.hooksPath` changes; amend only an
+unpushed commit.
 
 Reviewers are `.ssdd/reviewers/*.md`: subagents of the same name (Claude Code's
 `.claude/agents/` links to them), or checklists where there are none. Skills

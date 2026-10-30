@@ -4,19 +4,24 @@
 #   git config core.hooksPath .githooks
 # Works under any agent/IDE/terminal because every harness ultimately runs
 # `git commit`. Node >= 22 required, no npm deps.
+#
+# Every step runs, and the commit is refused if any failed: a lint finding
+# doesn't hide what the review gate owes.
 
-set -e
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="$(git rev-parse --show-toplevel)" || exit 1
+status=0
 
 # 1. Convention lint over the staged files (rules: .ssdd/config.json → lint).
-node "$ROOT/.ssdd/hooks/convention-lint.mjs" --staged
+node "$ROOT/.ssdd/hooks/convention-lint.mjs" --staged || status=1
 
 # 2. Work state: a plan marked BUILT/SHIPPED needs a Verification entry per AC
 #    ID and its ledger staged (rules: .ssdd/hooks/work-state.mjs). It also
 #    lists untracked files as a warning, or refuses the commit while one
 #    exists when .ssdd/config.json sets preCommit.blockUntracked. A Superpowers
 #    ledger (.superpowers/sdd/<plan>/progress.md) is exempt: it gets a reminder.
-node "$ROOT/.ssdd/hooks/work-state.mjs" --staged
+node "$ROOT/.ssdd/hooks/work-state.mjs" --staged || status=1
 
 # 3. Review gate: staged paths → required reviewers → stamp check.
-node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit
+node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit || status=1
+
+exit $status

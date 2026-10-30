@@ -1,6 +1,7 @@
 ---
 name: skills-audit
 description: Finds the stack's best-practice skills in the SSDD catalog, reads each source at a pinned sha, checks it against the repo's rules, hooks and reviewers, and proposes adopt, cherry-pick, refresh or skip. Installs nothing unasked and records decisions by sha. Use for "which skills should we use".
+disable-model-invocation: true
 ---
 
 # Skills audit
