@@ -1,11 +1,12 @@
-// Regression tests for the SSDD convention lint's stdin (harness hook) mode.
-// Each case builds a scratch git repo with its own .ssdd/config.json lint rule,
-// writes a file, and feeds a Claude PostToolUse or Cursor afterFileEdit payload
-// on stdin: exit 2 = findings (the agent self-corrects), 0 = clean.
+// Regression tests for the SSDD convention lint. Each case builds a scratch
+// git repo with its own .ssdd/config.json lint rule, writes a file, and feeds a
+// Claude PostToolUse or Cursor afterFileEdit payload on stdin, or runs
+// --staged. Claude: findings are a warning (exit 0, additionalContext on
+// stdout). Cursor: exit 2, stderr. --staged and named files: exit 1.
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,16 +49,28 @@ function lint(dir, input) {
     encoding: 'utf8',
   }).status;
 }
+// What a Claude Code run told the agent: additionalContext, or '' (silent).
+function warning(r) {
+  assert.strictEqual(r.status, 0, r.stderr);
+  if (!r.stdout) return '';
+  const out = JSON.parse(r.stdout).hookSpecificOutput;
+  assert.strictEqual(out.hookEventName, 'PostToolUse');
+  return out.additionalContext;
+}
 
 let dir;
 beforeEach(() => { dir = makeRepo(); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 describe('convention-lint stdin', () => {
-  it('flags a hex color from a Claude PostToolUse payload', () => {
+  it('flags a hex color from a Claude PostToolUse payload, as a warning', () => {
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(dir, 'src', 'a.ts'), 'const c = "#fff";\n');
-    assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'src/a.ts' } })), 2);
+    for (const p of [{}, { hook_event_name: 'PostToolUse', tool_name: 'Edit' }]) {
+      const r = spawnSync(NODE, [HOOK], { input: JSON.stringify({ ...p, tool_input: { file_path: 'src/a.ts' } }), cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8' });
+      assert.match(warning(r), /src\/a\.ts:1 \[no-hardcoded-hex-colors\]/);
+      assert.strictEqual(r.stderr, '');
+    }
   });
 
   it('flags a hex color from a Cursor afterFileEdit payload', () => {
@@ -104,9 +117,11 @@ describe('convention-lint stdin', () => {
 describe('convention-lint config', () => {
   const staged = (d) => spawnSync(NODE, [HOOK, '--staged'], { cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8' });
 
-  it('invalid JSON: exit 2 as a hook, 1 with --staged, naming the problem', () => {
+  it('invalid JSON: a warning under Claude, exit 2 under Cursor, 1 with --staged, naming the problem', () => {
     writeFileSync(join(dir, '.ssdd', 'config.json'), '{ "lint": [');
-    assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'README' } })), 2);
+    const w = spawnSync(NODE, [HOOK], { input: JSON.stringify({ tool_input: { file_path: 'README' } }), cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8' });
+    assert.match(warning(w), /config\.json can't be used/);
+    assert.strictEqual(lint(dir, JSON.stringify({ file_path: 'README', hook_event_name: 'afterFileEdit' })), 2);
     const r = staged(dir);
     assert.strictEqual(r.status, 1);
     assert.match(r.stderr, /config\.json can't be used/);
@@ -136,16 +151,15 @@ describe('only added lines', () => {
   it('an edit elsewhere passes the edit hook', () => {
     commitOld();
     put('src/a.ts', `${OLD}const clean = 2;\n`);
-    assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+    assert.strictEqual(warning(edit(dir, 'src/a.ts')), '');
   });
 
   it('a new violating line is flagged with its number', () => {
     commitOld();
     put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
-    const r = edit(dir, 'src/a.ts');
-    assert.strictEqual(r.status, 2);
-    assert.match(r.stderr, /src\/a\.ts:3 /);
-    assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
+    const w = warning(edit(dir, 'src/a.ts'));
+    assert.match(w, /src\/a\.ts:3 /);
+    assert.doesNotMatch(w, /src\/a\.ts:1 /);
   });
 
   it('--staged: only staged added lines', () => {
@@ -163,9 +177,7 @@ describe('only added lines', () => {
 
   it('a new file is linted whole', () => {
     put('src/b.ts', 'const b = "#fff";\n');
-    const e = edit(dir, 'src/b.ts');
-    assert.strictEqual(e.status, 2);
-    assert.match(e.stderr, /src\/b\.ts:1 /);
+    assert.match(warning(edit(dir, 'src/b.ts')), /src\/b\.ts:1 /);
     git(dir, 'add', 'src/b.ts');
     assert.strictEqual(run(dir, ['--staged']).status, 1);
   });
@@ -228,31 +240,28 @@ describe('only added lines', () => {
     it('dropping it does not re-lint the last line', () => {
       commit(`${LAST}\n`);
       put('src/a.ts', LAST);
-      assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+      assert.strictEqual(warning(edit(dir, 'src/a.ts')), '');
       git(dir, 'add', 'src/a.ts');
       assert.strictEqual(run(dir, ['--staged']).status, 0);
     });
     it('adding it does not re-lint the last line', () => {
       commit(LAST);
       put('src/a.ts', `${LAST}\n`);
-      assert.strictEqual(edit(dir, 'src/a.ts').status, 0);
+      assert.strictEqual(warning(edit(dir, 'src/a.ts')), '');
       git(dir, 'add', 'src/a.ts');
       assert.strictEqual(run(dir, ['--staged']).status, 0);
     });
     it('a real edit to the last line is still linted', () => {
       commit(LAST);
       put('src/a.ts', 'const ok = 1;\nconst old = "#abc";\n');
-      const r = edit(dir, 'src/a.ts');
-      assert.strictEqual(r.status, 2);
-      assert.match(r.stderr, /src\/a\.ts:2 /);
+      assert.match(warning(edit(dir, 'src/a.ts')), /src\/a\.ts:2 /);
     });
     it('a line inserted before the last as it drops is linted; the last is not', () => {
       commit(`${LAST}\n`);
       put('src/a.ts', 'const ok = 1;\nconst c = "#abcdef";\nconst old = "#fff";');
-      const r = edit(dir, 'src/a.ts');
-      assert.strictEqual(r.status, 2);
-      assert.match(r.stderr, /src\/a\.ts:2 /);
-      assert.doesNotMatch(r.stderr, /src\/a\.ts:3 /);
+      const w = warning(edit(dir, 'src/a.ts'));
+      assert.match(w, /src\/a\.ts:2 /);
+      assert.doesNotMatch(w, /src\/a\.ts:3 /);
     });
   });
 
@@ -265,7 +274,115 @@ describe('only added lines', () => {
     const real = realpathSync(dir); // git reports /private/var for /var on macOS
     const sub = join(real, 'app');
     const r = spawnSync(NODE, [HOOK], { input: JSON.stringify({ tool_input: { file_path: join(real, 'app/src/a.ts') } }), cwd: sub, env: { ...process.env, CLAUDE_PROJECT_DIR: sub }, encoding: 'utf8' });
-    assert.strictEqual(r.status, 2, r.stderr);
-    assert.match(r.stderr, /app\/src\/a\.ts:3 /);
+    assert.match(warning(r), /app\/src\/a\.ts:3 /);
+  });
+});
+
+// v3.3.2: the edit hook lints the lines THIS edit added, read from the
+// payload, so an earlier uncommitted violation isn't re-reported on every
+// unrelated edit.
+describe('the lines this edit added', () => {
+  // File-tool paths arrive absolute; git reports /private/var for /var on macOS.
+  const put = (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); };
+  const hook = (payload) => spawnSync(NODE, [HOOK], {
+    input: JSON.stringify({ hook_event_name: 'PostToolUse', ...payload }), cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8',
+  });
+  const STALE = 'const old = "#fff";\n'; // uncommitted, from an earlier edit
+  const editOf = (old_string, new_string, extra = {}) =>
+    ({ tool_name: 'Edit', tool_input: { file_path: join(realpathSync(dir), 'src/a.ts'), old_string, new_string, ...extra } });
+  beforeEach(() => { put('src/a.ts', 'const ok = 1;\n'); git(dir, 'add', 'src/a.ts'); git(dir, 'commit', '-qm', 'clean'); });
+
+  it('an Edit that adds a clean line passes, though the file holds an uncommitted violation', () => {
+    put('src/a.ts', `const ok = 1;\n${STALE}const two = 2;\n`);
+    assert.strictEqual(warning(hook(editOf('const old = "#fff";\n', 'const old = "#fff";\nconst two = 2;\n'))), '');
+    // The pre-v3.3.2 hook diffed against HEAD, and re-reported the stale line.
+    assert.match(warning(hook({ tool_input: { file_path: join(realpathSync(dir), 'src/a.ts') } })), /src\/a\.ts:2 /);
+  });
+
+  it('an Edit that adds a violation is flagged at its line, not the stale one', () => {
+    put('src/a.ts', `const ok = 1;\n${STALE}const c = "#abcdef";\n`);
+    const w = warning(hook(editOf('const ok = 1;\nconst old = "#fff";\n', 'const ok = 1;\nconst old = "#fff";\nconst c = "#abcdef";\n')));
+    assert.match(w, /src\/a\.ts:3 /);
+    assert.doesNotMatch(w, /src\/a\.ts:2 /);
+    assert.match(w, /lines this edit added/);
+  });
+
+  it('an Edit inside a line re-lints that line only', () => {
+    put('src/a.ts', `const ok = 1;\n${STALE}const c = "#abc"; const d = 4;\n`);
+    const w = warning(hook(editOf('d = 3', 'd = 4')));
+    assert.match(w, /src\/a\.ts:3 /);
+    assert.doesNotMatch(w, /src\/a\.ts:2 /);
+  });
+
+  it('replace_all and MultiEdit edits are each undone', () => {
+    put('src/a.ts', `const ok = 1;\n${STALE}const x = "#abc";\nconst x = "#abc";\n`);
+    const w = warning(hook(editOf('const y = 0;', 'const x = "#abc";', { replace_all: true })));
+    assert.match(w, /src\/a\.ts:3 /);
+    assert.match(w, /src\/a\.ts:4 /);
+    assert.doesNotMatch(w, /src\/a\.ts:2 /);
+    const m = warning(hook({ tool_name: 'MultiEdit', tool_input: { file_path: join(realpathSync(dir), 'src/a.ts'), edits: [
+      { old_string: 'const y = 1;', new_string: 'const x = "#abc";' }, { old_string: 'const z = 1;', new_string: 'const ok = 1;' },
+    ] } }));
+    assert.match(m, /src\/a\.ts:3 /);
+    assert.doesNotMatch(m, /src\/a\.ts:2 /);
+  });
+
+  it('a Write is diffed against originalFile when the response has it, else HEAD', () => {
+    const content = `const ok = 1;\n${STALE}const c = "#abcdef";\n`;
+    put('src/a.ts', content);
+    const write = (tool_response) => warning(hook({ tool_name: 'Write', tool_input: { file_path: join(realpathSync(dir), 'src/a.ts'), content }, tool_response }));
+    const w = write({ type: 'update', originalFile: `const ok = 1;\n${STALE}` });
+    assert.match(w, /src\/a\.ts:3 /);
+    assert.doesNotMatch(w, /src\/a\.ts:2 /);
+    const head = write({ type: 'update' });
+    assert.match(head, /src\/a\.ts:2 /);
+    assert.match(head, /src\/a\.ts:3 /);
+  });
+
+  it('a Write that creates a file lints it whole', () => {
+    put('src/b.ts', 'const b = "#fff";\n');
+    const w = warning(hook({ tool_name: 'Write', tool_input: { file_path: join(realpathSync(dir), 'src/b.ts'), content: 'const b = "#fff";\n' }, tool_response: { type: 'create' } }));
+    assert.match(w, /src\/b\.ts:1 /);
+  });
+
+  it('Cursor afterFileEdit edits are read too; it still exits 2', () => {
+    put('src/a.ts', `const ok = 1;\n${STALE}const two = 2;\n`);
+    const clean = hook({ hook_event_name: 'afterFileEdit', file_path: 'src/a.ts', edits: [{ old_string: '', new_string: 'const two = 2;\n' }] });
+    // An insertion with an empty old_string: undone, nothing new but `two`.
+    assert.strictEqual(clean.status, 0, clean.stderr);
+    put('src/a.ts', `const ok = 1;\n${STALE}const c = "#abc";\n`);
+    const r = hook({ hook_event_name: 'afterFileEdit', file_path: 'src/a.ts', edits: [{ old_string: 'const two = 2;', new_string: 'const c = "#abc";' }] });
+    assert.strictEqual(r.status, 2);
+    assert.match(r.stderr, /src\/a\.ts:3 /);
+    assert.doesNotMatch(r.stderr, /src\/a\.ts:2 /);
+  });
+});
+
+describe('ssdd-lint-ignore', () => {
+  it('a marked line passes --staged; an unmarked one in the same change still blocks', () => {
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\n');
+    git(dir, 'add', 'src/a.ts');
+    const staged = () => spawnSync(NODE, [HOOK, '--staged'], { cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8' });
+    assert.strictEqual(staged().status, 0, staged().stderr);
+    writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\nconst c = "#abc";\n');
+    git(dir, 'add', 'src/a.ts');
+    const r = staged();
+    assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/a\.ts:2 /);
+    assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
+    assert.match(r.stderr, /ssdd-lint-ignore/);
+  });
+});
+
+describe('the example hex-colour rule', () => {
+  const rule = JSON.parse(readFileSync(join(dirname(HOOK), '..', 'config.example.json'), 'utf8')).lint
+    .find((r) => r.name === 'no-hardcoded-hex-colors');
+  const re = new RegExp(rule.pattern);
+  it('matches a colour in code', () => {
+    for (const l of ['const c = "#fff";', "const c = '#abcdef';", 'color: #333,', 'border: "1px solid #ccc"', 'bg: "#ff000080"']) assert.ok(re.test(l), l);
+  });
+  it('skips comments and issue references', () => {
+    for (const l of ['// fixes #1234', 'const x = 1; // see #123, #fff', ' * TODO(#4521) #abc', '/* #fff */', 'const s = "see #1234";', 'a&#123;']) assert.ok(!re.test(l), l);
   });
 });

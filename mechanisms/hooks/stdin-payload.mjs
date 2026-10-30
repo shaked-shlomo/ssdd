@@ -28,12 +28,12 @@ export function resolveHookRepo(payload) {
     || process.cwd();
 }
 
-// Which harness sent the payload. Claude Code names the event PreToolUse;
-// Cursor names its own (beforeShellExecution, beforeMCPExecution). Without
-// a name, Claude Code is the one that nests tool_input as an object.
+// Which harness sent the payload. Claude Code names the event PreToolUse or
+// PostToolUse; Cursor names its own (beforeShellExecution, afterFileEdit, …).
+// Without a name, Claude Code is the one that nests tool_input as an object.
 export function hookHarness(payload) {
   const event = payload?.hook_event_name;
-  if (event === 'PreToolUse') return 'claude';
+  if (event === 'PreToolUse' || event === 'PostToolUse') return 'claude';
   if (event) return 'cursor';
   return payload?.tool_input !== null && typeof payload?.tool_input === 'object' ? 'claude' : 'cursor';
 }

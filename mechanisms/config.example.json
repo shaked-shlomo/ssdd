@@ -52,7 +52,8 @@
   "lint": [
     {
       "name": "no-hardcoded-hex-colors",
-      "pattern": "#[0-9a-fA-F]{3,8}\\b",
+      "$comment": "A 3, 4, 6 or 8-digit hex colour, not in a comment and not four bare digits (#1234 is an issue, not a colour). A line holding ssdd-lint-ignore is skipped by every rule.",
+      "pattern": "^(?!\\s*/?\\*)(?:(?!//).)*?(?<![\\w&])#(?!\\d{4}\\b)(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\\b",
       "message": "Hardcoded color — import from the design tokens instead.",
       "include": "^src/.+\\.(ts|tsx)$",
       "exclude": "(tokens/|\\.test\\.|__tests__/)"
