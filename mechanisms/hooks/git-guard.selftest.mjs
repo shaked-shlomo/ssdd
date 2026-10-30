@@ -345,8 +345,19 @@ describe('git-guard: stamping "hooks" and the working-tree config', () => {
     base = mkdtempSync(join(tmpdir(), 'ssdd-guard-cfg-'));
     repo = join(base, 'repo');
     mkdirSync(join(repo, '.ssdd'), { recursive: true });
-    spawnSync('git', ['-C', repo, 'init', '-q']);
+    const g = (...args) => {
+      const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    };
+    g('init', '-q');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    // HEAD holds the config; the cases below edit the working-tree copy.
     writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify({ routing, reviewGate }));
+    writeFileSync(join(repo, 'README'), 'base\n');
+    g('add', 'README', '.ssdd/config.json');
+    g('commit', '-qm', 'base');
   };
   const setConfig = (body) => writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify(body));
   const routing = [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }];
