@@ -25,10 +25,10 @@ that incident.
   draft, from the 2026-10-23 audit): a comment-only change carries clean
   stamps; the harness stops refusing command shapes when the pre-commit is
   armed; git-guard drops its file-tool entry and the `core.hooksPath`
-  shapes no agent used; completion stamps cover the work tree and fail
-  loudly; `update` merges new hook wiring. Its Open 3 proposes it ships
-  before the migrations, after v3.4, since the migrated projects need its
-  SubagentStop wiring.
+  shapes no agent used; a review before `git add` counts; `status` names
+  missing hook wiring. Every rule lives in git or the CLI, so any harness
+  gets the same gate (owner, 2026-10-30). It doesn't hold the migrations
+  (its Open 3).
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
