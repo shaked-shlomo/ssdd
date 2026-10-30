@@ -8,11 +8,12 @@
 // off only when the working-tree config turns it off):
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
-//   git commit … --amend                                     (never amend)
 //   git -c core.hooksPath=… | git config … core.hooksPath <value> / --unset …
 //   | GIT_CONFIG_PARAMETERS / GIT_CONFIG_KEY_<n> = core.hooksPath
 //                                                    (never re-point or unset the hooks;
 //                                                     a read passes)
+// and, only when gitGuard.blockAmend is true (an amend is local and reversible):
+//   git commit … --amend
 // plus any gitGuard.extraRules [{pattern, message}]. Also, as PreToolUse(Edit|Write):
 // the Edit/Write tools never touch .git/ssdd-review-* (stamp and dispatch files);
 // with reviewGate.stamping "hooks", Bash can't run `review-gate.mjs --stamp` or
@@ -136,7 +137,7 @@ if (guard.blockNoVerify !== false) {
     'Blocked: `git commit --no-verify` (or its short form `-n`) skips the pre-commit hook (project rule). ' +
     '(For untracked-files=no, write `--untracked-files=no`.)']);
 }
-if (guard.blockAmend !== false) {
+if (guard.blockAmend === true) {
   RULES.push([gitRule('commit', String.raw`\s--amend\b`),
     'Blocked: `git commit --amend`. Never amend commits (project rule).']);
 }

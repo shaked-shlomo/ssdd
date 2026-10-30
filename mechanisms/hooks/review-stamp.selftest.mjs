@@ -346,6 +346,7 @@ describe('the guard follows the working-tree config', () => {
     makeRepo();
     writeFileSync(join(repo, '.ssdd/config.json'), '{ nope');
     assert.equal(guard('git add -A').status, 2);
-    assert.equal(guard('git commit --amend').status, 2);
+    assert.equal(guard('git commit --no-verify').status, 2);
+    assert.equal(guard('git commit --amend').status, 0); // blockAmend is off by default
   });
 });

@@ -83,6 +83,10 @@ describe('loadSsddConfig', () => {
     putConfig({});
     const { cfg } = loadSsddConfig(dir);
     assert.equal(cfg.reviewGate.stamping, 'manual');
+    for (const k of ['blockBulkAdd', 'blockNoVerify', 'blockHooksPath']) assert.equal(cfg.gitGuard[k], true, k);
+    assert.equal(cfg.gitGuard.blockAmend, false, 'an amend is local and reversible: off unless the config says true');
+    putConfig({ gitGuard: { blockAmend: true } });
+    assert.equal(loadSsddConfig(dir).cfg.gitGuard.blockAmend, true);
     assert.deepEqual(cfg.reviewGate.reviewerModelSets, []);
     assert.deepEqual(cfg.gitGuard.extraRules, []);
     assert.deepEqual(cfg.routing, []);

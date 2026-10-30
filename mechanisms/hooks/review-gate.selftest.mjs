@@ -1011,3 +1011,28 @@ describe('the pre-commit runs every step', () => {
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
   });
 });
+
+// v3.3.2: the seeded config sends a typical source file to one or two
+// reviewers, not five, and test files to none.
+describe('the example config routes narrowly', () => {
+  const EXAMPLE = join(dirname(HOOK), '..', 'config.example.json');
+  const owed = (path) => {
+    const d = makeRepo(JSON.parse(readFileSync(EXAMPLE, 'utf8')));
+    try {
+      write(d, path, 'x\n');
+      return [...run(d, ['--check']).stdout.matchAll(/^ {2}• ([\w-]+)/gm)].map((m) => m[1]).sort();
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  };
+  it('a component or store goes to one or two reviewers', () => {
+    assert.deepEqual(owed('src/components/Button.tsx'), ['convention-compliance-reviewer', 'performance-reviewer']);
+    assert.deepEqual(owed('src/stores/cart.ts'), ['convention-compliance-reviewer', 'resilience-reviewer']);
+    assert.deepEqual(owed('src/utils/format.ts'), ['convention-compliance-reviewer']);
+  });
+  it('a service adds security only; docs-sync and performance stay out', () => {
+    assert.deepEqual(owed('src/services/api.ts'), ['convention-compliance-reviewer', 'resilience-reviewer', 'security-reviewer']);
+  });
+  it('test files route nowhere', () => {
+    assert.deepEqual(owed('src/services/api.test.ts'), []);
+    assert.deepEqual(owed('src/components/__tests__/Button.tsx'), []);
+  });
+});

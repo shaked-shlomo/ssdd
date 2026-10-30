@@ -26,7 +26,7 @@ const NODE = process.execPath;
 const GIT_GUARD = {
   blockBulkAdd: true,
   blockNoVerify: true,
-  blockAmend: true,
+  blockAmend: false,
   blockHooksPath: true,
   extraRules: [
     {
@@ -77,7 +77,6 @@ const BLOCKED = [
   ['bulk add .', 'git add .'],
   ['bulk add --all', 'git add --all'],
   ['commit --no-verify', 'git commit -m x --no-verify'],
-  ['commit --amend', 'git commit --amend'],
   ['force push', 'git push origin main --force'],
   // Bypasses via tokens between `git`/subcommand/flag — the class this suite pins.
   ['global flag before add', 'git -C /tmp/x add -A'],
@@ -89,7 +88,6 @@ const BLOCKED = [
   ['flag between add and -A', 'git add --force -A'],
   ['bundled short flags', 'git add -vA'],
   ['bundled short flags reversed', 'git add -Av'],
-  ['global flag before commit --amend', 'git -C /tmp/x commit --amend'],
   ['global flag before commit --no-verify', 'git -c core.hooksPath=/dev/null commit --no-verify'],
   // extraRules from .ssdd/config.json get the same normalization for free.
   ['global flag before force push', 'git -C /tmp/x push origin main --force'],
@@ -119,7 +117,6 @@ const BLOCKED = [
   ['git config --unset core.hooksPath', 'git config --unset core.hooksPath'],
   // v2.1 — ported from the source project's hardened guard.
   ['bulk add with -fA cluster', 'git add -fA'],
-  ['commit --amend --no-edit', 'git commit --amend --no-edit'],
   ['-C before commit -n', 'git -C /tmp/wt commit -n'],
   ['double-quoted -c core.hooksPath', 'git -c "core.hooksPath=/dev/null" commit -m "x"'],
   ['lower-case core.hookspath', 'git -c core.hookspath=/dev/null commit -m "x"'],
@@ -192,6 +189,7 @@ const ALLOWED = [
   ['core.hooksPath quoted in a commit message', 'git commit -m "docs: never git -c core.hooksPath=x"'],
   ['core.hooksPath in a heredoc body', "cat > x.md <<'EOF'\ngit -c core.hooksPath=/dev/null commit\nEOF"],
   ['--amend in a heredoc message', "git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"],
+  ['commit --amend (blockAmend is off by default)', 'git commit --amend'],
   // v2.6: shell hand-offs aren't unwrapped; the pre-commit layer is the backstop.
   ['bash -c wrapping commit -n', "bash -c 'git commit -anm x'"],
   ['sh -c wrapping a bulk add', 'sh -c "git add -A && git commit -m x"'],
@@ -266,6 +264,29 @@ describe('git-guard', () => {
       }).status;
       assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --check'), 0);
       assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --stamp alpha'), 2);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('blockAmend: true blocks --amend; with no gitGuard section it is off', () => {
+    const d = mkdtempSync(join(tmpdir(), 'ssdd-guard-amend-'));
+    try {
+      spawnSync('git', ['-C', d, 'init', '-q']);
+      mkdirSync(join(d, '.ssdd'));
+      const at = (command, payload = { tool_input: { command } }) => spawnSync(NODE, [HOOK], {
+        input: JSON.stringify(payload), cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8',
+      }).status;
+      const AMENDS = ['git commit --amend', 'git -C /tmp/x commit --amend', 'git commit --amend --no-edit'];
+      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({ gitGuard: { blockAmend: true } }));
+      for (const c of AMENDS) {
+        assert.strictEqual(at(c), 2, c);
+        assert.strictEqual(at(c, { command: c, hook_event_name: 'beforeShellExecution' }), 2, c);
+      }
+      assert.strictEqual(at("git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"), 0);
+      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({}));
+      for (const c of AMENDS) assert.strictEqual(at(c), 0, c);
+      assert.strictEqual(at('git commit --no-verify'), 2);
     } finally {
       rmSync(d, { recursive: true, force: true });
     }

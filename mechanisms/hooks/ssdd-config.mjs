@@ -19,7 +19,9 @@
 //                           own exclude
 //   reviewGate.stamping     "hooks" or "manual" (default)
 //   reviewGate.reviewerModelSets  [reviewerModels] when it is a non-empty list
-//   gitGuard.block*         off only when the config says false
+//   gitGuard.block*         off only when the config says false, except
+//                           blockAmend: on only when it says true (an amend
+//                           is local and reversible)
 //   gitGuard.extraRules     as given
 //   paths.plans / .specs / .ledgers  repo-relative; defaults .ssdd/plans,
 //                           .ssdd/specs, .ssdd/ledgers
@@ -42,7 +44,8 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PATH = '.ssdd/config.json';
-const GUARD_TOGGLES = ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath'];
+// Each git-guard toggle and its default.
+const GUARD_TOGGLES = { blockBulkAdd: true, blockNoVerify: true, blockAmend: false, blockHooksPath: true };
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // A section that is present must have its type. A string spread as an object
@@ -122,7 +125,9 @@ function build(root, config) {
     .map((r) => ({ ...r, exclude: [...global, ...(Array.isArray(r?.exclude) ? r.exclude : [])] }));
   const models = config.reviewGate?.reviewerModels;
   const gitGuard = { extraRules: Array.isArray(config.gitGuard?.extraRules) ? config.gitGuard.extraRules : [] };
-  for (const k of GUARD_TOGGLES) gitGuard[k] = config.gitGuard?.[k] !== false;
+  for (const [k, on] of Object.entries(GUARD_TOGGLES)) {
+    gitGuard[k] = on ? config.gitGuard?.[k] !== false : config.gitGuard?.[k] === true;
+  }
   // root goes last, so a "root" key in the file can't move the repo root.
   return {
     ...config,
