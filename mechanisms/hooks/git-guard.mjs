@@ -8,11 +8,12 @@
 // off only when the working-tree config turns it off):
 //   git add -A | -Av / -fA clusters | --all | git add .       (never bulk-stage)
 //   git commit … --no-verify | -n | -nm / -anm clusters      (never bypass pre-commit)
-//   git commit … --amend                                     (never amend)
 //   git -c core.hooksPath=… | git config … core.hooksPath <value> / --unset …
 //   | GIT_CONFIG_PARAMETERS / GIT_CONFIG_KEY_<n> = core.hooksPath
 //                                                    (never re-point or unset the hooks;
 //                                                     a read passes)
+// and, only when gitGuard.blockAmend is true (an amend is local and reversible):
+//   git commit … --amend
 // plus any gitGuard.extraRules [{pattern, message}]. Also, as PreToolUse(Edit|Write):
 // the Edit/Write tools never touch .git/ssdd-review-* (stamp and dispatch files);
 // with reviewGate.stamping "hooks", Bash can't run `review-gate.mjs --stamp` or
@@ -27,15 +28,20 @@
 // the pre-commit layer is the backstop. Grammar: git-cmd.mjs.
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
-import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { hookCommand, hookFilePath, hookHarness, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { cluster, collapseGlobalFlags, gitRule, skeleton, splitCommands, stripHeredocs } from './git-cmd.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
 const cmd = hookCommand(payload);
 
+// Cursor's failClosed needs a permission body every time. Claude Code acts on
+// the exit code (2 = block, stderr to the agent), so an allow prints nothing:
+// it would only add to the session's context, as prod-guard's doesn't.
 function finish(code, permission, extra = {}) {
-  process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
+  if (permission !== 'allow' || hookHarness(payload) === 'cursor') {
+    process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
+  }
   process.exit(code);
 }
 function deny(msg) {
@@ -136,7 +142,7 @@ if (guard.blockNoVerify !== false) {
     'Blocked: `git commit --no-verify` (or its short form `-n`) skips the pre-commit hook (project rule). ' +
     '(For untracked-files=no, write `--untracked-files=no`.)']);
 }
-if (guard.blockAmend !== false) {
+if (guard.blockAmend === true) {
   RULES.push([gitRule('commit', String.raw`\s--amend\b`),
     'Blocked: `git commit --amend`. Never amend commits (project rule).']);
 }

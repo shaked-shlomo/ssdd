@@ -906,56 +906,42 @@ describe('the config a commit is judged by', () => {
   });
 });
 
+// v3.3.2: the dormant-hook note moved to session start (work-state.mjs); the
+// gate no longer repeats it on every commit.
 describe('dormant pre-commit hook', () => {
-  const armable = (d) => {
-    mkdirSync(join(d, '.githooks'), { recursive: true });
-    writeFileSync(join(d, '.githooks', 'pre-commit'), '#!/bin/sh\n');
-  };
-  const NOTE = /pre-commit hook is dormant in this repo \(core\.hooksPath is unset\)[\s\S]*git config core\.hooksPath \.githooks/;
-
-  it('a blocked and an allowed commit both carry the note while core.hooksPath is unset', () => {
-    armable(dir);
+  it('neither an allowed nor a blocked commit carries a note', () => {
+    mkdirSync(join(dir, '.githooks'), { recursive: true });
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), '#!/bin/sh\n');
     write(dir, 'docs/x.md', 'x\n');
     const ok = hook(dir, 'git commit -m x');
     assert.strictEqual(ok.status, 0);
-    assert.match(ok.stderr, NOTE);
-    assert.match(JSON.parse(ok.stdout).hookSpecificOutput.additionalContext, NOTE);
+    assert.strictEqual(ok.stdout, '');
+    assert.doesNotMatch(ok.stderr, /dormant/);
     write(dir, 'src/a.ts', 'a\n');
     const blocked = hook(dir, 'git commit -m x');
     assert.strictEqual(blocked.status, 2);
-    assert.match(blocked.stderr, NOTE);
+    assert.doesNotMatch(blocked.stderr, /dormant/);
   });
+});
 
-  it('names a wrong value, and is silent once it points at .githooks', () => {
-    armable(dir);
+// v3.3.2: under Claude Code an allow prints nothing (it would only add to the
+// session's context); Cursor's failClosed still gets {"permission": "allow"}.
+describe('allow output', () => {
+  it('Claude Code: nothing on a non-commit, a clean commit or the bypass', () => {
+    assert.deepEqual([hook(dir, 'git status'), hook(dir, 'ls')].map((r) => [r.status, r.stdout]), [[0, ''], [0, '']]);
+    write(dir, 'docs/x.md', 'x\n');
+    const clean = hook(dir, 'git commit -m x');
+    assert.deepEqual([clean.status, clean.stdout], [0, '']);
     write(dir, 'src/a.ts', 'a\n');
-    git(dir, 'config', 'core.hooksPath', '.git/hooks');
-    assert.match(hook(dir, 'git commit -m x').stderr, /core\.hooksPath is "\.git\/hooks"/);
-    git(dir, 'config', 'core.hooksPath', '.githooks/');
-    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
-    write(dir, 'src/a.ts', 'b\n');
-    git(dir, 'config', 'core.hooksPath', join(dir, '.githooks'));
-    const r = hook(dir, 'git commit -m x');
-    assert.strictEqual(r.status, 2);
-    assert.doesNotMatch(r.stderr, /dormant/);
+    const skip = hook(dir, 'SSDD_REVIEW_SKIP=1 git commit -m x');
+    assert.deepEqual([skip.status, skip.stdout], [0, '']);
   });
-
-  it('an absolute path to another directory\'s pre-commit (a worktree on the main checkout\'s) is not dormant', () => {
-    armable(dir);
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-main-')));
-    try {
-      armable(other);
-      write(dir, 'src/a.ts', 'a\n');
-      git(dir, 'config', 'core.hooksPath', join(other, '.githooks'));
-      const r = hook(dir, 'git commit -m x');
-      assert.strictEqual(r.status, 2);
-      assert.doesNotMatch(r.stderr, /dormant/);
-    } finally { rmSync(other, { recursive: true, force: true }); }
-  });
-
-  it('a repo without .githooks/pre-commit gets no note', () => {
-    write(dir, 'src/a.ts', 'a\n');
-    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+  it('Cursor: a permission body every time', () => {
+    for (const c of ['git status', 'git commit -m x']) {
+      const r = cursorHook(dir, c);
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.strictEqual(JSON.parse(r.stdout).permission, 'allow');
+    }
   });
 });
 
@@ -963,21 +949,25 @@ describe('dormant pre-commit hook', () => {
 // .githooks/pre-commit in an installed repo (.ssdd/hooks/ is two levels down).
 const PRE_COMMIT = [join(dirname(HOOK), 'pre-commit'), join(dirname(HOOK), '..', '..', '.githooks', 'pre-commit')].find((p) => existsSync(p));
 
+// Arm the portable hook the way install does: pre-commit in .githooks/, the
+// hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
+function armPreCommit(d) {
+  const here = dirname(HOOK);
+  mkdirSync(join(d, '.githooks'));
+  writeFileSync(join(d, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
+  chmodSync(join(d, '.githooks', 'pre-commit'), 0o755);
+  mkdirSync(join(d, '.ssdd', 'hooks'));
+  for (const f of readdirSync(here)) {
+    if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(here, f), join(d, '.ssdd', 'hooks', f));
+  }
+  writeFileSync(join(d, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
+  git(d, 'config', 'core.hooksPath', '.githooks');
+  git(d, 'add', '.ssdd/config.json');
+}
+
 describe('the pre-commit layer is the backstop for shell hand-offs', () => {
   it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", { skip: !PRE_COMMIT }, () => {
-    // Arm the portable hook the way install does: pre-commit in .githooks/,
-    // the hook scripts in .ssdd/hooks/, core.hooksPath pointing at it.
-    const here = dirname(HOOK);
-    mkdirSync(join(dir, '.githooks'));
-    writeFileSync(join(dir, '.githooks', 'pre-commit'), readFileSync(PRE_COMMIT, 'utf8'));
-    chmodSync(join(dir, '.githooks', 'pre-commit'), 0o755);
-    mkdirSync(join(dir, '.ssdd', 'hooks'));
-    for (const f of readdirSync(here)) {
-      if (f.endsWith('.mjs') && !f.endsWith('.selftest.mjs')) copyFileSync(join(here, f), join(dir, '.ssdd', 'hooks', f));
-    }
-    writeFileSync(join(dir, '.git', 'info', 'exclude'), '.githooks/\n.ssdd/hooks/\n');
-    git(dir, 'config', 'core.hooksPath', '.githooks');
-    git(dir, 'add', '.ssdd/config.json');
+    armPreCommit(dir);
     write(dir, 'src/a.ts', 'a\n');
     const head = git(dir, 'rev-parse', 'HEAD');
 
@@ -989,5 +979,46 @@ describe('the pre-commit layer is the backstop for shell hand-offs', () => {
     assert.strictEqual(r.status, 1, r.stderr);
     assert.match(r.stderr, /alpha/);
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+  });
+});
+
+describe('the pre-commit runs every step', () => {
+  it('a lint finding does not hide what the review gate owes', { skip: !PRE_COMMIT }, () => {
+    writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({
+      ...CONFIG, lint: [{ name: 'no-todo', pattern: 'TODO', message: 'no TODOs', include: '^src/' }],
+    }));
+    armPreCommit(dir);
+    write(dir, 'src/a.ts', 'TODO\n');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
+    assert.match(r.stderr, /alpha/);
+    assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+  });
+});
+
+// v3.3.2: the seeded config sends a typical source file to one or two
+// reviewers, not five, and test files to none.
+describe('the example config routes narrowly', () => {
+  const EXAMPLE = join(dirname(HOOK), '..', 'config.example.json');
+  const owed = (path) => {
+    const d = makeRepo(JSON.parse(readFileSync(EXAMPLE, 'utf8')));
+    try {
+      write(d, path, 'x\n');
+      return [...run(d, ['--check']).stdout.matchAll(/^ {2}• ([\w-]+)/gm)].map((m) => m[1]).sort();
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  };
+  it('a component or store goes to one or two reviewers', () => {
+    assert.deepEqual(owed('src/components/Button.tsx'), ['convention-compliance-reviewer', 'performance-reviewer']);
+    assert.deepEqual(owed('src/stores/cart.ts'), ['convention-compliance-reviewer', 'resilience-reviewer']);
+    assert.deepEqual(owed('src/utils/format.ts'), ['convention-compliance-reviewer']);
+  });
+  it('a service adds security only; docs-sync and performance stay out', () => {
+    assert.deepEqual(owed('src/services/api.ts'), ['convention-compliance-reviewer', 'resilience-reviewer', 'security-reviewer']);
+  });
+  it('test files route nowhere', () => {
+    assert.deepEqual(owed('src/services/api.test.ts'), []);
+    assert.deepEqual(owed('src/components/__tests__/Button.tsx'), []);
   });
 });

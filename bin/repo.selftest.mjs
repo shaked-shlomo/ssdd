@@ -96,11 +96,14 @@ describe('Node floor', () => {
   });
 });
 
-// → { name, description, block } from a skill's or reviewer's frontmatter.
+// → { name, description, block, manual } from a skill's or reviewer's
+// frontmatter. manual: disable-model-invocation (only the user invokes it, so
+// its description never loads).
 function frontmatter(rel) {
   const fm = read(rel).match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
   const desc = fm.match(/^description:(.*)$/m)?.[1].trim() ?? '';
-  return { name: fm.match(/^name: (.+)$/m)?.[1], description: desc, block: /^[>|]/.test(desc) };
+  return { name: fm.match(/^name: (.+)$/m)?.[1], description: desc, block: /^[>|]/.test(desc),
+    manual: /^disable-model-invocation: true$/m.test(fm) };
 }
 
 describe('cleanup skill', () => {
@@ -157,10 +160,16 @@ describe('text budgets', () => {
     assert.ok(bytes('process/templates/handover-template.md') <= 1000, `handover is ${bytes('process/templates/handover-template.md')}`);
   });
 
+  it('the skills the user calls by name are kept out of model invocation', () => {
+    assert.deepEqual(skills().filter((f) => frontmatter(f).manual).sort(),
+      ['skills/migrate-plans/SKILL.md', 'skills/new-reviewer/SKILL.md', 'skills/skills-audit/SKILL.md']);
+  });
+
   it('a default Claude Code install loads at most 5,000 bytes', () => {
-    // AGENTS.md and CLAUDE.md load whole; skills and reviewers by description.
-    // docs-drift-audit is opt-in (--with drift-audit); the template isn't an agent.
-    const descs = [...skills().filter((f) => !f.includes('docs-drift-audit')), ...reviewers().filter((f) => !f.includes('template'))]
+    // AGENTS.md and CLAUDE.md load whole; skills and reviewers by description,
+    // except a skill with disable-model-invocation. docs-drift-audit is opt-in
+    // (--with drift-audit); the template isn't an agent.
+    const descs = [...skills().filter((f) => !f.includes('docs-drift-audit') && !frontmatter(f).manual), ...reviewers().filter((f) => !f.includes('template'))]
       .reduce((n, f) => n + frontmatter(f).description.length, 0);
     const total = bytes('adapters/generic/AGENTS.md') + bytes('adapters/claude-code/CLAUDE.md') + descs;
     assert.ok(total <= 5000, `${total} bytes`);

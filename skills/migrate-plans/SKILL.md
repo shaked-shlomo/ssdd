@@ -1,6 +1,7 @@
 ---
 name: migrate-plans
 description: Use once per repo, when SSDD v3 is first injected into a repo whose plans predate it, or when the session view says plans are in the old format (checkbox criteria, criteria without AC IDs, Status words like DONE or CLOSED). Not for writing or closing a plan.
+disable-model-invocation: true
 ---
 
 # Migrate plans to v3
