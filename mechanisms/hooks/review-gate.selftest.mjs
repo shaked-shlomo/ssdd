@@ -7,7 +7,7 @@
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -251,10 +251,11 @@ describe('--stamp --files', () => {
     assert.match(r.stderr, /src\/b\.ts/);
     assert.throws(() => readStamp(dir));
   });
-  it('refuses a file that is not staged, writing nothing', () => {
+  it('refuses a file that is not changed, writing nothing', () => {
     write(dir, 'src/a.ts', 'a\n');
     const r = stamp(dir, 'beta', 'src/nope.ts');
     assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/nope\.ts — not changed, or not routed to beta/);
     assert.throws(() => readStamp(dir));
   });
   it('refuses an unrouted file, writing nothing', () => {
@@ -267,7 +268,7 @@ describe('--stamp --files', () => {
     write(dir, 'src/b.ts', 'b\n');
     const r = stamp(dir, 'beta,alpha'); // alpha covers src/a.ts only
     assert.strictEqual(r.status, 1);
-    assert.match(r.stderr, /no staged file routes to alpha/);
+    assert.match(r.stderr, /no changed file routes to alpha/);
     assert.throws(() => readStamp(dir));
   });
   it('refuses a reviewer name the routing table does not know, writing nothing', () => {
@@ -289,6 +290,159 @@ describe('--stamp --files', () => {
     write(dir, 'src/b.ts', 'b\n');
     assert.strictEqual(stamp(dir, 'beta,alpha', 'src/b.ts').status, 1);
     assert.throws(() => readStamp(dir));
+  });
+});
+
+// A reviewer can stamp before `git add`: --stamp keys the work tree through a
+// scratch index, so the keys are the ones `git add` would stage.
+describe('--stamp before git add', () => {
+  const put = (d, path, content) => {
+    mkdirSync(dirname(join(d, path)), { recursive: true });
+    writeFileSync(join(d, path), content);
+  };
+  const commit = (d, msg = 'c') => git(d, 'commit', '-qm', msg);
+  const scratchLeft = (d) => readdirSync(git(d, 'rev-parse', '--absolute-git-dir').trim()).filter((f) => f.startsWith('ssdd-stamp-index'));
+
+  it('an unstaged edit is stamped; adding it commits with no new stamp', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    put(dir, 'src/a.ts', 'a edited\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before); // the real index is untouched
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('an untracked routed file is stamped', () => {
+    put(dir, 'src/a.ts', 'new\n');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a deletion not yet staged is stamped', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    rmSync(join(dir, 'src', 'a.ts'));
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'rm', '-q', '--cached', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('symlink, exec bit and eol=lf key as git add does', () => {
+    put(dir, '.gitattributes', '* text=auto eol=lf\n');
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'add', '.gitattributes');
+    commit(dir);
+    put(dir, 'src/c.ts', 'one\r\ntwo\r\n');
+    put(dir, 'src/x.ts', 'x\n');
+    chmodSync(join(dir, 'src', 'x.ts'), 0o755);
+    symlinkSync('a.ts', join(dir, 'src', 'l.ts'));
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'add', '-A');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('--files refuses an ignored, an unchanged and an unrouted file, writing nothing', () => {
+    put(dir, '.gitignore', 'src/ignored.ts\n');
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'add', '.gitignore');
+    commit(dir);
+    put(dir, 'src/ignored.ts', 'i\n');
+    put(dir, 'src/b.ts', 'b\n'); // changed and routed: the stamp is valid, the other files are not
+    put(dir, 'docs/x.md', 'x\n');
+    for (const f of ['src/ignored.ts', 'src/a.ts', 'docs/x.md']) {
+      const r = stamp(dir, 'beta', f);
+      assert.strictEqual(r.status, 1, f);
+      assert.match(r.stderr, /not changed, or not routed to beta/, f);
+      assert.throws(() => readStamp(dir), f);
+    }
+    assert.deepStrictEqual(scratchLeft(dir), []);
+  });
+  it('a file staged, then edited, is stamped on the work tree', () => {
+    write(dir, 'src/a.ts', 'v1\n');
+    put(dir, 'src/a.ts', 'v2\n');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(s.stderr, /src\/a\.ts: stamped the work-tree copy; the staged copy differs/);
+    assert.strictEqual(preCommit(dir).status, 1);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a same-size edit in the instant of the stage is still keyed (the scratch copy must stay racy)', () => {
+    // `v1` -> `v2`: same size, and the file's stat made equal to its index
+    // entry's, with the index as old as the entry. Git rehashes such an entry
+    // (racy-clean); a copy of the index with a newer mtime would trust the stat.
+    git(dir, 'config', 'core.trustctime', 'false');
+    const file = join(dir, 'src', 'a.ts');
+    const t = Math.floor(Date.now() / 1000) - 5; // whole seconds: no sub-second part to differ
+    put(dir, 'src/a.ts', 'v1\n');
+    utimesSync(file, t, t);
+    git(dir, 'add', 'src/a.ts');
+    put(dir, 'src/a.ts', 'v2\n');
+    utimesSync(file, t, t);
+    utimesSync(join(dir, '.git', 'index'), t, t);
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(s.stderr, /src\/a\.ts: stamped the work-tree copy; the staged copy differs/);
+  });
+  it('--check and --pre-commit write nothing: the stamp file and the index stay byte-identical', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(stamp(dir, 'alpha,beta').status, 0);
+    const files = [stampFile(dir), join(dir, '.git', 'index')];
+    const snap = () => files.map((f) => readFileSync(f));
+    const before = snap();
+    run(dir, ['--check']);
+    preCommit(dir);
+    assert.deepStrictEqual(snap(), before);
+  });
+  it('paths with spaces and non-ASCII letters stamp and then commit', () => {
+    put(dir, 'src/a b.ts', 'sp\n');
+    put(dir, 'src/é.ts', 'e\n');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(Object.keys(readStamp(dir).reviewers.beta).sort(), ['src/a b.ts', 'src/é.ts']);
+    git(dir, '-c', 'core.quotePath=false', 'add', '-A');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('in a linked worktree, --stamp --repo <wt> keys the worktree\'s files', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-wt-parent-')));
+    const wt = join(parent, 'wt');
+    try {
+      git(dir, 'worktree', 'add', '-q', wt, '-b', 'wt-branch');
+      mkdirSync(join(wt, '.ssdd'));
+      writeFileSync(join(wt, '.ssdd', 'config.json'), JSON.stringify(CONFIG));
+      put(wt, 'src/a.ts', 'w\n');
+      const mainIndex = readFileSync(join(dir, '.git', 'index'));
+      const s = run(dir, ['--stamp', 'alpha,beta', '--repo', wt]);
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), mainIndex);
+      assert.deepStrictEqual(scratchLeft(wt), []);
+      git(wt, 'add', 'src/a.ts');
+      assert.strictEqual(preCommit(wt).status, 0);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+  it('on an unborn branch, --stamp keys the first commit\'s files', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ssdd-gate-unborn-'));
+    try {
+      git(fresh, 'init', '-q');
+      mkdirSync(join(fresh, '.ssdd'));
+      writeFileSync(join(fresh, '.ssdd', 'config.json'), JSON.stringify(CONFIG));
+      put(fresh, 'src/a.ts', 'staged\n');
+      git(fresh, 'add', 'src/a.ts');
+      put(fresh, 'src/b.ts', 'untracked\n');
+      const s = stamp(fresh, 'alpha,beta');
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(scratchLeft(fresh), []);
+      git(fresh, 'add', 'src/b.ts');
+      assert.strictEqual(preCommit(fresh).status, 0);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
   });
 });
 
@@ -354,7 +508,7 @@ describe('route exclude', () => {
     assert.strictEqual(preCommit(r).status, 0);
     const s = run(r, ['--stamp', 'alpha']);
     assert.strictEqual(s.status, 1);
-    assert.match(s.stderr, /no staged file routes to alpha/);
+    assert.match(s.stderr, /no changed file routes to alpha/);
   });
   it('everything else still routes', () => {
     write(r, 'src/z.ts', 'z\n');
@@ -649,11 +803,11 @@ describe('merges', () => {
     const r = stamp(dir, 'beta', 'src/b.ts');
     assert.strictEqual(r.status, 1);
     assert.match(r.stderr, /src\/b\.ts — matches git's own merge with [0-9a-f]{7}, so it is owed by no one/);
-    assert.doesNotMatch(r.stderr, /not staged, or not routed/);
+    assert.doesNotMatch(r.stderr, /not changed, or not routed/);
     const both = stamp(dir, 'beta', 'src/b.ts,src/nope.ts');
     assert.strictEqual(both.status, 1);
     assert.match(both.stderr, /src\/b\.ts — matches git's own merge/);
-    assert.match(both.stderr, /src\/nope\.ts — not staged, or not routed to beta/);
+    assert.match(both.stderr, /src\/nope\.ts — not changed, or not routed to beta/);
     assert.throws(() => readStamp(dir));
   });
   it('once the resolution is stamped, the merge commits', () => {

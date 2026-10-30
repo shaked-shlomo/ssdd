@@ -8,9 +8,10 @@
 //
 // A stamp is per REVIEWER × per ROUTED FILE × that file's exact staged change.
 // The key is `srcMode:srcBlob→dstMode:dstBlob` from
-// `git diff --staged --raw`, so it names both sides of the diff: a re-stage
-// that changes nothing keeps the stamp, an edit, a deletion, a mode change or
-// a different base voids it — for THAT file, for every reviewer routed to it.
+// `git diff --staged --raw` (`--stamp` reads a scratch copy of the index after
+// `git add` of the changed routed paths), so it names both sides of the diff:
+// a re-stage that changes nothing keeps the stamp, an edit, a deletion, a mode
+// change or a different base voids it — for THAT file, for every reviewer routed to it.
 // Files that did not change keep their stamps, and a file no reviewer is
 // routed to (a ledger, a doc) never enters a key at all. (v1 keyed one hash to
 // the whole staged diff, so any edit anywhere voided every stamp; in the source
@@ -35,9 +36,12 @@
 //
 // Modes (same script, no deps, Node >= 22):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
-//                                   attest reviewers ran on the CURRENT staged
-//                                   change of every routed file they cover, or
-//                                   of the named files only (a delta round);
+//                                   attest reviewers ran on the CURRENT change
+//                                   of every routed file they cover, or of the
+//                                   named files only (a delta round). Keyed on
+//                                   the work tree, as `git add` would stage it,
+//                                   so it can run before `git add`; a file whose
+//                                   staged copy differs stays owed until added.
 //                                   --repo for a commit in another work tree
 //   --check [--repo <path>]         what the index owes, on stdout, without
 //                                   committing: exit 1 when a commit would be
@@ -57,15 +61,18 @@
 //     ["issues"] } } } }
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
-import { mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join, isAbsolute, resolve } from 'node:path';
 import { hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 
 let repo = resolveHookRepo(null);
-const git = (...args) =>
-  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const gitIn = (opts, ...args) =>
+  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
+const git = (...args) => gitIn({}, ...args);
+// Run against another index file (the --stamp scratch index) when one is given.
+const onIndex = (indexFile) => (indexFile ? { env: { ...process.env, GIT_INDEX_FILE: indexFile } } : {});
 
 // The config the commit is judged by: the working-tree one (ssdd-config.mjs).
 // null → not an SSDD repo, gate disarmed. A broken config comes back with
@@ -97,11 +104,12 @@ const stampPath = () => {
   return join(isAbsolute(dir) ? dir : join(repo, dir), 'ssdd-review-stamp.json');
 };
 
-// Map<path, key> over the staged diff, one git call. `--raw -z` emits
+// Map<path, key> over the staged diff of an index (the real one, or the
+// --stamp scratch copy), one git call. `--raw -z` emits
 // `:srcMode dstMode srcBlob dstBlob status\0path\0` per file; NUL-delimited so
 // a path with a space round-trips. `--no-renames` so a rename is D + A.
-const stagedChanges = () => {
-  const parts = git('diff', '--staged', '--raw', '--no-renames', '--abbrev=40', '-z').split('\0');
+const indexChanges = (indexFile) => {
+  const parts = gitIn(onIndex(indexFile), 'diff', '--staged', '--raw', '--no-renames', '--abbrev=40', '-z').split('\0');
   const out = new Map();
   for (let i = 0; i + 1 < parts.length; i += 2) {
     const m = /^:(\S+) (\S+) (\S+) (\S+) \S+$/.exec(parts[i]);
@@ -129,7 +137,7 @@ function onDefaultBranch(oid) {
     : ['refs/heads/main', 'refs/heads/master'];
   return refs.some((ref) => quiet('merge-base', '--is-ancestor', oid, ref).status === 0);
 }
-function mergeClean(staged) {
+function mergeClean(changes, indexFile) {
   let heads;
   try {
     const file = git('rev-parse', '--git-path', 'MERGE_HEAD').trim();
@@ -141,16 +149,57 @@ function mergeClean(staged) {
   const tree = String(r.stdout ?? '').split('\n')[0].trim();
   if ((r.status !== 0 && r.status !== 1) || !OID.test(tree)) return null; // 1 = conflicts, still a tree
   let differ;
-  try { differ = new Set(git('diff', '--cached', '--name-only', '--no-renames', '-z', tree).split('\0')); } catch { return null; }
-  return { head: heads[0], paths: new Set([...staged.keys()].filter((p) => !differ.has(p))) };
+  try { differ = new Set(gitIn(onIndex(indexFile), 'diff', '--cached', '--name-only', '--no-renames', '-z', tree).split('\0')); } catch { return null; }
+  return { head: heads[0], paths: new Set([...changes.keys()].filter((p) => !differ.has(p))) };
 }
 // The staged changes that can owe a review: the staged diff minus a stopped
 // merge's clean paths. Everything that decides what's owed reads this.
 function stagedOwed() {
-  const staged = stagedChanges();
+  const staged = indexChanges();
   const merged = mergeClean(staged);
   if (merged) for (const p of merged.paths) staged.delete(p);
   return { staged, merged };
+}
+// What `git add` would stage, for the routed paths that changed: the keys
+// --stamp attests, so a reviewer can stamp before `git add` and the commit
+// finds the same keys. git computes them (eol and clean filters, the exec bit
+// and core.fileMode, symlinks, deletions) in a scratch copy of the index, which
+// is removed whatever happens; the real index is never touched. The scratch
+// `add` writes the blobs too, so deltaFor can find them later.
+// → { changes: Map<path, key>, merged }, merge-clean paths already out.
+function workTreeChanges(cfg) {
+  const matches = routes(cfg).map(([, m]) => m);
+  const list = (...args) => git(...args).split('\0').filter(Boolean);
+  const unborn = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'], { stdio: 'ignore' }).status !== 0;
+  const changed = unborn
+    ? [...list('diff', '--cached', '--name-only', '--no-renames', '-z'), ...list('ls-files', '-z')]
+    : list('diff', 'HEAD', '--name-only', '--no-renames', '-z');
+  const paths = [...new Set([...changed, ...list('ls-files', '--others', '--exclude-standard', '-z')])]
+    .filter((p) => matches.some((m) => m(p)));
+  const gitDir = git('rev-parse', '--absolute-git-dir').trim();
+  const tmp = join(gitDir, `ssdd-stamp-index-${process.pid}`);
+  try {
+    const real = git('rev-parse', '--git-path', 'index').trim();
+    const realIndex = isAbsolute(real) ? real : join(repo, real);
+    if (existsSync(realIndex)) {
+      copyFileSync(realIndex, tmp);
+      // A copy is newer than every entry, so git would trust a stat-matching
+      // entry; an edit made in the same instant as the stage (same size, same
+      // mtime) would keep its stale blob. Dated 1970-01-01T00:00:01 (git reads
+      // a zero timestamp as unset), every entry is racy and git re-reads the
+      // file, as it does against the real index.
+      utimesSync(tmp, 1, 1);
+    }
+    if (paths.length) {
+      gitIn({ ...onIndex(tmp), input: paths.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
+    }
+    const changes = indexChanges(tmp);
+    const merged = mergeClean(changes, tmp);
+    if (merged) for (const p of merged.paths) changes.delete(p);
+    return { changes, merged };
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 const readStamp = () => {
@@ -335,8 +384,9 @@ if (process.argv[2] === '--stamp') {
   if (!loaded) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
   if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
   const { cfg } = loaded;
-  const { staged, merged } = stagedOwed();
-  const table = new Map(reviewerFiles(cfg, staged));
+  repo = cfg.root; // paths below are top-level relative, whatever --repo named
+  const { changes, merged } = workTreeChanges(cfg);
+  const table = new Map(reviewerFiles(cfg, changes));
   const known = new Set(routes(cfg).map(([name]) => name));
   // Validate everything before writing anything: a refused name or file leaves
   // the stamp file untouched, so a typo can never half-attest a round.
@@ -351,7 +401,7 @@ if (process.argv[2] === '--stamp') {
     if (only) {
       const bad = only.filter((f) => !routed.includes(f));
       if (bad.length) {
-        // A merge-clean path is staged, but stagedOwed() took it out of the diff.
+        // A merge-clean path changed, but workTreeChanges() took it out of the diff.
         const clean = bad.filter((f) => merged?.paths.has(f));
         const rest = bad.filter((f) => !clean.includes(f));
         if (clean.length) {
@@ -363,9 +413,9 @@ if (process.argv[2] === '--stamp') {
         }
         if (rest.length) {
           console.error(
-            `[ssdd-review-gate] refused for ${n}: ${rest.join(', ')} — not staged, or not routed to ${n}.\n` +
-            `A reviewer can be stamped only on files in its part of the staged diff; paths are\n` +
-            `repo-relative, as \`git diff --staged --name-only\` prints them.`,
+            `[ssdd-review-gate] refused for ${n}: ${rest.join(', ')} — not changed, or not routed to ${n}.\n` +
+            `A reviewer can be stamped only on files in its part of the change (an ignored file\n` +
+            `is not one); paths are repo-relative, as \`git diff HEAD --name-only\` prints them.`,
           );
         }
         process.exit(1);
@@ -373,7 +423,7 @@ if (process.argv[2] === '--stamp') {
       files = only;
     }
     if (!files.length) {
-      console.error(`[ssdd-review-gate] refused: no staged file routes to ${n} — nothing to stamp (wrong reviewer?)`);
+      console.error(`[ssdd-review-gate] refused: no changed file routes to ${n} — nothing to stamp (wrong reviewer?)`);
       process.exit(1);
     }
     plan.push([n, files]);
@@ -384,9 +434,17 @@ if (process.argv[2] === '--stamp') {
   updateStamp((stamp) => {
     for (const [n, files] of plan) {
       stamp.reviewers[n] ??= {};
-      for (const f of files) stamp.reviewers[n][f] = { key: staged.get(f), at };
+      for (const f of files) stamp.reviewers[n][f] = { key: changes.get(f), at };
     }
   });
+  // The stamp names the work-tree copy (what the reviewer read). A commit
+  // judges the index, so a path whose staged key differs stays owed until added.
+  const staged = indexChanges();
+  for (const f of new Set(plan.flatMap(([, files]) => files))) {
+    if (staged.get(f) !== changes.get(f)) {
+      console.error(`[ssdd-review-gate] ${f}: stamped the work-tree copy; the staged copy differs — git add it before committing`);
+    }
+  }
   for (const [n, files] of plan) {
     console.log(`[ssdd-review-gate] stamped ${n} on ${files.length} file(s): ${files.join(', ')}`);
   }
