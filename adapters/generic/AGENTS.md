@@ -9,8 +9,8 @@ everything (e.g. `npm run check`).>
 ## Workflow: SSDD
 
 Non-trivial work follows `.ssdd/process/SDD.md`: a numbered plan (`/new-plan`),
-a clarify pass and acceptance criteria before code, a ledger per multi-task
-plan, and verification with real command output.
+acceptance criteria before code (after a clarify pass, for a multi-task plan),
+a ledger per multi-task plan, and verification with real command output.
 Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the work is.
 
 - Before reporting progress, check each claim against a tool result from this
