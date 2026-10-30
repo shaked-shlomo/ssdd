@@ -20,11 +20,6 @@
           },
           {
             "type": "command",
-            "if": "Bash(git *)",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
-          },
-          {
-            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/prod-guard.mjs\""
           }
         ]
@@ -55,26 +50,6 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/convention-lint.mjs\""
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/review-gate.mjs\""
           }
         ]
       }

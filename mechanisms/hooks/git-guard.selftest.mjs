@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 const hooksDir = dirname(fileURLToPath(import.meta.url));
@@ -334,5 +334,76 @@ describe('git-guard', () => {
     assert.match(out.agentMessage, /git add -A/);
     assert.strictEqual(out.agent_message, out.agentMessage);
     assert.strictEqual(out.user_message, out.userMessage);
+  });
+});
+
+// The guard's stamping and config cases, moved from the completion-stamp suite.
+// Task 4 rewrites them with the code they test.
+describe('git-guard: stamping "hooks" and the working-tree config', () => {
+  let base; let repo;
+  const makeRepo = (reviewGate = {}) => {
+    base = mkdtempSync(join(tmpdir(), 'ssdd-guard-cfg-'));
+    repo = join(base, 'repo');
+    mkdirSync(join(repo, '.ssdd'), { recursive: true });
+    spawnSync('git', ['-C', repo, 'init', '-q']);
+    writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify({ routing, reviewGate }));
+  };
+  const setConfig = (body) => writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify(body));
+  const routing = [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }];
+  const hook = (payload) => spawnSync(NODE, [HOOK], {
+    input: JSON.stringify({ ...payload, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+  });
+  const bash = (command) => hook({ tool_input: { command } });
+  const edit = (file_path) => hook({ tool_name: 'Write', tool_input: { file_path, content: '{}' } });
+  afterEach(() => { if (base) rmSync(base, { recursive: true, force: true }); base = null; });
+
+  describe('stamping: "hooks"', () => {
+    beforeEach(() => makeRepo({ stamping: 'hooks' }));
+    for (const command of [
+      'node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer,beta-reviewer',
+      "bash -c 'node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer'",
+      'echo {} > .git/ssdd-review-stamp.json',
+      'rm -rf .git/ssdd-review-dispatch',
+    ]) {
+      it(`denies ${JSON.stringify(command)}`, () => {
+        const r = bash(command);
+        assert.strictEqual(r.status, 2, r.stderr);
+        assert.match(r.stderr, /completion stamps/);
+      });
+    }
+    it('the Edit/Write tools are denied on the stamp file', () => {
+      assert.strictEqual(edit(join(repo, '.git/ssdd-review-stamp.json')).status, 2);
+      assert.strictEqual(edit(join(repo, 'src/lib/a.ts')).status, 0);
+    });
+  });
+
+  describe('stamping: "manual" (default)', () => {
+    beforeEach(() => makeRepo());
+    it('still allows --stamp, and the Edit/Write tools are still denied on the stamp file', () => {
+      assert.strictEqual(bash('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 0);
+      assert.strictEqual(hook({ tool_name: 'Edit', tool_input: { file_path: join(repo, '.git/ssdd-review-stamp.json') } }).status, 2);
+    });
+  });
+
+  describe('the guard follows the working-tree config', () => {
+    it('HEAD says "hooks", the unstaged file says "manual": --stamp is allowed', () => {
+      makeRepo({ stamping: 'hooks' });
+      assert.strictEqual(bash('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 2);
+      setConfig({ routing, reviewGate: { stamping: 'manual' } });
+      assert.strictEqual(bash('node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer').status, 0);
+    });
+    it('an unstaged blockNoVerify:false takes effect', () => {
+      makeRepo();
+      assert.strictEqual(bash('git commit -n -m x').status, 2);
+      setConfig({ routing, gitGuard: { blockNoVerify: false } });
+      assert.strictEqual(bash('git commit -n -m x').status, 0);
+    });
+    it('a broken config leaves every default block on', () => {
+      makeRepo();
+      writeFileSync(join(repo, '.ssdd', 'config.json'), '{ nope');
+      assert.strictEqual(bash('git add -A').status, 2);
+      assert.strictEqual(bash('git commit --no-verify').status, 2);
+      assert.strictEqual(bash('git commit --amend').status, 0); // blockAmend is off by default
+    });
   });
 });
