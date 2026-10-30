@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEFAULT_PATHS, DEFAULT_REVIEWED_GENERATION, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { ARM_HOOK, DEFAULT_PATHS, DEFAULT_REVIEWED_GENERATION, dormantHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 import { generationOf } from './model-id.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
 import { idRange, lostText, migratePlan, needsMigration, todoFor } from './plan-migrate.mjs';
@@ -354,10 +354,16 @@ export function collect(repo, { model } = {}) {
   // A session on a newer model generation than the instructions were reviewed
   // for (modelReview.generation) gets one line, after the onboarding steps.
   const reviewed = loaded.cfg.modelReview?.generation ?? DEFAULT_REVIEWED_GENERATION;
+  let at = (loaded.error ? 1 : 0) + onboarding.length;
   if (model && generationOf(model) > reviewed) {
-    warnings.splice((loaded.error ? 1 : 0) + onboarding.length, 0, `! this session runs ${model}, newer than the generation the ` +
+    warnings.splice(at++, 0, `! this session runs ${model}, newer than the generation the ` +
       `instructions were reviewed for (${reviewed}): see SSDD's README → "When a new model generation ships", then set modelReview.generation`);
   }
+  // A dormant pre-commit hook: commits made outside the agent aren't gated.
+  // Said here, once a session, not on every commit. git-guard denies the
+  // fix, so it's the user's to run.
+  const dormant = dormantHook(root);
+  if (dormant) warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant}): ask the user to run ${ARM_HOOK}`);
   return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 
@@ -384,7 +390,14 @@ export function render(state, { cap = null } = {}) {
   const rows = [...state.plans].sort((a, b) => ((ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3)) ||
     a.num.localeCompare(b.num, undefined, { numeric: true }));
   const header = `SSDD · ${rows.length ? plural(rows.length, 'open plan') : 'no open plans'}`;
-  const body = rows.map((r) => `  ${rowLine(r, state.defaultRef)}`);
+  // Capped (session start), the plans flagged as likely stale share one line.
+  const flagged = cap ? rows.filter((r) => r.flagged) : [];
+  const body = (flagged.length > 1 ? rows.filter((r) => !r.flagged) : rows).map((r) => `  ${rowLine(r, state.defaultRef)}`);
+  if (flagged.length > 1) {
+    const nums = flagged.map((r) => r.num);
+    const list = nums.length > 8 ? `${nums.slice(0, 8).join(', ')}, …` : nums.join(', ');
+    body.unshift(`  ${flagged.length} plans IN PROGRESS on ${state.defaultRef}, no branch working on them (${list}) → SHIPPED, BUILT, or still going?`);
+  }
   if (state.unknown.length) {
     const counts = new Map();
     for (const w of state.unknown) counts.set(w, (counts.get(w) ?? 0) + 1);

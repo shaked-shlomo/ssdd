@@ -28,15 +28,20 @@
 // the pre-commit layer is the backstop. Grammar: git-cmd.mjs.
 // Read-only; never mutates.
 import { readFileSync } from 'node:fs';
-import { hookCommand, hookFilePath, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { hookCommand, hookFilePath, hookHarness, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { cluster, collapseGlobalFlags, gitRule, skeleton, splitCommands, stripHeredocs } from './git-cmd.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 
 const payload = parseHookStdin(readFileSync(0, 'utf8'));
 const cmd = hookCommand(payload);
 
+// Cursor's failClosed needs a permission body every time. Claude Code acts on
+// the exit code (2 = block, stderr to the agent), so an allow prints nothing:
+// it would only add to the session's context, as prod-guard's doesn't.
 function finish(code, permission, extra = {}) {
-  process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
+  if (permission !== 'allow' || hookHarness(payload) === 'cursor') {
+    process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
+  }
   process.exit(code);
 }
 function deny(msg) {

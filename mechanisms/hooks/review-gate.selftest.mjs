@@ -906,56 +906,42 @@ describe('the config a commit is judged by', () => {
   });
 });
 
+// v3.3.2: the dormant-hook note moved to session start (work-state.mjs); the
+// gate no longer repeats it on every commit.
 describe('dormant pre-commit hook', () => {
-  const armable = (d) => {
-    mkdirSync(join(d, '.githooks'), { recursive: true });
-    writeFileSync(join(d, '.githooks', 'pre-commit'), '#!/bin/sh\n');
-  };
-  const NOTE = /pre-commit hook is dormant in this repo \(core\.hooksPath is unset\)[\s\S]*git config core\.hooksPath \.githooks/;
-
-  it('a blocked and an allowed commit both carry the note while core.hooksPath is unset', () => {
-    armable(dir);
+  it('neither an allowed nor a blocked commit carries a note', () => {
+    mkdirSync(join(dir, '.githooks'), { recursive: true });
+    writeFileSync(join(dir, '.githooks', 'pre-commit'), '#!/bin/sh\n');
     write(dir, 'docs/x.md', 'x\n');
     const ok = hook(dir, 'git commit -m x');
     assert.strictEqual(ok.status, 0);
-    assert.match(ok.stderr, NOTE);
-    assert.match(JSON.parse(ok.stdout).hookSpecificOutput.additionalContext, NOTE);
+    assert.strictEqual(ok.stdout, '');
+    assert.doesNotMatch(ok.stderr, /dormant/);
     write(dir, 'src/a.ts', 'a\n');
     const blocked = hook(dir, 'git commit -m x');
     assert.strictEqual(blocked.status, 2);
-    assert.match(blocked.stderr, NOTE);
+    assert.doesNotMatch(blocked.stderr, /dormant/);
   });
+});
 
-  it('names a wrong value, and is silent once it points at .githooks', () => {
-    armable(dir);
+// v3.3.2: under Claude Code an allow prints nothing (it would only add to the
+// session's context); Cursor's failClosed still gets {"permission": "allow"}.
+describe('allow output', () => {
+  it('Claude Code: nothing on a non-commit, a clean commit or the bypass', () => {
+    assert.deepEqual([hook(dir, 'git status'), hook(dir, 'ls')].map((r) => [r.status, r.stdout]), [[0, ''], [0, '']]);
+    write(dir, 'docs/x.md', 'x\n');
+    const clean = hook(dir, 'git commit -m x');
+    assert.deepEqual([clean.status, clean.stdout], [0, '']);
     write(dir, 'src/a.ts', 'a\n');
-    git(dir, 'config', 'core.hooksPath', '.git/hooks');
-    assert.match(hook(dir, 'git commit -m x').stderr, /core\.hooksPath is "\.git\/hooks"/);
-    git(dir, 'config', 'core.hooksPath', '.githooks/');
-    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
-    write(dir, 'src/a.ts', 'b\n');
-    git(dir, 'config', 'core.hooksPath', join(dir, '.githooks'));
-    const r = hook(dir, 'git commit -m x');
-    assert.strictEqual(r.status, 2);
-    assert.doesNotMatch(r.stderr, /dormant/);
+    const skip = hook(dir, 'SSDD_REVIEW_SKIP=1 git commit -m x');
+    assert.deepEqual([skip.status, skip.stdout], [0, '']);
   });
-
-  it('an absolute path to another directory\'s pre-commit (a worktree on the main checkout\'s) is not dormant', () => {
-    armable(dir);
-    const other = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-main-')));
-    try {
-      armable(other);
-      write(dir, 'src/a.ts', 'a\n');
-      git(dir, 'config', 'core.hooksPath', join(other, '.githooks'));
-      const r = hook(dir, 'git commit -m x');
-      assert.strictEqual(r.status, 2);
-      assert.doesNotMatch(r.stderr, /dormant/);
-    } finally { rmSync(other, { recursive: true, force: true }); }
-  });
-
-  it('a repo without .githooks/pre-commit gets no note', () => {
-    write(dir, 'src/a.ts', 'a\n');
-    assert.doesNotMatch(hook(dir, 'git commit -m x').stderr, /dormant/);
+  it('Cursor: a permission body every time', () => {
+    for (const c of ['git status', 'git commit -m x']) {
+      const r = cursorHook(dir, c);
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.strictEqual(JSON.parse(r.stdout).permission, 'allow');
+    }
   });
 });
 

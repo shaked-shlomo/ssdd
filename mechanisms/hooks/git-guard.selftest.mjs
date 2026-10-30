@@ -307,6 +307,20 @@ describe('git-guard', () => {
     assert.strictEqual(cursorGuard('git add src/foo.ts', { bom: true }), 0);
   });
 
+  it('an allow prints nothing under Claude Code, a permission body under Cursor', () => {
+    const out = (payload) => spawnSync(NODE, [HOOK], {
+      input: JSON.stringify(payload), cwd: REPO, env: { ...process.env, CLAUDE_PROJECT_DIR: REPO }, encoding: 'utf8',
+    });
+    for (const p of [{ tool_input: { command: 'ls' } }, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' } },
+      { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: join(REPO, 'src/a.ts') } }]) {
+      const r = out(p);
+      assert.deepEqual([r.status, r.stdout], [0, ''], JSON.stringify(p));
+    }
+    const c = out({ command: 'git status', hook_event_name: 'beforeShellExecution' });
+    assert.strictEqual(c.status, 0);
+    assert.strictEqual(JSON.parse(c.stdout).permission, 'allow');
+  });
+
   it('deny JSON includes Cursor snake_case keys and keeps camelCase', () => {
     const { status, stdout } = spawnSync(NODE, [HOOK], {
       input: JSON.stringify({ tool_input: { command: 'git add -A' } }),

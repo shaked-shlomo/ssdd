@@ -444,6 +444,41 @@ describe('session start', () => {
     assert.deepEqual([run(['--session-start']).out, run(['--session-start=cursor']).out], ['', '']);
   });
 
+  it('several stale IN PROGRESS plans share one line', () => {
+    for (const n of ['11', '12', '14d']) put(`.ssdd/plans/${n}-p.md`, planText({ status: 'IN PROGRESS' }));
+    put('.ssdd/plans/20-d.md', planText({ status: 'DRAFT' }));
+    commitAll('three stale');
+    const { out } = run(['--session-start']);
+    assert.match(out, /^ {2}3 plans IN PROGRESS on main, no branch working on them \(11, 12, 14d\) → SHIPPED, BUILT, or still going\?$/m);
+    assert.doesNotMatch(out, /no branch working on it\b/);
+    assert.match(out, /20 d\s+DRAFT/);
+    // The full view keeps a line per plan.
+    assert.equal(run().out.match(/no branch working on it → /g).length, 3);
+  });
+
+  it('one stale plan keeps its own line', () => {
+    put('.ssdd/plans/11-p.md', planText({ status: 'IN PROGRESS' }));
+    commitAll('one stale');
+    assert.match(run(['--session-start']).out, /11 p\s+IN PROGRESS on main, no branch working on it → /);
+  });
+
+  it('names a dormant pre-commit hook, once, at session start', () => {
+    put('.githooks/pre-commit', '#!/bin/sh\n');
+    commitAll('hook');
+    assert.match(run(['--session-start']).out,
+      /^ {2}! the pre-commit hook is dormant \(core\.hooksPath is unset\): ask the user to run git config core\.hooksPath \.githooks$/m);
+    git('config', 'core.hooksPath', '.githooks');
+    assert.doesNotMatch(run(['--session-start']).out, /dormant/);
+    git('config', 'core.hooksPath', '.git/hooks');
+    assert.match(run(['--session-start']).out, /dormant \(core\.hooksPath is "\.git\/hooks"\)/);
+  });
+
+  it('a repo without .githooks/pre-commit gets no dormant line', () => {
+    put('.ssdd/plans/01-a.md', planText({ status: 'DRAFT' }));
+    commitAll('a');
+    assert.doesNotMatch(run(['--session-start']).out, /dormant/);
+  });
+
   it('session-start=cursor prints JSON', () => {
     put('.ssdd/plans/01-a.md', planText({ status: 'DRAFT' }));
     commitAll('a');

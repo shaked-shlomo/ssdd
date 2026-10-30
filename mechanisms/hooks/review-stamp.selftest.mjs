@@ -270,7 +270,7 @@ describe('completion stamps', () => {
     const h = commitHook();
     assert.equal(h.status, 0, h.stderr);
     const out = JSON.parse(h.stdout);
-    assert.equal(out.permission, 'allow');
+    assert.deepEqual(Object.keys(out), ['hookSpecificOutput']); // Claude Code: the note, no permission body
     assert.match(out.hookSpecificOutput.additionalContext, /alpha-reviewer reported 1 finding/);
     assert.match(preCommit().stderr, /triaged/);
   });
