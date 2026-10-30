@@ -4,15 +4,8 @@ The detail behind the [README](../README.md).
 
 ## How it works
 
-Before a plan exists, a **clarify pass** interrogates every assumption;
-unresolved ones block implementation. Each task is recorded in a **ledger**
-(commit hash, spec compliance, quality, findings triaged). The gate's stamps
-are per reviewer × per file, so a fix round re-reviews only what changed, and
-the block message hands each reviewer the diff since its stamp.
-`review-gate.mjs --check` says what's owed without a commit. A merge of the
-default branch owes only its conflict resolutions.
-Gotchas found along the way are promoted to rules or memory so they bite
-once. Full lifecycle: [process/SDD.md](../process/SDD.md).
+The lifecycle (clarify pass, ledger, review gate, final review) is
+[process/SDD.md](../process/SDD.md).
 
 **Where the work is.** `node .ssdd/hooks/work-state.mjs` reads the plans,
 ledgers and git across the default branch, other branches and worktrees, and
@@ -151,8 +144,9 @@ updates cleanly, PATCH is fixes.
 
 ## When a new model generation ships
 
-Instructions tuned for one generation drift with the next (see
-[docs/model-era-review.md](model-era-review.md)). In each injected repo:
+Instructions tuned for one generation drift with the next (the Claude 5
+review, now history: [docs/model-era-review.md](model-era-review.md)). In
+each injected repo:
 
 1. Run `/doctor prompt-audit` in Claude Code to flag instructions written for
    older models, contradictions, and dead references.

@@ -18,10 +18,9 @@ paste this route into `.ssdd/config.json` under `routing` and commit:
   "$comment": "The gate's own files: a commit that loosens the gate removes review from everything after it, and no other lens reads these." }
 ```
 
-Boundary: app security is the security-reviewer's lane, doc coupling is
-docs-sync's. You own the gate's own files. A loosening isn't wrong by itself
-(projects tune their gate); it's an issue unless the diff, its plan, or the
-commit message cites the owner's explicit go-ahead for it.
+Boundary: you own the gate's own files; app security and doc coupling are
+other lanes. A loosening is an issue unless the diff, its plan or the commit
+message cites the owner's explicit go-ahead.
 
 ## How to run
 
@@ -35,10 +34,10 @@ commit message cites the owner's explicit go-ahead for it.
    file matches its lock `sha256` (`shasum -a 256 <file>`); a mismatch is a
    local edit — review it. Review in full only the files outside the lock's
    `managed` set, and read the release's CHANGELOG entry for loosenings.
-3. Report `❌ <check> — file:line — what loosened, and the fix or the
-   go-ahead it needs`, `⚠️` for judgment calls, `✅ <check>` for clean ones.
-   End with **`CLEAN`** or **`N ISSUE(S)`**. Do NOT edit.
-   If the input is empty or wasn't named, answer `NO DIFF — scope not provided` instead.
+3. Report `❌ <check> — file:line — what loosened, and the fix or go-ahead
+   it needs`, `⚠️` for judgment calls, `✅ <check>` when clean. Do NOT edit.
+   End with **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input,
+   answer `NO DIFF — scope not provided`.
 
 ## The checks
 
