@@ -1,6 +1,7 @@
 ---
 name: new-reviewer
 description: Proposes project-specific SSDD review lenses from the stack, uncovered code and bug classes that recur in the ledgers, then scaffolds an approved one with its route and symlink. Use for "add a reviewer", "what reviewers do we need", or after a bug class repeats.
+disable-model-invocation: true
 ---
 
 # New reviewer
