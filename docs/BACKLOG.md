@@ -18,9 +18,10 @@ that incident.
   Trimmed 2026-10-23 to the re-review list, `[pre-existing]` and the round
   cap; blocking on open findings and the commit-message record are
   deferred in its Out list.
-- **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
-  `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
-  ships before the migrations is its Open 1.
+- **v3.5 — one backlog** (`SPEC.md` → v3.5, clarified 2026-10-30; plan
+  `docs/superpowers/plans/2026-10-30-v3-5-backlog.md`): the standard
+  `BACKLOG.md` and `/migrate-backlog`, split from v3.4. It ships after
+  v3.4 and before the migrations (owner, 2026-10-30).
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
