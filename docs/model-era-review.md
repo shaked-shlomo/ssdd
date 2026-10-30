@@ -1,6 +1,6 @@
 # SSDD for Claude 5-generation models — review and proposal
 
-**Date:** 2026-10-05 · **Status:** partly applied. **v2.2.0** applied the
+**Date:** 2026-10-05 · **Status:** history (applied v2.2–v2.6; don't act on it). **v2.2.0** applied the
 framework-side Remove/Change/Add rows: shorter descriptions, the gate
 procedure in one place, merged evidence principle, `effort:` frontmatter,
 "reviews at the gate" line, prompt audit and the new-model checklist.
