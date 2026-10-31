@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { OBSOLETE_KEYS, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { OBSOLETE_KEYS, dormantHook, foreignHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 
 let dir;
 function git(...args) {
@@ -289,5 +289,53 @@ describe('skillsAudited', () => {
     }
     put('{"version":1,"sources":{},"audited":"2026-10-18"}');
     assert.equal(skillsAudited(dir), '2026-10-18');
+  });
+});
+
+describe('dormantHook: armed means the pre-commit runs the gate', () => {
+  const GATE = 'node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit';
+  const preCommit = (where, body) => {
+    mkdirSync(join(where, '.githooks'), { recursive: true });
+    writeFileSync(join(where, '.githooks', 'pre-commit'), body);
+    chmodSync(join(where, '.githooks', 'pre-commit'), 0o755);
+  };
+
+  it('a pre-commit that does not call the gate is dormant', () => {
+    preCommit(dir, '#!/bin/sh\necho hi\n');
+    git('config', 'core.hooksPath', '.githooks');
+    assert.equal(dormantHook(dir), `its pre-commit (${join(dir, '.githooks', 'pre-commit')}) doesn't run the review gate`);
+    assert.equal(foreignHook(dir), '', 'a pre-commit without the gate is not a foreign one that "still runs"');
+  });
+
+  it('a pre-commit that names the gate without --pre-commit is dormant', () => {
+    preCommit(dir, '#!/bin/sh\nnode "$ROOT/.ssdd/hooks/review-gate.mjs" --check\n');
+    git('config', 'core.hooksPath', '.githooks');
+    assert.match(dormantHook(dir), /doesn't run the review gate/);
+  });
+
+  it('a customized pre-commit that calls the gate is armed', () => {
+    preCommit(dir, `#!/bin/sh\nROOT="$(git rev-parse --show-toplevel)"\nnpm run lint || exit 1\n${GATE} || exit 1\necho done\n`);
+    git('config', 'core.hooksPath', '.githooks');
+    assert.equal(dormantHook(dir), '');
+  });
+
+  it('an unset core.hooksPath is still dormant, with its own wording', () => {
+    preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+    assert.equal(dormantHook(dir), 'core.hooksPath is unset');
+  });
+
+  it('an absolute path to another checkout\'s .githooks that calls the gate is armed', () => {
+    const other = mkdtempSync(join(tmpdir(), 'ssdd-cfg-other-'));
+    try {
+      preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+      preCommit(other, `#!/bin/sh\n# shared\n${GATE}\n`);
+      git('config', 'core.hooksPath', join(other, '.githooks'));
+      assert.equal(dormantHook(dir), '');
+      assert.equal(foreignHook(dir), join(other, '.githooks'));
+      // The same path, with a pre-commit that skips the gate, is dormant.
+      preCommit(other, '#!/bin/sh\nexit 0\n');
+      assert.equal(dormantHook(dir), `its pre-commit (${join(other, '.githooks', 'pre-commit')}) doesn't run the review gate`);
+      assert.equal(foreignHook(dir), '');
+    } finally { rmSync(other, { recursive: true, force: true }); }
   });
 });

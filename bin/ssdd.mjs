@@ -599,6 +599,8 @@ function update(target) {
   if (steps.length) console.log(`\n── Upgrade steps (manual), from the CHANGELOG:\n${steps.join('\n\n')}`);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
+  const wiring = [...obsoleteLines(target), ...wiringLines(target, newTree, adapters)];
+  if (wiring.length) console.log(`\n${wiring.join('\n')}`);
   console.log(`\nlocked ${LOCK} @ v${version}. Review with: git -C '${target}' diff`);
   if (rows.conflict.length || rows.sidecar.length) process.exit(1);
 }
@@ -694,6 +696,73 @@ function skillsDrift(target) {
   }
 }
 
+// ── hook wiring: what a project's .claude/settings.json lacks or no longer needs ─
+// Report only: the file is project-owned, so nothing here rewrites it.
+// An entry is { event, matcher, script }; `script` is the file name of an
+// .ssdd/hooks/*.mjs a hook command runs.
+const SCRIPT_IN = /\.ssdd\/hooks\/([\w.-]+\.mjs)(?![\w.-])/g;
+function hookEntries(json) {
+  const out = [];
+  const hooks = json && typeof json === 'object' && json.hooks && typeof json.hooks === 'object' ? json.hooks : {};
+  for (const [event, groups] of Object.entries(hooks)) {
+    for (const g of Array.isArray(groups) ? groups : []) {
+      const matcher = typeof g?.matcher === 'string' ? g.matcher : '';
+      for (const h of Array.isArray(g?.hooks) ? g.hooks : []) {
+        if (typeof h?.command !== 'string') continue;
+        out.push({ event, matcher, command: h.command });
+      }
+    }
+  }
+  return out;
+}
+const alternatives = (m) => m.split('|').map((a) => a.trim()).filter(Boolean);
+const wild = (m) => m.trim() === '' || m.trim() === '*';
+// `wide` covers `narrow`: it is empty or `*`, or every `|` alternative of
+// `narrow` is among its own.
+const covers = (wide, narrow) => wild(wide) || (!wild(narrow) && alternatives(narrow).every((a) => alternatives(wide).includes(a)));
+const names = (command, script) => new RegExp(`(?:^|[\\s/"'=])${script.replace(/\./g, '\\.')}(?![\\w.-])`).test(command);
+
+function wiringReport(projectJson, templateJson) {
+  const project = hookEntries(projectJson);
+  const template = [];
+  for (const e of hookEntries(templateJson)) {
+    for (const m of e.command.matchAll(SCRIPT_IN)) template.push({ event: e.event, matcher: e.matcher, script: m[1] });
+  }
+  const missing = template.filter((t) => !project.some((p) => p.event === t.event && covers(p.matcher, t.matcher) && names(p.command, t.script)));
+  const stale = [];
+  for (const p of project) {
+    for (const m of p.command.matchAll(SCRIPT_IN)) {
+      const entry = { event: p.event, matcher: p.matcher, script: m[1] };
+      const wanted = template.some((t) => t.event === p.event && t.script === m[1] && (covers(p.matcher, t.matcher) || covers(t.matcher, p.matcher)));
+      if (!wanted && !stale.some((s) => s.event === entry.event && s.matcher === entry.matcher && s.script === entry.script)) stale.push(entry);
+    }
+  }
+  return { missing, stale };
+}
+
+// The wiring lines for `status` (the template at the lock's commit) and
+// `update` (the new tree's): only for an adapter whose wiring is seeded
+// (Claude Code's .claude/settings.json), and nothing when both lists are empty.
+function wiringLines(target, tree, adapters) {
+  if (!adapters.includes('claude-code')) return [];
+  const read1 = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } };
+  const template = read1(join(tree, 'adapters/claude-code/settings-hooks.json'));
+  const project = read1(join(target, '.claude/settings.json'));
+  if (!template || !project) return [];
+  const { missing, stale } = wiringReport(project, template);
+  const row = (e) => `  ${e.event}${e.matcher ? ` ${e.matcher}` : ''} ${e.script}`;
+  const lines = [];
+  if (missing.length) lines.push(`hook entries missing from .claude/settings.json (${missing.length}):`, ...missing.map(row));
+  if (stale.length) lines.push(`hook entries the template dropped (safe to remove) (${stale.length}):`, ...stale.map(row));
+  return lines;
+}
+
+// Config keys the loader now ignores. Nothing rewrites the project's config.
+function obsoleteLines(target) {
+  const obsolete = loadSsddConfig(target)?.obsolete ?? [];
+  return obsolete.length ? [`obsolete config keys (ignored): ${obsolete.join(', ')}`] : [];
+}
+
 // ── status: is the gate armed? ───────────────────────────────────────────────
 // A broken config blocks every commit, and a dormant pre-commit hook never
 // runs. Informational only.
@@ -750,6 +819,8 @@ async function status(target) {
     }
   }
   gateWarnings(target);
+  for (const l of obsoleteLines(target)) console.log(l);
+  for (const l of wiringLines(target, exportTree(lock.commit), lock.adapters)) console.log(l);
   for (const l of onboarding(target)) console.log(l);
   if (opt.skills) skillsDrift(target);
   if (conflicted.length || sidecars.length) process.exit(1);

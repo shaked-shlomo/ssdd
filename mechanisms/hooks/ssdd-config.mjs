@@ -180,28 +180,37 @@ export function loadSsddConfig(repo) {
   return { root, cfg, obsolete, error: `${PATH}: ${errors.join('; ')}`, sectionErrors };
 }
 
-// The portable pre-commit layer runs only while core.hooksPath points at a
-// directory with a pre-commit (git then ignores .git/hooks entirely).
+// The portable pre-commit layer is armed when core.hooksPath points at a
+// directory whose pre-commit runs the review gate (git then ignores
+// .git/hooks entirely). A pre-commit that never calls the gate is as dormant
+// as an unset core.hooksPath.
 // → null when the repo has no .githooks/pre-commit, else
 //   { value, own: it resolves to this checkout's .githooks,
-//     runs: the directory it resolves to has a pre-commit }
+//     file: the pre-commit it resolves to ('' when unset),
+//     exists: that file exists, runs: it calls the review gate }
+const GATE_CALL = /review-gate\.mjs\b[^\n]*--pre-commit/;
 function hooksPath(root) {
   if (!existsSync(join(root, '.githooks', 'pre-commit'))) return null;
   let value = '';
   try { value = gitText(root, 'config', '--get', 'core.hooksPath').trim(); } catch { /* unset */ }
-  if (!value) return { value, own: false, runs: false };
+  if (!value) return { value, own: false, file: '', exists: false, runs: false };
   const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
   const abs = resolve(root, value.replace(/^~(?=\/|$)/, homedir()));
   const own = real(abs) === real(join(root, '.githooks'));
-  return { value, own, runs: own || existsSync(join(abs, 'pre-commit')) };
+  const file = join(abs, 'pre-commit');
+  const exists = own || existsSync(file);
+  let runs = false;
+  try { runs = exists && GATE_CALL.test(readFileSync(file, 'utf8')); } catch { /* unreadable: not armed */ }
+  return { value, own, file, exists, runs };
 }
 
 // Why the pre-commit layer is dormant ("core.hooksPath is unset"), or '' when
-// it runs or the repo has no .githooks/pre-commit. git-guard denies writes to
-// core.hooksPath, so the fix is the user's to run.
+// it runs the gate or the repo has no .githooks/pre-commit. git-guard denies
+// writes to core.hooksPath, so the fix is the user's to run.
 export function dormantHook(root) {
   const h = hooksPath(root);
   if (!h || h.runs) return '';
+  if (h.exists) return `its pre-commit (${h.file}) doesn't run the review gate`;
   return h.value ? `core.hooksPath is "${h.value}"` : 'core.hooksPath is unset';
 }
 

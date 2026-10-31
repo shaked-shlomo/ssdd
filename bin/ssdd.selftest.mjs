@@ -51,7 +51,7 @@ function buildSource() {
   put(src, 'reviewers/alpha-reviewer.md', lines(10, 'alpha'));
   put(src, 'reviewers/domain-reviewer-template.md', 'template\n');
   put(src, 'mechanisms/hooks/review-gate.mjs', 'gate v1\n');
-  put(src, 'mechanisms/hooks/pre-commit', '#!/bin/sh\nexit 0\n', '755');
+  put(src, 'mechanisms/hooks/pre-commit', '#!/bin/sh\n# names the gate so the hook counts as armed; the fake gate is not runnable\n: node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit\n', '755');
   put(src, 'mechanisms/drift-audit.md', 'audit\n');
   put(src, 'process/old.md', 'old\n');
   put(src, 'mechanisms/config.example.json', '{\n  "routing": []\n}\n');
@@ -1130,5 +1130,148 @@ describe('optional parts', () => {
     commitAll(tgt, 'ssdd');
     assert.equal(ssdd('update', tgt, '--with', 'drift-audit').code, 0);
     assert.match(ssdd('status', tgt).out, /^with: drift-audit$/m);
+  });
+});
+
+describe('status and update report the wiring a project lacks or no longer needs', () => {
+  const BRANCH = join(dirname(SCRIPT), '..', 'adapters', 'claude-code', 'settings-hooks.json');
+  const STALE = [
+    'PreToolUse Bash review-gate.mjs',
+    'PreToolUse Edit|Write|MultiEdit|NotebookEdit git-guard.mjs',
+    'SubagentStart review-gate.mjs',
+    'SubagentStop review-gate.mjs',
+  ];
+  // 3.3.2's template: the branch's plus the four entries the gate moved out of.
+  function oldTemplate() {
+    const t = JSON.parse(readFileSync(BRANCH, 'utf8'));
+    const cmd = (script, extra = {}) => ({ type: 'command', ...extra, command: `node "$CLAUDE_PROJECT_DIR/.ssdd/hooks/${script}"` });
+    t.hooks.PreToolUse[0].hooks.splice(1, 0, cmd('review-gate.mjs', { if: 'Bash(git *)' }));
+    t.hooks.PreToolUse.push({ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [cmd('git-guard.mjs')] });
+    t.hooks.SubagentStart = [{ hooks: [cmd('review-gate.mjs')] }];
+    t.hooks.SubagentStop = [{ hooks: [cmd('review-gate.mjs')] }];
+    return JSON.stringify(t, null, 2) + '\n';
+  }
+  const settings = () => JSON.parse(get('.claude/settings.json'));
+  const section = (out, title) => {
+    const m = out.match(new RegExp(`^${title}.*\\n((?: {2}.*\\n?)+)`, 'm'));
+    return m ? m[1].trim().split('\n').map((l) => l.trim()) : null;
+  };
+  const DROPPED = 'hook entries the template dropped \\(safe to remove\\)';
+  const MISSING = 'hook entries missing from \\.claude/settings\\.json';
+
+  beforeEach(() => {
+    put(src, 'adapters/claude-code/settings-hooks.json', oldTemplate());
+    commitAll(src, 'old wiring');
+    git(src, 'tag', 'wiring-old');
+    put(src, 'adapters/claude-code/settings-hooks.json', readFileSync(BRANCH, 'utf8'));
+    commitAll(src, 'new wiring');
+    git(src, 'tag', 'wiring-new');
+    assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'wiring-old').code, 0);
+    commitAll(tgt, 'install ssdd');
+  });
+
+  it('update lists the entries the template dropped, and status says the same; nothing is rewritten', () => {
+    const before = get('.claude/settings.json');
+    assert.match(before, /review-gate\.mjs/);
+    const r = ssdd('update', tgt, '--to', 'wiring-new');
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(section(r.out, DROPPED), STALE);
+    assert.doesNotMatch(r.out, new RegExp(MISSING));
+    assert.equal(get('.claude/settings.json'), before, 'the project file is never rewritten');
+    const s = ssdd('status', tgt);
+    assert.equal(s.code, 0, s.out);
+    assert.deepEqual(section(s.out, DROPPED), STALE);
+    assert.doesNotMatch(s.out, new RegExp(MISSING));
+  });
+
+  it('status compares with the template at the lock\'s commit', () => {
+    const s = ssdd('status', tgt);
+    assert.doesNotMatch(s.out, /hook entries/, 'locked at the old template, the project matches it');
+  });
+
+  it('prints nothing when the project has what the template has and no more', () => {
+    rmSync(join(tgt, '.claude/settings.json'));
+    put(tgt, '.claude/settings.json', readFileSync(BRANCH, 'utf8'));
+    for (const r of [ssdd('update', tgt, '--to', 'wiring-new'), ssdd('status', tgt)]) {
+      assert.equal(r.code, 0, r.out);
+      assert.doesNotMatch(r.out, /hook entries/);
+    }
+  });
+
+  it('a template entry the project lacks is missing, with its event and script', () => {
+    ssdd('update', tgt, '--to', 'wiring-new');
+    const cfg = settings();
+    delete cfg.hooks.SessionStart;
+    put(tgt, '.claude/settings.json', JSON.stringify(cfg, null, 2) + '\n');
+    const s = ssdd('status', tgt);
+    assert.deepEqual(section(s.out, MISSING), ['SessionStart work-state.mjs']);
+    assert.deepEqual(section(s.out, DROPPED), STALE);
+  });
+
+  it('matches by event, matcher and script file name: another path, an env prefix or a wider matcher still match', () => {
+    ssdd('update', tgt, '--to', 'wiring-new');
+    const cfg = settings();
+    const bash = cfg.hooks.PreToolUse[0];
+    bash.matcher = 'Bash|Shell';
+    bash.hooks[0].command = 'env X=1 node /abs/path/.ssdd/hooks/git-guard.mjs';
+    cfg.hooks.PostToolUse[0].matcher = '*';
+    cfg.hooks.PostToolUse[0].hooks[0].if = 'Edit(src/**)';
+    cfg.hooks.SessionStart[0].hooks[0].command = 'node .ssdd/hooks/work-state.mjs --session-start';
+    put(tgt, '.claude/settings.json', JSON.stringify(cfg, null, 2) + '\n');
+    const s = ssdd('status', tgt);
+    assert.equal(section(s.out, MISSING), null, s.out);
+    // The stale entries carry the project's own matcher.
+    assert.deepEqual(section(s.out, DROPPED), ['PreToolUse Bash|Shell review-gate.mjs', ...STALE.slice(1)]);
+  });
+
+  it('a matcher narrower than the template\'s does not match; a script elsewhere on the event does not either', () => {
+    ssdd('update', tgt, '--to', 'wiring-new');
+    const cfg = settings();
+    cfg.hooks.PostToolUse[0].matcher = 'Write';
+    cfg.hooks.PreToolUse[0].hooks = cfg.hooks.PreToolUse[0].hooks.filter((h) => !/git-guard/.test(h.command));
+    put(tgt, '.claude/settings.json', JSON.stringify(cfg, null, 2) + '\n');
+    const s = ssdd('status', tgt);
+    assert.deepEqual(section(s.out, MISSING), ['PreToolUse Bash git-guard.mjs', 'PostToolUse Edit|Write convention-lint.mjs']);
+  });
+
+  it('a project without .claude/settings.json, or an adapter without seeded wiring, prints nothing', () => {
+    ssdd('update', tgt, '--to', 'wiring-new');
+    rmSync(join(tgt, '.claude/settings.json'));
+    assert.doesNotMatch(ssdd('status', tgt).out, /hook entries/);
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(root);
+    buildSource();
+    initRepo(tgt);
+    put(tgt, 'README.md', 'app\n');
+    commitAll(tgt, 'init');
+    put(tgt, '.claude/settings.json', oldTemplate());
+    assert.equal(ssdd('install', tgt, 'cursor', '--ref', 'v2.0.0').code, 0);
+    assert.doesNotMatch(ssdd('status', tgt).out, /hook entries/);
+  });
+
+  it('status and update name obsolete config keys, and leave the config alone', () => {
+    const cfg = '{ "gitGuard": { "blockAmend": true } }\n';
+    put(tgt, '.ssdd/config.json', cfg);
+    const r = ssdd('update', tgt, '--to', 'wiring-new');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^obsolete config keys \(ignored\): gitGuard\.blockAmend$/m);
+    const s = ssdd('status', tgt);
+    assert.match(s.out, /^obsolete config keys \(ignored\): gitGuard\.blockAmend$/m);
+    assert.equal(get('.ssdd/config.json'), cfg);
+  });
+
+  it('no obsolete line for a config without the keys', () => {
+    put(tgt, '.ssdd/config.json', '{ "routing": [] }\n');
+    assert.doesNotMatch(ssdd('status', tgt).out, /obsolete config keys/);
+  });
+});
+
+describe('status: armed means the pre-commit runs the gate', () => {
+  it('a pre-commit that does not call the gate is dormant', () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v2.0.0').code, 0);
+    commitAll(tgt, 'ssdd');
+    put(tgt, '.githooks/pre-commit', '#!/bin/sh\necho hi\n', '755');
+    const r = ssdd('status', tgt);
+    assert.match(r.out, /WARNING: the pre-commit hook is dormant \(its pre-commit \(.*\.githooks\/pre-commit\) doesn't run the review gate\)/);
   });
 });
