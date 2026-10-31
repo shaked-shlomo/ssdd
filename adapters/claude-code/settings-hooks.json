@@ -32,15 +32,6 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/prod-guard.mjs\""
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.ssdd/hooks/git-guard.mjs\""
-          }
-        ]
       }
     ],
     "PostToolUse": [

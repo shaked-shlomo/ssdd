@@ -679,6 +679,13 @@ describe('session-start wiring in the adapter templates', () => {
     assert.deepEqual(cursor.beforeMCPExecution, [guard]);
   });
 
+  it('the Claude Code template wires git-guard on Bash only: no Edit|Write matcher', () => {
+    const claude = JSON.parse(readFileSync(join(ADAPTERS, 'claude-code', 'settings-hooks.json'), 'utf8')).hooks.PreToolUse;
+    const guarded = claude.filter((g) => g.hooks.some((h) => h.command.includes('git-guard.mjs'))).map((g) => g.matcher);
+    assert.deepEqual(guarded, ['Bash']);
+    assert.ok(!claude.some((g) => /Edit|Write|NotebookEdit/.test(g.matcher ?? '')), 'no PreToolUse matcher on the edit tools');
+  });
+
   it('ssdd.mdc and the AGENTS template carry the run-the-script line', () => {
     assert.ok(readFileSync(join(ADAPTERS, 'cursor', 'rules', 'ssdd.mdc'), 'utf8').includes(LINE));
     assert.ok(readFileSync(join(ADAPTERS, 'generic', 'AGENTS.md'), 'utf8').includes(LINE));
