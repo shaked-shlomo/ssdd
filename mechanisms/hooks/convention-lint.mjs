@@ -44,8 +44,9 @@ const git = (...args) =>
 
 const PREFIX = '[ssdd-convention-lint] ';
 const claude = stdinMode && hookHarness(payload) === 'claude';
-// Findings, or a config that can't be used: a warning at edit time (and at
-// commit, for findings), exit 1 on the command line.
+// Findings, or a config that can't be used: a warning at edit time. On the
+// command line a finding exits 1, except under `--staged` (commit time), where
+// it exits 0; a config that can't be used exits 1 under `--staged` too.
 function fail(message, exitCode) {
   if (claude) {
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } }) + '\n');
@@ -56,8 +57,9 @@ function fail(message, exitCode) {
 }
 
 // No repo or no config → nothing to lint (exit 0). A config that isn't valid
-// JSON, or a rule whose regex doesn't compile, is reported as a finding: an
-// agent that just wrote it hears at once, and `--staged` fails the commit.
+// JSON, or a rule whose regex doesn't compile, is reported (not a finding): an
+// agent that just wrote it hears at once; exit 1 under `--staged`, failCode
+// otherwise.
 const failCode = stdinMode ? 2 : 1;
 let root, text, rules;
 try { root = git('rev-parse', '--show-toplevel').trim(); } catch { process.exit(0); }
