@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { OBSOLETE_KEYS, dormantHook, foreignHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { OBSOLETE_KEYS, dormantHook, dormantHookDetail, foreignHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 
 let dir;
 function git(...args) {
@@ -311,6 +311,26 @@ describe('dormantHook: armed means the pre-commit runs the gate', () => {
     preCommit(dir, '#!/bin/sh\nnode "$ROOT/.ssdd/hooks/review-gate.mjs" --check\n');
     git('config', 'core.hooksPath', '.githooks');
     assert.match(dormantHook(dir), /doesn't run the review gate/);
+  });
+
+  it('a pre-commit whose only gate line is commented out is dormant', () => {
+    preCommit(dir, `#!/bin/sh\n# ${GATE}\n  #${GATE}\n`);
+    git('config', 'core.hooksPath', '.githooks');
+    assert.match(dormantHook(dir), /doesn't run the review gate/);
+  });
+
+  it('dormantHookDetail names the fix: the arming command, or the line to add', () => {
+    preCommit(dir, '#!/bin/sh\necho hi\n');
+    assert.deepEqual(dormantHookDetail(dir), { reason: 'core.hooksPath is unset', command: 'git config core.hooksPath .githooks' });
+    git('config', 'core.hooksPath', '.githooks');
+    const file = join(dir, '.githooks', 'pre-commit');
+    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE, managed: false });
+    assert.equal(dormantHookDetail(dir).command, '');
+    putConfig('{}');
+    writeFileSync(join(dir, '.ssdd', 'ssdd.lock.json'), JSON.stringify({ managed: { '.githooks/pre-commit': { src: 'x', sha256: 'y' } } }));
+    assert.equal(dormantHookDetail(dir).edit.managed, true);
+    preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+    assert.equal(dormantHookDetail(dir), null);
   });
 
   it('a customized pre-commit that calls the gate is armed', () => {

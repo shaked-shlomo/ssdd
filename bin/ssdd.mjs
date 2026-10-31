@@ -42,7 +42,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ARM_HOOK, DEFAULT_PATHS, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
+import { ARM_HOOK, DEFAULT_PATHS, dormantHookDetail, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
@@ -769,9 +769,14 @@ function obsoleteLines(target) {
 function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
-  const dormant = dormantHook(target);
+  const dormant = dormantHookDetail(target);
   const orUpdate = hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
-  if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
+  if (dormant?.edit) {
+    console.log(`WARNING: the pre-commit hook is dormant (${dormant.reason}) — add ${dormant.edit.line} to ${dormant.edit.file}` +
+      `${dormant.edit.managed ? `, or rerun: update '${target}' (it restores SSDD's copy)` : ''}`);
+  } else if (dormant) {
+    console.log(`WARNING: the pre-commit hook is dormant (${dormant.reason}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
+  }
   const ledgerRule = ledgerIgnoreRule(target, '.superpowers/sdd/_/progress.md');
   if (ledgerRule) console.log(`WARNING: git ignores Superpowers ledgers here (${ledgerRule}) — remove that rule so .superpowers/sdd/*/progress.md is tracked`);
   const foreign = foreignHook(target);
@@ -820,7 +825,14 @@ async function status(target) {
   }
   gateWarnings(target);
   for (const l of obsoleteLines(target)) console.log(l);
-  for (const l of wiringLines(target, exportTree(lock.commit), lock.adapters)) console.log(l);
+  if (lock.adapters.includes('claude-code')) {
+    // The template at the lock's commit; a commit this source lacks can't be compared.
+    if (tryGit(SRC, 'rev-parse', '--verify', `${lock.commit}^{commit}`)) {
+      for (const l of wiringLines(target, exportTree(lock.commit), lock.adapters)) console.log(l);
+    } else {
+      console.log(`NOTE: locked commit ${lock.commit.slice(0, 7)} is not in ${SRC}, so the hook wiring wasn't compared — git -C ${SRC} fetch --tags`);
+    }
+  }
   for (const l of onboarding(target)) console.log(l);
   if (opt.skills) skillsDrift(target);
   if (conflicted.length || sidecars.length) process.exit(1);

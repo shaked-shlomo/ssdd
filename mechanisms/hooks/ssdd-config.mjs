@@ -200,18 +200,32 @@ function hooksPath(root) {
   const file = join(abs, 'pre-commit');
   const exists = own || existsSync(file);
   let runs = false;
-  try { runs = exists && GATE_CALL.test(readFileSync(file, 'utf8')); } catch { /* unreadable: not armed */ }
+  // A commented-out line doesn't run.
+  try { runs = exists && readFileSync(file, 'utf8').split('\n').some((l) => !/^\s*#/.test(l) && GATE_CALL.test(l)); } catch { /* unreadable: not armed */ }
   return { value, own, file, exists, runs };
 }
 
-// Why the pre-commit layer is dormant ("core.hooksPath is unset"), or '' when
-// it runs the gate or the repo has no .githooks/pre-commit. git-guard denies
+// Why the pre-commit layer is dormant, and how to fix it, or null when it
+// runs the gate or the repo has no .githooks/pre-commit. git-guard denies
 // writes to core.hooksPath, so the fix is the user's to run.
-export function dormantHook(root) {
+// → { reason: "core.hooksPath is unset" | `core.hooksPath is "<v>"` |
+//             "its pre-commit (<file>) doesn't run the review gate",
+//     command: the git command that arms it ('' when the fix is an edit),
+//     edit: { file, line, managed } when the pre-commit exists but lacks the
+//           gate call; managed: it is SSDD's copy, which `update` restores }
+export const GATE_LINE = 'node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit';
+export function dormantHookDetail(root) {
   const h = hooksPath(root);
-  if (!h || h.runs) return '';
-  if (h.exists) return `its pre-commit (${h.file}) doesn't run the review gate`;
-  return h.value ? `core.hooksPath is "${h.value}"` : 'core.hooksPath is unset';
+  if (!h || h.runs) return null;
+  if (!h.exists) return { reason: h.value ? `core.hooksPath is "${h.value}"` : 'core.hooksPath is unset', command: ARM_HOOK };
+  let managed = false;
+  try { managed = h.own && !!JSON.parse(readFileSync(join(root, '.ssdd', 'ssdd.lock.json'), 'utf8'))?.managed?.['.githooks/pre-commit']; } catch { /* no lock */ }
+  return { reason: `its pre-commit (${h.file}) doesn't run the review gate`, command: '', edit: { file: h.file, line: GATE_LINE, managed } };
+}
+
+// The reason alone, '' when nothing is dormant.
+export function dormantHook(root) {
+  return dormantHookDetail(root)?.reason ?? '';
 }
 
 // core.hooksPath when it resolves to another directory's pre-commit, else ''.

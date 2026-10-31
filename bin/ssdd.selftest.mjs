@@ -1272,6 +1272,29 @@ describe('status: armed means the pre-commit runs the gate', () => {
     commitAll(tgt, 'ssdd');
     put(tgt, '.githooks/pre-commit', '#!/bin/sh\necho hi\n', '755');
     const r = ssdd('status', tgt);
-    assert.match(r.out, /WARNING: the pre-commit hook is dormant \(its pre-commit \(.*\.githooks\/pre-commit\) doesn't run the review gate\)/);
+    // core.hooksPath is already .githooks, so the fix is an edit, not the arming command.
+    assert.match(r.out, /^WARNING: the pre-commit hook is dormant \(its pre-commit \((.*\.githooks\/pre-commit)\) doesn't run the review gate\) — add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to \1, or rerun: update '.*' \(it restores SSDD's copy\)$/m);
+    assert.doesNotMatch(r.out, /— run: git/);
+    // A copy SSDD doesn't manage gets no update hint.
+    const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
+    delete lock.managed['.githooks/pre-commit'];
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(lock));
+    assert.match(ssdd('status', tgt).out, /^WARNING: .* to .*\.githooks\/pre-commit$/m);
+  });
+
+  it('a lock whose commit is not in the source: status says so, compares nothing, exits as before', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'v2.0.0').code, 0);
+    commitAll(tgt, 'ssdd');
+    const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
+    lock.commit = 'deadbeef'.repeat(5);
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(lock));
+    const r = ssdd('status', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^NOTE: locked commit deadbee is not in .*, so the hook wiring wasn't compared — git -C .* fetch --tags$/m);
+    assert.doesNotMatch(r.out, /hook entries|fatal|at .*\.mjs:\d+|Error/);
+    // A cursor-only lock never reaches for the template.
+    lock.adapters = ['cursor'];
+    put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(lock));
+    assert.doesNotMatch(ssdd('status', tgt).out, /NOTE: locked commit|fatal/);
   });
 });

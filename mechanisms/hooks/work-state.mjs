@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ARM_HOOK, DEFAULT_PATHS, dormantHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { DEFAULT_PATHS, dormantHookDetail, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
 import { idRange, lostText, migratePlan, needsMigration, todoFor } from './plan-migrate.mjs';
 
@@ -352,9 +352,14 @@ export function collect(repo) {
   // A dormant pre-commit hook: commits made outside the agent aren't gated.
   // Said here, once a session, not on every commit. git-guard denies the
   // fix, so it's the user's to run.
-  const dormant = dormantHook(root);
+  const dormant = dormantHookDetail(root);
   const at = (loaded.error ? 1 : 0) + onboarding.length;
-  if (dormant) warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant}): ask the user to run ${ARM_HOOK}`);
+  if (dormant) {
+    const fix = dormant.edit
+      ? `add ${dormant.edit.line} to ${dormant.edit.file}${dormant.edit.managed ? ' (or rerun the ssdd update, which restores its copy)' : ''}`
+      : `run ${dormant.command}`;
+    warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant.reason}): ask the user to ${fix}`);
+  }
   return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 

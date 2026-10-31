@@ -478,7 +478,8 @@ describe('session start', () => {
     commitAll('hook');
     git('config', 'core.hooksPath', '.githooks');
     assert.match(run(['--session-start']).out,
-      /^ {2}! the pre-commit hook is dormant \(its pre-commit \(.*\.githooks\/pre-commit\) doesn't run the review gate\): ask the user to run git config core\.hooksPath \.githooks$/m);
+      /^ {2}! the pre-commit hook is dormant \(its pre-commit \(.*\.githooks\/pre-commit\) doesn't run the review gate\): ask the user to add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to .*\.githooks\/pre-commit$/m);
+    assert.doesNotMatch(run(['--session-start']).out, /ask the user to run git config/);
     put('.githooks/pre-commit', '#!/bin/sh\necho hi\nnode "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit\n');
     assert.doesNotMatch(run(['--session-start']).out, /dormant/);
   });
