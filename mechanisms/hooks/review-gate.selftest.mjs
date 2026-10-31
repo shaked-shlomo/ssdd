@@ -1224,19 +1224,25 @@ describe('a shell hand-off is judged by git\'s pre-commit', () => {
   });
 });
 
-describe('the pre-commit runs every step', () => {
-  it('a lint finding does not hide what the review gate owes', { skip: !PRE_COMMIT }, () => {
+describe('the pre-commit warns on lint findings', () => {
+  it('a lint finding warns; the commit lands once the gate is met', { skip: !PRE_COMMIT }, () => {
     writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({
       ...CONFIG, lint: [{ name: 'no-todo', pattern: 'TODO', message: 'no TODOs', include: '^src/' }],
     }));
     armPreCommit(dir);
     write(dir, 'src/a.ts', 'TODO\n');
     const head = git(dir, 'rev-parse', 'HEAD');
-    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
-    assert.strictEqual(r.status, 1, r.stderr);
-    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
-    assert.match(r.stderr, /alpha/);
+    const env = { ...process.env, SSDD_REVIEW_SKIP: '' };
+    const refused = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env });
+    assert.strictEqual(refused.status, 1, refused.stderr);
+    assert.match(refused.stderr, /\[ssdd-convention-lint\] 1 finding/);
+    assert.match(refused.stderr, /alpha/);
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+    stamp(dir, 'alpha,beta');
+    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
+    assert.notStrictEqual(git(dir, 'rev-parse', 'HEAD'), head);
   });
 });
 

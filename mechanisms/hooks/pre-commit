@@ -12,6 +12,8 @@ ROOT="$(git rev-parse --show-toplevel)" || exit 1
 status=0
 
 # 1. Convention lint over the staged files (rules: .ssdd/config.json → lint).
+#    Findings print to stderr and never block (it exits 0); a config it can't
+#    read exits 1.
 node "$ROOT/.ssdd/hooks/convention-lint.mjs" --staged || status=1
 
 # 2. Work state: a plan marked BUILT/SHIPPED needs a Verification entry per AC

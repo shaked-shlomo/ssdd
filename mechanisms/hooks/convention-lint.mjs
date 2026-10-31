@@ -12,7 +12,9 @@
 // Modes (no deps, Node >= 22):
 //   <file> [<file> …]     lint the given files whole (CI / manual); exit 1
 //   --staged              lint the lines the staged change adds (git
-//                         pre-commit); exit 1 blocks the commit
+//                         pre-commit); findings print to stderr, exit 0:
+//                         they warn, never block (a config that can't be
+//                         used still exits 1)
 //   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor
 //                         afterFileEdit: lint the lines THIS edit added
 // Only added lines: an old violation isn't flagged again on every edit (in
@@ -27,7 +29,8 @@
 // against HEAD. Under Claude Code findings are a warning: exit 0 with
 // hookSpecificOutput.additionalContext, which reaches the agent beside the
 // tool result (plain output at exit 0 doesn't; exit 2 reads as a tool
-// error). Under Cursor: stderr, exit 2. The pre-commit is where they block.
+// error). Under Cursor: stderr, exit 2. At commit they print and the commit
+// goes on; only a file-list run (CI) exits 1 on a finding.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
@@ -41,8 +44,8 @@ const git = (...args) =>
 
 const PREFIX = '[ssdd-convention-lint] ';
 const claude = stdinMode && hookHarness(payload) === 'claude';
-// Findings, or a config that can't be used: a warning at edit time, a block
-// on the command line and in the pre-commit.
+// Findings, or a config that can't be used: a warning at edit time (and at
+// commit, for findings), exit 1 on the command line.
 function fail(message, exitCode) {
   if (claude) {
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } }) + '\n');
@@ -214,7 +217,7 @@ function before(rel, now) {
 }
 
 if (process.argv[2] === '--staged') {
-  report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 1);
+  report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 0);
 } else if (process.argv.length > 2) {
   report(process.argv.slice(2).map(toRel).flatMap(lintFile), 1);
 } else {

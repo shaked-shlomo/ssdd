@@ -2,7 +2,8 @@
 // git repo with its own .ssdd/config.json lint rule, writes a file, and feeds a
 // Claude PostToolUse or Cursor afterFileEdit payload on stdin, or runs
 // --staged. Claude: findings are a warning (exit 0, additionalContext on
-// stdout). Cursor: exit 2, stderr. --staged and named files: exit 1.
+// stdout). Cursor: exit 2, stderr. --staged: findings on stderr, exit 0 (the commit goes on).
+// Named files: exit 1.
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
@@ -162,15 +163,17 @@ describe('only added lines', () => {
     assert.doesNotMatch(w, /src\/a\.ts:1 /);
   });
 
-  it('--staged: only staged added lines', () => {
+  it('--staged: only staged added lines, reported on stderr with exit 0', () => {
     commitOld();
     put('src/a.ts', `${OLD}const clean = 2;\n`);
     git(dir, 'add', 'src/a.ts');
-    assert.strictEqual(run(dir, ['--staged']).status, 0);
+    const clean = run(dir, ['--staged']);
+    assert.strictEqual(clean.status, 0);
+    assert.strictEqual(clean.stderr, '');
     put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
     git(dir, 'add', 'src/a.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:3 /);
     assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
   });
@@ -179,7 +182,9 @@ describe('only added lines', () => {
     put('src/b.ts', 'const b = "#fff";\n');
     assert.match(warning(edit(dir, 'src/b.ts')), /src\/b\.ts:1 /);
     git(dir, 'add', 'src/b.ts');
-    assert.strictEqual(run(dir, ['--staged']).status, 1);
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 0);
+    assert.match(r.stderr, /src\/b\.ts:1 /);
   });
 
   it('files named on the command line are linted whole', () => {
@@ -201,7 +206,7 @@ describe('only added lines', () => {
     git(dir, 'add', 'src/a.ts');
     put('src/a.ts', OLD);
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:3 /);
   });
 
@@ -209,7 +214,7 @@ describe('only added lines', () => {
     put('src/צבע file.ts', 'const c = "#fff";\n');
     git(dir, 'add', 'src/צבע file.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/צבע file\.ts:1 /);
   });
 
@@ -218,7 +223,7 @@ describe('only added lines', () => {
     put(rel, 'const c = "#fff";\n');
     git(dir, 'add', rel);
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.ok(r.stderr.includes(`${rel}:1 `), r.stderr);
   });
 
@@ -229,7 +234,7 @@ describe('only added lines', () => {
     put('src/a.ts', 'line1\n++ counter;\nconst c = "#abcdef";\n');
     git(dir, 'add', 'src/a.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1, r.stderr);
+    assert.strictEqual(r.status, 0, r.stderr);
     assert.match(r.stderr, /src\/a\.ts:3 /);
   });
 
@@ -359,7 +364,7 @@ describe('the lines this edit added', () => {
 });
 
 describe('ssdd-lint-ignore', () => {
-  it('a marked line passes --staged; an unmarked one in the same change still blocks', () => {
+  it('a marked line passes --staged; an unmarked one in the same change is still reported', () => {
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\n');
     git(dir, 'add', 'src/a.ts');
@@ -368,7 +373,7 @@ describe('ssdd-lint-ignore', () => {
     writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\nconst c = "#abc";\n');
     git(dir, 'add', 'src/a.ts');
     const r = staged();
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:2 /);
     assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
     assert.match(r.stderr, /ssdd-lint-ignore/);
