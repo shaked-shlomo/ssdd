@@ -42,7 +42,7 @@ message cites the owner's explicit go-ahead.
 
 ## The checks
 
-**1. Routing (`.ssdd/config.json` → `routing`, `reviewGate.exclude`).** A
+**1. Routing (`.ssdd/config.json` → `routing`, each route's `exclude`).** A
 route removed, a `paths` regex narrowed (test it against the repo's real
 paths: `git ls-files | grep -E '<regex>'`, before and after), an `exclude`
 widened, a reviewer renamed so its stamps and agent file no longer match.

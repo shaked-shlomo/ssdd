@@ -1,15 +1,16 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-10-30 at v3.3.2. All
-five parts of v3 (`SPEC.md` → v3) have shipped; what's left of v3 is the
-migrations below. Not hardening. When an item ships, delete it here and
-record it in `CHANGELOG.md`. When one is planned, it gets a spec in
-`docs/specs/` and a row in `SPEC.md` first.
+The single list of remaining SSDD work. Updated 2026-11-01 at v3.3.2, with
+v3.6 built (3.6.0, unreleased; it waits for the owner's go-ahead to merge
+and tag). All five parts of v3 (`SPEC.md` → v3) have shipped; what's left
+of v3 is the migrations below. Not hardening. When an item ships, delete it
+here and record it in `CHANGELOG.md`. When one is planned, it gets a spec
+in `docs/specs/` and a row in `SPEC.md` first.
 
-**Threat model.** The harness hooks keep a cooperating agent on the process;
-they aren't a sandbox. A new evasion shape is out of scope unless an agent
-was seen using it in a real project, and the spec that closes it records
-that incident.
+**Threat model.** The git pre-commit and the harness hooks keep a
+cooperating agent on the process; they aren't a sandbox. A new evasion
+shape is out of scope unless an agent was seen using it in a real project,
+and the spec that closes it records that incident.
 
 ## Next: the end of v3
 
@@ -22,13 +23,9 @@ that incident.
 - **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
   `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
   ships before the migrations is its Open 1.
-- **v3.6 — the gate lives in git** (`SPEC.md` → v3.6, draft, from the
-  2026-10-23 audit and the owner's 2026-10-30 rulings: harness-neutral,
-  simple). The pre-commit is the review gate and the harness review gate
-  goes; `--stamp` is the only way to stamp and accepts a review before
-  `git add`; a comment-only change carries clean stamps; amend, bulk add
-  and lint warn instead of block; nine unused config keys go. It ships
-  before v3.4, which builds on its gate.
+- **v3.6 — the gate lives in git** (`SPEC.md` → v3.6): built as 3.6.0,
+  unreleased (`CHANGELOG.md`). It ships before v3.4, which builds on its
+  gate.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.
@@ -64,20 +61,19 @@ that incident.
 These are documented in `docs/limitations.md`. Listed here so they aren't
 re-discovered as new.
 
-- The harness hooks can't see git run from a script *file*, a variable, an
-  alias, `xargs` / `find -exec`, or another language's subprocess, nor a
-  `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets
-  `core.hooksPath`. In Claude Code the review gate also skips
-  `/usr/bin/git`, `env` / `sudo` runners and shell wrappers (`bash -c`,
-  `eval`, `| sh`), and git-guard no longer unwraps them. The pre-commit
-  layer is the backstop while `-n` isn't used.
-- `--stamp` in `manual` mode (the default, and the only mode in Cursor) is
-  an attestation the gate can't verify, including which model reviewed.
+- git-guard reads the command line: it can't see git run from a script
+  *file*, a variable, an alias, `xargs` / `find -exec`, another language's
+  subprocess or a shell wrapper (`bash -c`, `eval`, `| sh`), nor a
+  `GIT_CONFIG_PARAMETERS` / `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM`
+  setting of `core.hooksPath`. The pre-commit judges every commit git runs
+  while `-n` isn't used and the hooks dir isn't re-pointed.
+- `--stamp` is an attestation the gate can't verify, including which model
+  reviewed.
 - git-guard blocks writes to `core.hooksPath` that name the key. `git config
   --remove-section core`, `--rename-section core` and `--edit` clear it
   without naming it (no agent was seen doing this; v3 Part 3).
-- Completion stamps cover the repo at the session's cwd. A `git -C <other>`
-  commit from elsewhere needs manual mode.
+- The comment-only carry reads source text, not code that reads its own
+  comments at run time, and covers the JS/TS family only.
 - A re-stage that changes nothing keeps its stamps (by design since v2).
 - The production guard sees the command line, not what a script does; a
   call already sent can't be stopped; Cursor denies where Claude Code asks
