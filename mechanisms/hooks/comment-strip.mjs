@@ -413,6 +413,8 @@ class Scanner {
             if (v === '"' || v === "'") { // no escapes: byte for byte to the closing quote
               const close = s.indexOf(v, this.i + 1);
               if (close < 0) fail('JSX attribute string left open');
+              // In .tsx this may be a TS string in type parameters (`<const U = "a\">x">`), where `\` escapes.
+              if (this.ts && s.slice(this.i, close).includes('\\')) fail('a \\ in a .tsx JSX attribute string');
               for (let k = this.i; k <= close; k++) this.push(s[k]);
               this.i = close + 1;
             } else if (v === '{') { this.push('{'); this.i++; this.js(true); }

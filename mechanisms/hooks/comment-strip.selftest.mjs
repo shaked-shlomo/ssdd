@@ -53,6 +53,7 @@ const STRIP = [
   ['.tsx extends then a name', '.tsx', 'type X<T> = T extends U ? A : B // c', 'type X<T> = T extends U ? A : B'],
   ['.tsx JSX text starting with (: null (R22)', '.tsx', 'x = <b>(x)</b>', null],
   ['.tsx JSX attribute named extends: null (R22)', '.tsx', 'x = <a extends="1">t</a>', null],
+  ['.tsx JSX attribute string with a backslash: null (R23)', '.tsx', 'x = <a b="\\">t</a>', null],
   ['.tsx fragment then (', '.tsx', 'x = <>(x)</> // c', 'x = <>(x)</>'],
   ['.tsx self-closing then (', '.tsx', 'f(<a/>) // c', 'f(<a/>)'],
   ['.jsx JSX text starting with (', '.jsx', 'x = <b>(x)</b> // c', 'x = <b>(x)</b>'],
@@ -385,6 +386,17 @@ const PAIRS = [
     ['Deno caps, comment line between', 'f.ts', '// DENO-COVERAGE-IGNORE-NEXT\n// Q\na()\n', '// DENO-COVERAGE-IGNORE-NEXT\na()\n'],
     ['Deno caps removed', 'f.tsx', '// DENO-COVERAGE-IGNORE-NEXT\na()\n', 'a()\n'],
   ].map(([name, path, a, b]) => [`R4: ${name}`, path, a, b, false]),
+  // Review round 5 (R23): in .tsx a `\` in a JSX attribute string may be a TS escape.
+  ...[
+    ['= <const U = "a\\">x">', 'type F = <const U = "a\\">x">() => U; s = "</const>//"; Q\n'],
+    ["= <const U = 'a\\'>x'>", "type F = <const U = 'a\\'>x'>() => U; s = \"</const>//\"; Q\n"],
+    [': <const U = "a\\">x">', 'let f: <const U = "a\\">x">() => U; s = "</const>//"; Q\n'],
+    ['new <const U = "a\\">x">', 'type C = new <const U = "a\\">x">() => U; s = "</const>//"; Q\n'],
+    ['<const T = "a\\">x",>(x: T)', 'let f = <const T = "a\\">x",>(x: T) => x; s = "</const>//"; Q\n'],
+    ['<const T = "a\\">x">(x: T)', 'let f = <const T = "a\\">x">(x: T) => x; s = "</const>//"; Q\n'],
+  ].map(([name, a]) => [`R5: ${name}`, 'f.tsx', a, a.split('Q').join('good()'), false]),
+  ['.tsx JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', true],
+  ['.jsx JSX attribute with a backslash: a comment edit', 'a.jsx', 'x = <a b="\\">t</a> // old\n', 'x = <a b="\\">t</a> // new\n', true],
   // Still comment-only after round 4.
   ['ordinary JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', true],
   ['nested JSX with an expression: a comment edit', 'a.tsx', 'x = <a><b>{y}</b> t</a> // old\n', 'x = <a><b>{y}</b> t</a> // new\n', true],
