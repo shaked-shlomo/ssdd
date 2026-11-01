@@ -25,10 +25,11 @@ const JSX_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx', '.tsx']);
 const JSDOC_TYPED_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx']);
 
 // After these keywords an expression starts, so `/` opens a regex and `<` JSX.
-// `default` is beyond Clarify 2's list: after it (`export default /re/`) only
-// an expression or `:` can follow, and `x.default` is caught by the `.` rule.
+// `default` and `extends` are beyond Clarify 2's list: after them
+// (`export default /re/`, `class A extends /re/.constructor {}`) only an
+// expression (or a type, or `:`) can follow, and `x.default` is caught by the `.` rule.
 const EXPR_KW = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
-  'throw', 'case', 'do', 'else', 'yield', 'await', 'default']);
+  'throw', 'case', 'do', 'else', 'yield', 'await', 'default', 'extends']);
 // Of those, these can also be identifiers (`var of = 4; n = of / 2`; `yield`
 // and `await` in sloppy or non-async code), so a `/` or `<` after one is ambiguous.
 const MAYBE_ID = new Set(['of', 'yield', 'await']);
@@ -70,6 +71,9 @@ const TOOL_READ = [
 // A kept directive aimed at the next line: removing a comment line or a blank
 // line after it would move its target, so that can't be classified.
 const NEXT_LINE = /next-line|\bignore\b(?![-\s]+file)|expect-error/i;
+// Coverage tools count physical lines after `ignore next N`: removing any
+// comment line or blank line below it can move code in or out of the range.
+const COUNTED = /\b(c8|v8|istanbul)\s+ignore\s+next\s+\d/i;
 const JSDOC_ALWAYS = /@(template|typedef|callback|import|overload|enum|this|private|protected|public|readonly|constructor|class|override)\b/;
 const JSDOC_WITH_BRACE = /@(type|param|arg|argument|returns?|satisfies|property|prop|extends|augments|implements)\b/;
 
@@ -99,6 +103,7 @@ class Scanner {
     this.jsx = JSX_EXTS.has(ext);
     this.ts = TS_EXTS.has(ext);
     this.directive = false; // a kept next-line directive with no code after it yet
+    this.counted = false; // a kept `ignore next N`: no line may be removed below it
     this.i = 0;
     this.out = [];
     this.depth = 0;
@@ -116,7 +121,7 @@ class Scanner {
     const o = this.out;
     while (o.length && TRIM.has(o[o.length - 1])) o.pop();
     if (o.length && o[o.length - 1] !== '\n') o.push('\n');
-    else if (this.directive) fail('a blank line after a next-line directive');
+    else if (this.directive || this.counted) fail('a blank line removed below a line-targeting directive');
   }
 
   run() {
@@ -150,11 +155,15 @@ class Scanner {
     const raw = s.slice(start, end);
     this.i = end;
     if (toolRead(raw, this.ext)) {
+      const directive = this.directive; // a kept comment is not the code a directive aims at
       for (const c of raw) this.push(c);
-      if (NEXT_LINE.test(raw)) this.directive = true;
+      this.directive = directive || NEXT_LINE.test(raw);
+      if (COUNTED.test(raw)) this.counted = true;
       return hasLT;
     }
-    if (this.directive) fail('a comment removed after a next-line directive');
+    // Below `ignore next N`, a comment line removed shows up as a dropped blank
+    // line (codeNewline); a removed block holding a line break joins lines here.
+    if (this.directive || (this.counted && hasLT)) fail('a comment removed below a line-targeting directive');
     if (raw[1] === '/') return false; // the line break after it stays
     if (hasLT) this.codeNewline();
     const o = this.out;
@@ -271,18 +280,17 @@ class Scanner {
         else fail(`/ after ${prev === 'rbrace' ? '}' : prev === 'incdec' ? '++ or --' : 'an ambiguous token'}`);
       } else if (c === '"' || c === "'") { this.string(c); prev = 'value'; }
       else if (c === '`') { this.template(); prev = 'value'; }
-      else if (c === '<' && s.startsWith('<!--', this.i)) fail('an HTML-like comment');
+      else if (c === '<' && (s.startsWith('<!--', this.i) || s.startsWith('<!--', this.i + 1))) fail('an HTML-like comment');
       else if (c === '-' && lineBreak && s.startsWith('-->', this.i)) fail('an HTML-like comment');
       else if (c === '<' && (n === '<' || n === '=')) {
         // `<<` and `<=` are one operator: the second character never opens JSX.
         this.push(c); this.push(n); this.i += 2; prev = 'op';
       } else if (c === '<' && this.jsx && (exprPos() || prev === 'rbrace' || prev === 'amb' || lineBreak)) {
-        if (isIdStart(n) || n === '>') {
-          if (!exprPos()) fail('a JSX-opening < after }, an ambiguous token, or a line break');
-          this.jsxElement(); prev = 'value';
-        } else if (exprPos()) {
-          fail('< in expression position that opens no element');
-        } else { this.push(c); this.i++; prev = 'op'; }
+        // JSX allows space and comments after `<` (`< b>`, `</**/b>`), so where
+        // an element could open, any `<` but `<<` and `<=` is either one or null.
+        if (!exprPos()) fail('< after }, an ambiguous token, or a line break');
+        if (!(isIdStart(n) || n === '>')) fail('< in expression position that opens no element we read');
+        this.jsxElement(); prev = 'value';
       } else if (c === '(' || c === '[' || c === '{') {
         const cond = c === '(' && !afterDot &&
           ((prev === 'value' && COND_KW.has(lastWord) && !lastWordAfterDot) ||

@@ -41,7 +41,14 @@ const STRIP = [
   ['a regex at a line start after ;', '.js', 'x = a;\n/re/.test(s) // c', 'x = a;\n/re/.test(s)'],
   ['a regex at the start', '.js', '/re/.test(s) // c', '/re/.test(s)'],
   ['JSX after ( and a line break', '.tsx', 'return (\n  <p>hi</p> // c\n)', 'return (\n  <p>hi</p>\n)'],
-  ['less-than after a line break', '.tsx', 'ok = a\n  < b // c', 'ok = a\n  < b'],
+  ['less-than after a line break in .tsx: null (R17)', '.tsx', 'ok = a\n  < b // c', null],
+  ['less-than after a line break in .ts', '.ts', 'ok = a\n  < b // c', 'ok = a\n  < b'],
+  ['less-than on one line in .tsx', '.tsx', 'ok = a < b // c', 'ok = a < b'],
+  ['<< after a line break in .tsx', '.tsx', 'x = a\n  << 2 // c', 'x = a\n  << 2'],
+  ['<= after a line break in .jsx', '.jsx', 'ok = a\n  <= b // c', 'ok = a\n  <= b'],
+  ['extends then a regex', '.js', 'class A extends /x/.constructor {} // c', 'class A extends /x/.constructor {}'],
+  ['extends then a name', '.ts', 'class A extends B {} // c', 'class A extends B {}'],
+  ['x.extends then division', '.js', 'n = x.extends / 2 // c', 'n = x.extends / 2'],
   ['of as a keyword, then a value', '.js', 'for (const x of xs) f(x) // c', 'for (const x of xs) f(x)'],
   ['/ after of: null', '.js', 'for (const x of /a/g.exec(s)) f(x)', null],
   ['/ after await: null', '.mjs', 'await /a/.test(s)', null],
@@ -269,6 +276,61 @@ const PAIRS = [
     ['JSDoc @constructor', 'f.js', '/** @constructor Q */\nfunction F() {}\n', 'function F() {}\n'],
     ['JSDoc @class', 'f.mjs', '/** @class Q */\nfunction F() {}\n', 'function F() {}\n'],
   ].map(([name, path, a, b]) => [`R1: ${name}`, path, a, b ?? a.split('Q').join('good()'), false]),
+  // Review round 2.
+  ...[
+    // R17: a `<` that could open JSX (space or a comment may follow it) where
+    // no expression can start: after an ambiguous token...
+    ...['.js', '.jsx', '.tsx'].flatMap((e) => [
+      ['yield < b>', `f${e}`, 'function* g() { yield < b>// {Q}</b>\n}\n'],
+      ['await < b>', `f${e}`, 'async function g() { await < b>// {Q}</b>\n}\n'],
+      ['top-level await < b>', `f${e}`, 'await < b>// {Q}</b>\n'],
+      ['of < b>', `f${e}`, 'for (const x of < b>// {Q}</b>\n) f(x)\n'],
+      ['yield <\\nb>', `f${e}`, 'function* g() { yield <\nb>// {Q}</b>\n}\n'],
+      ['yield </**/b>', `f${e}`, 'function* g() { yield </**/b>// {Q}</b>\n}\n'],
+      ['yield <b>', `f${e}`, 'function* g() { yield <b>// {Q}</b>\n}\n'],
+    ]),
+    ['void < b> (.tsx)', 'f.tsx', 'x = void < b>// {Q}</b>\n'],
+    ['f<T> < b> (.tsx)', 'f.tsx', 'x = f<T> < b>// {Q}</b>\n'],
+    ['a > < b> (.tsx)', 'f.tsx', 'x = a > < b>// {Q}</b>\n'],
+    ['a\\n> < b> (.tsx)', 'f.tsx', 'x = a\n> < b>// {Q}</b>\n'],
+    // ...after a value and a line break, and after `}`.
+    ['let x\\n< b> (.jsx)', 'f.jsx', 'let x\n< b>// {Q}</b>\n'],
+    ['let x\\n< b> (.tsx)', 'f.tsx', 'let x\n< b>// {Q}</b>\n'],
+    ['let x: number\\n< b> (.tsx)', 'f.tsx', 'let x: number\n< b>// {Q}</b>\n'],
+    ['let x\\n</**/b> (.jsx)', 'f.jsx', 'let x\n</**/b>// {Q}</b>\n'],
+    ['let x\\n<\\nb> (.jsx)', 'f.jsx', 'let x\n<\nb>// {Q}</b>\n'],
+    ['} then < b> (.jsx)', 'f.jsx', 'function f() {}\n< b>// {Q}</b>\n'],
+    ['} then < b> (.tsx)', 'f.tsx', 'function f() {}\n< b>// {Q}</b>\n'],
+    ['} then </**/b> (.jsx)', 'f.jsx', 'function f() {}\n</**/b>// {Q}</b>\n'],
+    ['} then <\\nb> (.tsx)', 'f.tsx', 'function f() {}\n<\nb>// {Q}</b>\n'],
+    // R18: an expression starts after `extends`.
+    ...['.js', '.mjs', '.ts', '.tsx'].flatMap((e) => [
+      ['class A extends /re/', `f${e}`, 'class A extends /[//]/.constructor {}; x = [Q\n]\n'],
+      ['class extends /re/', `f${e}`, 'x = class extends /[//]/.constructor {}; y = [Q\n]\n'],
+    ]),
+    // R19: `ignore next N` counts physical lines.
+    ['c8 ignore next 3, comment inside the range', 'f.js', '/* c8 ignore next 3 */\na()\n// Q\nb()\nc()\n',
+      '/* c8 ignore next 3 */\na()\nb()\nc()\n'],
+    ['c8 ignore next 2, blank line inside the range', 'f.js', '/* c8 ignore next 2 */\na()\n\nb()\nc()\n',
+      '/* c8 ignore next 2 */\na()\nb()\nc()\n'],
+    ['v8 ignore next 2, comment after the range', 'f.ts', '/* v8 ignore next 2 */\na()\nb()\n// Q\nc()\n',
+      '/* v8 ignore next 2 */\na()\nb()\nc()\n'],
+    ['a kept directive between a next-line directive and a removed comment', 'f.js',
+      '// eslint-disable-next-line no-eval\n// eslint-disable no-x\n// Q\neval(x)\n',
+      '// eslint-disable-next-line no-eval\n// eslint-disable no-x\neval(x)\n'],
+    ['<!-- right after <', 'f.cjs', 'x = a <<!-- /*\nQ\n--> */\n'],
+    ['istanbul ignore next 2, block comment inside', 'f.js', '/* istanbul ignore next 2 */\na()\n/* Q\n*/\nb()\n',
+      '/* istanbul ignore next 2 */\na()\nb()\n'],
+  ].map(([name, path, a, b]) => [`R2: ${name}`, path, a, b ?? a.split('Q').join('good()'), false]),
+  // Still comment-only after round 2.
+  ['an a < b line with a comment edit (.tsx)', 'a.tsx', 'ok = a < b // old\n', 'ok = a < b // new\n', true],
+  ['an a < b line with a comment edit (.jsx)', 'a.jsx', 'ok = a < b // old\n', 'ok = a < b // new\n', true],
+  ['<< after a line break, comment edit (.tsx)', 'a.tsx', 'x = a\n  << 2 // old\n', 'x = a\n  << 2 // new\n', true],
+  ['<= after a line break, comment edit (.jsx)', 'a.jsx', 'ok = a\n  <= b // old\n', 'ok = a\n  <= b // new\n', true],
+  ['a trailing comment edit below a next-line directive', 'a.ts', '// @ts-ignore\nx() // old\n', '// @ts-ignore\nx() // new\n', true],
+  ['c8 ignore next, comment edit on a code line', 'a.js', '/* c8 ignore next 2 */\na() // old\nb()\n', '/* c8 ignore next 2 */\na() // new\nb()\n', true],
+  ['c8 ignore start/stop is not counted: a comment line removed', 'a.js', '/* c8 ignore start */\na()\n// c\nb()\n/* c8 ignore stop */\n',
+    '/* c8 ignore start */\na()\nb()\n/* c8 ignore stop */\n', true],
 ];
 
 describe('COMMENT_EXTS', () => {
