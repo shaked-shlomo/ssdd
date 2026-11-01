@@ -677,7 +677,7 @@ describe('the triage note', () => {
   it('names a flagged file', () => {
     write(dir, 'src/a.ts', 'a\n');
     stamp(dir, 'alpha,beta');
-    // Nothing in v3.6 writes `issues`: the test plays the writer.
+    // Nothing in v3.4 writes `issues`: the test plays the writer.
     const s = readStamp(dir);
     s.reviewers.alpha['src/a.ts'].issues = 1;
     writeFileSync(stampFile(dir), JSON.stringify(s));
@@ -687,7 +687,7 @@ describe('the triage note', () => {
   });
 });
 
-// v3.6 Decision 3: a reviewer's clean stamp holds over a comment-only edit;
+// v3.4 Decision 3: a reviewer's clean stamp holds over a comment-only edit;
 // the comment reviewer still owes the file, with its delta.
 describe('the comment-only carry', () => {
   const CARRY = {

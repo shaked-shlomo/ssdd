@@ -10,13 +10,13 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.6.0] — 2026-11-01
+## [3.4.0] — 2026-11-01
 
-v3.6, the gate lives in git: the review gate is the pre-commit, which every
+v3.4, the gate lives in git: the review gate is the pre-commit, which every
 harness and every human meets at `git commit`. The harness hooks keep only
 what holds the pre-commit in the loop, what guards an action that goes out,
 and two conveniences (the session view, edit-time lint); none adds a rule of
-its own. See `SPEC.md` → v3.6.
+its own. See `SPEC.md` → v3.4.
 
 ### Removed
 - **The harness review gate**: `review-gate.mjs` on Claude Code's
@@ -99,7 +99,7 @@ its own. See `SPEC.md` → v3.6.
 
 ### Upgrade (optional)
 - Remove the `.claude/settings.json` entries `update` lists as safe to
-  remove (`status` lists them too, once the lock is on 3.6.0). Until you do
+  remove (`status` lists them too, once the lock is on 3.4.0). Until you do
   they're harmless: the old review-gate entries exit 0 and git-guard on an
   edit allows.
 - Delete the config keys `status` names as obsolete.

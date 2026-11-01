@@ -62,7 +62,7 @@ none adds a rule of its own, and a missing one costs only what it adds.
   claiming the call it allows at once. An `ask` stops a call before it is
   sent. An Esc on a call already sent doesn't: the server may finish it.
 - **Stale wiring is harmless.** A `.claude/settings.json` seeded before
-  3.6.0 still calls `review-gate.mjs` on Bash, `SubagentStart` and
+  3.4.0 still calls `review-gate.mjs` on Bash, `SubagentStart` and
   `SubagentStop`, and git-guard on Edit/Write. With no mode the gate script
   exits 0 and prints nothing, and git-guard finds no command; remove the
   entries `status` lists when convenient.

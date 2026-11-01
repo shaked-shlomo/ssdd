@@ -1,7 +1,7 @@
 # SSDD backlog
 
 The single list of remaining SSDD work. Updated 2026-11-01 at v3.3.2, with
-v3.6 built (3.6.0, unreleased; it waits for the owner's go-ahead to merge
+v3.4 built (3.4.0, unreleased; it waits for the owner's go-ahead to merge
 and tag). All five parts of v3 (`SPEC.md` → v3) have shipped; what's left
 of v3 is the migrations below. Not hardening. When an item ships, delete it
 here and record it in `CHANGELOG.md`. When one is planned, it gets a spec
@@ -14,18 +14,18 @@ and the spec that closes it records that incident.
 
 ## Next: the end of v3
 
-- **v3.4 — findings have outcomes** (`SPEC.md` → v3.4, draft) ships
+- **v3.4 — the gate lives in git** (`SPEC.md` → v3.4): built as 3.4.0,
+  unreleased (`CHANGELOG.md`). It ships before v3.5, which builds on its
+  gate.
+- **v3.5 — findings have outcomes** (`SPEC.md` → v3.5, draft) ships
   before the migrations (owner, 2026-10-22), so each project migrates once.
   Trimmed 2026-10-23 to the re-review list, `[pre-existing]` and the round
   cap; blocking on open findings and the commit-message record are
   deferred in its Out list. Revised 2026-10-30 to read findings from
-  `--stamp --report` on any harness, built on v3.6.
-- **v3.5 — one backlog** (`SPEC.md` → v3.5, draft): the standard
-  `BACKLOG.md` and `/migrate-backlog`, split from v3.4. Whether it also
+  `--stamp --report` on any harness, built on v3.4.
+- **v3.6 — one backlog** (`SPEC.md` → v3.6, draft): the standard
+  `BACKLOG.md` and `/migrate-backlog`, split from v3.5. Whether it also
   ships before the migrations is its Open 1.
-- **v3.6 — the gate lives in git** (`SPEC.md` → v3.6): built as 3.6.0,
-  unreleased (`CHANGELOG.md`). It ships before v3.4, which builds on its
-  gate.
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
   after-`/compact` session-start check.

@@ -1,5 +1,5 @@
 // Comment scanner for the JS/TS family, used by the review gate to carry a
-// clean stamp over a comment-only change (spec v3.6, Decision 3, Clarify 2).
+// clean stamp over a comment-only change (spec v3.4, Decision 3, Clarify 2).
 // No dependencies; not a parser — a tokenizer that knows strings, templates,
 // regex literals, JSX and comments well enough to remove the comments.
 //

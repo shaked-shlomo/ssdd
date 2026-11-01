@@ -223,7 +223,7 @@ const ALLOWED = [
   ['read, || fallback', 'git config core.hooksPath || echo unset'],
   ['read, then another command', 'git config core.hooksPath; ls .githooks'],
   ['read inside $(…) in a string', `echo "hooksPath = '$(git config core.hooksPath)'"`],
-  // v3.6 — the env route and the shell-expanded options are the pre-commit layer's, not the guard's.
+  // v3.4 — the env route and the shell-expanded options are the pre-commit layer's, not the guard's.
   ['GIT_CONFIG_PARAMETERS naming core.hooksPath', `GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git commit -m x`],
   ['GIT_CONFIG_KEY_<n> naming core.hooksPath', 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m x'],
   ['an abbreviated option (--unset-a)', 'git config --unset-a core.hooksPath'],
