@@ -1,144 +1,28 @@
-// Tests for comment-strip: what a comment-only change is, and what can't be classified.
-// Run: node --test mechanisms/hooks/comment-strip.selftest.mjs
+// Tests for comment-only: what a comment-only change is, and what is reviewed.
+// Run: node --test mechanisms/hooks/comment-only.selftest.mjs
+// The safety corpus is the old tokenizer's (comment-strip, spec v3.4 Deviations):
+// each pair it reviewed, each comment a tool reads, each text it couldn't classify
+// with its comment edited, must still be reviewed. Pairs it carried may be reviewed.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMENT_EXTS, commentOnly, stripComments } from './comment-strip.mjs';
+import { COMMENT_EXTS, commentOnly } from './comment-only.mjs';
 
-// [name, ext, input, expected stripComments output (null: can't classify)]
-const STRIP = [
-  // Division and regex.
-  ['division chain', '.js', 'x = a / b / c // c', 'x = a / b / c'],
-  ['regex at expression start', '.js', 'x = /b/g.test(c) // c', 'x = /b/g.test(c)'],
-  // A value, a line break, then `/`: ASI may or may not end the statement (R13).
-  ['division across a newline: null', '.js', 'x = a\n/re/.test(s) // c', null],
-  ['division across a newline hides a regex body: null', '.js', 'x = a\n/re// 2', null],
-  ['a block comment holding the line break: null', '.js', 'x = a/*\n*/ /re/.test(s)', null],
-  ['regex after if (...)', '.js', 'if (x) /\\/\\//.test(y) // c', 'if (x) /\\/\\//.test(y)'],
-  ['regex after while (...)', '.js', 'while (x) /a/.test(y)', 'while (x) /a/.test(y)'],
-  ['regex after for await (...)', '.js', 'for await (x of y) /a/.test(x)', 'for await (x of y) /a/.test(x)'],
-  ['division after a call', '.js', 'f(x) / 2 // c', 'f(x) / 2'],
-  ['x.return is a property, so division', '.js', 'a = x.return / 2 // c', 'a = x.return / 2'],
-  ['x?.return is a property, so division', '.js', 'a = x?.return / 2 // c', 'a = x?.return / 2'],
-  ['regex after return', '.js', "return /a'/.source // c", "return /a'/.source"],
-  ['regex after typeof', '.js', 'typeof /x/', 'typeof /x/'],
-  ['regex after export default', '.js', 'export default /[//]/ // c', 'export default /[//]/'],
-  ['regex after =>', '.js', 'f = (s) => /a/.test(s) // c', 'f = (s) => /a/.test(s)'],
-  ['} then a regex: null', '.js', 'function f() {}\n/re/.test(s)', null],
-  ['} then division: null', '.js', 'x = {} / 2', null],
-  ['++ then /: null', '.js', 'a++ / 2', null],
-  ['-- then /: null', '.js', 'a-- / 2', null],
-  ['} then a line comment', '.js', 'if (a) {} // c\nb()', 'if (a) {}\nb()'],
-  ['} then a block comment', '.js', 'if (a) {} /* c */ b()', 'if (a) {} b()'],
-  ['TS x! then division', '.ts', 'y = x! / 2 // c', 'y = x! / 2'],
-  ['! after a line break is an operator', '.js', 'a\n!/[//]/.test(x) // c', 'a\n!/[//]/.test(x)'],
-  ['x != y', '.ts', 'ok = x != y // c', 'ok = x != y'],
-  ['.default then division', '.js', 'x = {default: 1}.default / 2 // c', 'x = {default: 1}.default / 2'],
-  ['default: then a regex', '.js', 'switch (a) { default: /a/.test(b) }', 'switch (a) { default: /a/.test(b) }'],
-  ['! after a line break, no /', '.ts', 'a\n!b // c', 'a\n!b'],
-  ['x! then a line break and /: null', '.ts', 'y = x!\n/ 2 // c', null],
-  ['an operator, a line break, then a regex', '.js', 'x = a ||\n/re/.test(s) // c', 'x = a ||\n/re/.test(s)'],
-  ['return, a line break, then a regex', '.js', 'return\n/re/.test(s) // c', 'return\n/re/.test(s)'],
-  ['a regex at a line start after ;', '.js', 'x = a;\n/re/.test(s) // c', 'x = a;\n/re/.test(s)'],
-  ['a regex at the start', '.js', '/re/.test(s) // c', '/re/.test(s)'],
-  ['JSX after ( and a line break', '.tsx', 'return (\n  <p>hi</p> // c\n)', 'return (\n  <p>hi</p>\n)'],
-  ['less-than after a line break in .tsx: null (R17)', '.tsx', 'ok = a\n  < b // c', null],
-  ['less-than after a line break in .ts', '.ts', 'ok = a\n  < b // c', 'ok = a\n  < b'],
-  ['less-than on one line in .tsx', '.tsx', 'ok = a < b // c', 'ok = a < b'],
-  ['<< after a line break in .tsx', '.tsx', 'x = a\n  << 2 // c', 'x = a\n  << 2'],
-  ['<= after a line break in .jsx', '.jsx', 'ok = a\n  <= b // c', 'ok = a\n  <= b'],
-  ['extends then a regex', '.js', 'class A extends /x/.constructor {} // c', 'class A extends /x/.constructor {}'],
-  ['extends then a name', '.ts', 'class A extends B {} // c', 'class A extends B {}'],
-  ['.tsx extends then <: null', '.tsx', 'type X<T> = T extends <U>() => U ? 1 : 2', null],
-  ['.ts extends then <', '.ts', 'type X<T> = T extends <U>() => U ? 1 : 2 // c', 'type X<T> = T extends <U>() => U ? 1 : 2'],
-  ['.tsx extends then a name', '.tsx', 'type X<T> = T extends U ? A : B // c', 'type X<T> = T extends U ? A : B'],
-  ['.tsx JSX text starting with (: null (R22)', '.tsx', 'x = <b>(x)</b>', null],
-  ['.tsx JSX attribute named extends: null (R22)', '.tsx', 'x = <a extends="1">t</a>', null],
-  ['.tsx JSX attribute string with a backslash: null (R23)', '.tsx', 'x = <a b="\\">t</a>', null],
-  ['.tsx fragment then (', '.tsx', 'x = <>(x)</> // c', 'x = <>(x)</>'],
-  ['.tsx self-closing then (', '.tsx', 'f(<a/>) // c', 'f(<a/>)'],
-  ['.jsx JSX text starting with (', '.jsx', 'x = <b>(x)</b> // c', 'x = <b>(x)</b>'],
-  ['x.extends then division', '.js', 'n = x.extends / 2 // c', 'n = x.extends / 2'],
-  ['of as a keyword, then a value', '.js', 'for (const x of xs) f(x) // c', 'for (const x of xs) f(x)'],
-  ['/ after of: null', '.js', 'for (const x of /a/g.exec(s)) f(x)', null],
-  ['/ after await: null', '.mjs', 'await /a/.test(s)', null],
-  ['await then a value', '.mjs', 'await f(x) / 2 // c', 'await f(x) / 2'],
-  ['TS > then /: null', '.ts', 'x = y as A<B> / 2', null],
-  ['TS void then /: null', '.ts', 'x = y as () => void / 2', null],
-  ['TS => then a regex', '.ts', 'f = (s: string) => /a/.test(s) // c', 'f = (s: string) => /a/.test(s)'],
-  ['TS >= then a regex', '.ts', 'ok = a >= /a/.source.length // c', 'ok = a >= /a/.source.length'],
-  ['JS > then a regex', '.js', 'ok = a > /a/.source.length // c', 'ok = a > /a/.source.length'],
-  ['JS void then a regex', '.js', 'void /a/.test(s) // c', 'void /a/.test(s)'],
-  ['x-- > y is not -->', '.js', 'while (x-- > 0) f() // c', 'while (x-- > 0) f()'],
-  ['<!-- in a string', '.js', 'x = "<!--" // c', 'x = "<!--"'],
-  ['--> in a string at a line start', '.js', 'x = [\n"-->"] // c', 'x = [\n"-->"]'],
-  ['<!--: null', '.js', 'x = a <!-- b', null],
-  ['--> at a line start: null', '.js', 'x = a\n--> b', null],
-  // Strings, templates, regex.
-  ['nested template', '.js', 'x = `a ${ `nested ${x} // no` } /* no */` // yes', 'x = `a ${ `nested ${x} // no` } /* no */`'],
-  ['template with an object in ${}', '.js', 'x = `${ {a: 1}.a }`', 'x = `${ {a: 1}.a }`'],
-  ['comment markers in strings', '.js', "x = '//' + \"/*\" // c", "x = '//' + \"/*\""],
-  ['URL in a string', '.js', 'u = "https://x.y/z" /* c */', 'u = "https://x.y/z"'],
-  ['string escapes', '.js', "x = 'it\\'s // no' // yes", "x = 'it\\'s // no'"],
-  ['regex with \\/\\*', '.js', 'r = /\\/\\*/ // c', 'r = /\\/\\*/'],
-  ['regex class holding /', '.js', 'r = /[/]/ // c', 'r = /[/]/'],
-  ['regex class holding //', '.js', 'r = /[//]x/g // c', 'r = /[//]x/g'],
-  ['template keeps its spaces and blank line', '.js', 'x = `a  \n\n  b` // c', 'x = `a  \n\n  b`'],
-  ['unterminated string', '.js', "x = 'abc\n'", null],
-  ['unterminated double-quoted string', '.js', 'x = "abc', null],
-  ['unterminated regex', '.js', 'r = /abc\n', null],
-  ['unterminated template', '.js', 'x = `abc ${y}', null],
-  ['unterminated ${', '.js', 'x = `abc ${y`', null],
-  ['unterminated block comment', '.js', 'x() /* c', null],
-  ['mismatched bracket', '.js', 'f(a]', null],
-  ['bracket left open', '.js', 'f(a', null],
-  ['stray closer', '.js', 'a)', null],
-  // JSX.
-  ['JSX text is code', '.jsx', 'x = <a href="//x">// text</a> // c', 'x = <a href="//x">// text</a>'],
-  ['JSX {/* c */} becomes {}', '.jsx', '<p>{/* c */}hi</p>', '<p>{}hi</p>'],
-  ['JSX {/* c */} after =', '.jsx', 'x = <p>{/* c */}hi</p>', 'x = <p>{}hi</p>'],
-  ['JSX comment between attributes', '.tsx', '<a /* c */ b="1" />', '<a b="1" />'],
-  ['JSX attribute string has no escapes', '.jsx', 'x = <a b="\\" c="//">t</a>', 'x = <a b="\\" c="//">t</a>'],
-  ['JSX nested, fragments, spread', '.tsx', 'x = <><A {...p} b={() => {/* c */}}><B.C/></A></> // c',
-    'x = <><A {...p} b={() => {}}><B.C/></A></>'],
-  ['JSX in a .js file', '.js', 'return <p>// hi</p>', 'return <p>// hi</p>'],
-  ['JSX close mismatch', '.jsx', 'x = <a></b>', null],
-  ['JSX element left open', '.jsx', 'x = <a>hi', null],
-  ['.tsx generic arrow <T,>: null', '.tsx', 'const f = <T,>() => {}', null],
-  ['.tsx generic arrow <T extends>: null', '.tsx', 'const f = <T extends X>(a: T) => a', null],
-  ['.ts generic arrow <T,>', '.ts', 'const f = <T,>() => {} // c', 'const f = <T,>() => {}'],
-  ['a < b > c in .ts', '.ts', 'x = a < b > c // c', 'x = a < b > c'],
-  ['Array<string> in .tsx', '.tsx', 'let x: Array<string> = [] // c', 'let x: Array<string> = []'],
-  ['generic call in .tsx', '.tsx', 'useState<string>("") // c', 'useState<string>("")'],
-  ['<< is one operator in .tsx', '.tsx', 'x = (1 << 24) | 0 // c', 'x = (1 << 24) | 0'],
-  ['<< is one operator in .js', '.js', 'i = BigInt(o)<<BigInt(32)', 'i = BigInt(o)<<BigInt(32)'],
-  ['<= in .tsx', '.tsx', 'ok = a <= b // c', 'ok = a <= b'],
-  // Whitespace.
-  ['a comment between tokens leaves a space', '.js', 'a/**/b', 'a b'],
-  ['a comment takes the spaces on one side', '.js', 'f(a, /* x */ b)', 'f(a, b)'],
-  ['no space beside a separator', '.js', 'f(/* x */a)', 'f(a)'],
-  ['a comment holding a line break leaves one', '.js', 'return/*\n*/x', 'return\nx'],
-  ['comment lines, blank lines and trailing spaces go', '.js', 'a()\n\n  // c\n  /* d\n  e */\nb()  \n', 'a()\nb()'],
-  ['a line comment ends at U+2028', '.js', 'a() // c\u2028b()', 'a() \u2028b()'],
-  ['a line comment ends at U+2029', '.js', 'a() // c\u2029b()', 'a() \u2029b()'],
-  ['CR is trailing whitespace', '.js', 'a()\r\nb() // c\r\n', 'a()\nb()'],
-  ['indent is kept', '.ts', '  a()\n', '  a()'],
-  ['a real NUL in a string', '.tsx', 'x = a.join("\0") // c', 'x = a.join("\0")'],
-  ['an escaped NUL in a string', '.tsx', 'x = a.join("\\0") // c', 'x = a.join("\\0")'],
-  ['a BOM is kept', '.js', '\uFEFFx() // c', '\uFEFFx()'],
-  ['U+FFFD: null', '.js', 'x = "\uFFFD" // c', null],
-  ['empty text', '.js', '', ''],
-  ['only comments', '.ts', '// a\n/* b */\n', ''],
-  // Extensions.
-  ['.mjs', '.mjs', 'a() // c', 'a()'],
-  ['.cjs', '.cjs', 'a() // c', 'a()'],
-  ['.mts', '.mts', 'a() // c', 'a()'],
-  ['.cts', '.cts', 'a() // c', 'a()'],
-  ['.py is not in the list', '.py', 'a() # c', null],
-  ['.JS is not in the list', '.JS', 'a() // c', null],
-  ['no extension', '', 'a() // c', null],
+const LS = String.fromCharCode(0x2028);
+const NEXT_LINE = /next|@ts-expect-error|@ts-ignore|(prettier|biome|lint|fmt|dprint)-ignore/i;
+// Every `//` run and block comment rewritten: the edit a false carry would hide.
+const edit = (t) => t.replace(/\/\/[^\n]*/g, '// edited').replace(/\/\*[\s\S]*?\*\//g, '/* edited */');
+
+// Texts the old scanner couldn't classify that hold a comment, [name, ext, input].
+const UNCLASSIFIED = [
+  ['division across a newline: null', '.js', 'x = a\n/re/.test(s) // c'],
+  ['division across a newline hides a regex body: null', '.js', 'x = a\n/re// 2'],
+  ['a block comment holding the line break: null', '.js', 'x = a/*\n*/ /re/.test(s)'],
+  ['x! then a line break and /: null', '.ts', 'y = x!\n/ 2 // c'],
+  ['less-than after a line break in .tsx: null (R17)', '.tsx', 'ok = a\n  < b // c'],
 ];
 
-// Comments a tool reads: each is kept as code, [name, ext, input].
+// Comments a tool reads, [name, ext, input]: editing or dropping one is reviewed, and
+// so is a comment line put below one that targets the next line.
 const TOOL_READ = [
   ['shebang', '.js', '#!/usr/bin/env node\nx()'],
   ['eslint-disable', '.ts', '// eslint-disable-next-line no-x\nx()'],
@@ -203,18 +87,19 @@ const TOOL_READ = [
   ['JSDoc @import in .mjs', '.mjs', '/** @import { A } from "./a.js" */\nx()'],
 ];
 
-// [name, path, a, b, expected commentOnly]
+// [name, path, a, b, expected commentOnly]. The old scanner's pairs: a false stays false;
+// the trailing-comment, block-comment and JSX-line edits it carried are reviewed now.
 const PAIRS = [
-  ['a // edit', 'src/a.ts', 'x() // old\n', 'x() // new\n', true],
+  ['a // edit', 'src/a.ts', 'x() // old\n', 'x() // new\n', false],
   ['a comment added on its own line', 'a.ts', 'a()\nb()\n', 'a()\n// why\nb()\n', true],
   ['a comment moved', 'a.ts', '// c\na()\nb()\n', 'a()\n// c\nb()\n', true],
-  ['a block comment edited', 'lib/a.mjs', '/** Hello. */\nlet a', '/** Bye. */\nlet a', true],
+  ['a block comment edited', 'lib/a.mjs', '/** Hello. */\nlet a', '/** Bye. */\nlet a', false],
   ['a code edit', 'a.ts', 'const a = 1\n', 'const a = 2\n', false],
   ['a code edit beside a comment', 'a.ts', 'x = 1 // c\n', 'x = 2 // c\n', false],
   ['a comment glued two tokens', 'a.js', 'a/**/b', 'ab', false],
   ['an eslint-disable-next-line edit', 'a.ts', '// eslint-disable-next-line a\nx()', '// eslint-disable-next-line b\nx()', false],
   ['a JSDoc type edit in .mjs', 'a.mjs', '/** @type {string} */\nlet a', '/** @type {number} */\nlet a', false],
-  ['a JSDoc type edit in .ts', 'a.ts', '/** @type {string} */\nlet a', '/** @type {number} */\nlet a', true],
+  ['a JSDoc type edit in .ts', 'a.ts', '/** @type {string} */\nlet a', '/** @type {number} */\nlet a', false],
   ['template trailing spaces', 'a.js', 'x = `a  \nb`', 'x = `a\nb`', false],
   ['JSX text // edit', 'a.tsx', 'x = <p>// a</p>', 'x = <p>// b</p>', false],
   ['a string // edit', 'a.js', 'x = "a // b"', 'x = "a // c"', false],
@@ -227,7 +112,7 @@ const PAIRS = [
   ['a dotted directory, no extension', 'a.js/run', 'x() // old\n', 'x() // new\n', false],
   ['identical texts', 'a.ts', 'x() // c\n', 'x() // c\n', false],
   ['one side unclassifiable', 'a.js', 'x = {} / 2 // a', 'x = {} / 2 // b', false],
-  ['a BOM on both sides', 'a.ts', '\uFEFFx() // old\n', '\uFEFFx() // new\n', true],
+  ['a BOM on both sides', 'a.ts', '\uFEFFx() // old\n', '\uFEFFx() // new\n', false],
   ['a BOM added', 'a.ts', 'x()\n', '\uFEFFx()\n', false],
   ['U+FFFD on both sides', 'a.ts', '\uFFFD() // old\n', '\uFFFD() // new\n', false],
   // Review round 1: each shape was a wrong true. b is a with Q replaced by good()
@@ -395,26 +280,59 @@ const PAIRS = [
     ['<const T = "a\\">x",>(x: T)', 'let f = <const T = "a\\">x",>(x: T) => x; s = "</const>//"; Q\n'],
     ['<const T = "a\\">x">(x: T)', 'let f = <const T = "a\\">x">(x: T) => x; s = "</const>//"; Q\n'],
   ].map(([name, a]) => [`R5: ${name}`, 'f.tsx', a, a.split('Q').join('good()'), false]),
-  ['.tsx JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', true],
-  ['.jsx JSX attribute with a backslash: a comment edit', 'a.jsx', 'x = <a b="\\">t</a> // old\n', 'x = <a b="\\">t</a> // new\n', true],
+  ['.tsx JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', false],
+  ['.jsx JSX attribute with a backslash: a comment edit', 'a.jsx', 'x = <a b="\\">t</a> // old\n', 'x = <a b="\\">t</a> // new\n', false],
   // Still comment-only after round 4.
-  ['ordinary JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', true],
-  ['nested JSX with an expression: a comment edit', 'a.tsx', 'x = <a><b>{y}</b> t</a> // old\n', 'x = <a><b>{y}</b> t</a> // new\n', true],
-  ['.ts generic function type: a comment edit', 'a.ts', 'type F = <U>() => U // old\n', 'type F = <U>() => U // new\n', true],
-  ['.jsx text starting with (: a comment edit', 'a.jsx', 'x = <b>(x)</b> // old\n', 'x = <b>(x)</b> // new\n', true],
+  ['ordinary JSX with an attribute: a comment edit', 'a.tsx', 'x = <a href="x">t</a> // old\n', 'x = <a href="x">t</a> // new\n', false],
+  ['nested JSX with an expression: a comment edit', 'a.tsx', 'x = <a><b>{y}</b> t</a> // old\n', 'x = <a><b>{y}</b> t</a> // new\n', false],
+  ['.ts generic function type: a comment edit', 'a.ts', 'type F = <U>() => U // old\n', 'type F = <U>() => U // new\n', false],
+  ['.jsx text starting with (: a comment edit', 'a.jsx', 'x = <b>(x)</b> // old\n', 'x = <b>(x)</b> // new\n', false],
   // Still comment-only after round 3.
-  ['class A extends /re/: a later comment edit', 'a.tsx', 'class A extends /x/.constructor {} // old\nf()\n', 'class A extends /x/.constructor {} // new\nf()\n', true],
-  ['class A extends /re/ in .js: a later comment edit', 'a.js', 'class A extends /[//]/.constructor {}\nx = 1 // old\n', 'class A extends /[//]/.constructor {}\nx = 1 // new\n', true],
-  ['.ts T extends <U>() => U: a comment edit', 'a.ts', 'type X<T> = T extends <U>() => U ? 1 : 2 // old\n', 'type X<T> = T extends <U>() => U ? 1 : 2 // new\n', true],
+  ['class A extends /re/: a later comment edit', 'a.tsx', 'class A extends /x/.constructor {} // old\nf()\n', 'class A extends /x/.constructor {} // new\nf()\n', false],
+  ['class A extends /re/ in .js: a later comment edit', 'a.js', 'class A extends /[//]/.constructor {}\nx = 1 // old\n', 'class A extends /[//]/.constructor {}\nx = 1 // new\n', false],
+  ['.ts T extends <U>() => U: a comment edit', 'a.ts', 'type X<T> = T extends <U>() => U ? 1 : 2 // old\n', 'type X<T> = T extends <U>() => U ? 1 : 2 // new\n', false],
   // Still comment-only after round 2.
-  ['an a < b line with a comment edit (.tsx)', 'a.tsx', 'ok = a < b // old\n', 'ok = a < b // new\n', true],
-  ['an a < b line with a comment edit (.jsx)', 'a.jsx', 'ok = a < b // old\n', 'ok = a < b // new\n', true],
-  ['<< after a line break, comment edit (.tsx)', 'a.tsx', 'x = a\n  << 2 // old\n', 'x = a\n  << 2 // new\n', true],
-  ['<= after a line break, comment edit (.jsx)', 'a.jsx', 'ok = a\n  <= b // old\n', 'ok = a\n  <= b // new\n', true],
-  ['a trailing comment edit below a next-line directive', 'a.ts', '// @ts-ignore\nx() // old\n', '// @ts-ignore\nx() // new\n', true],
-  ['c8 ignore next, comment edit on a code line', 'a.js', '/* c8 ignore next 2 */\na() // old\nb()\n', '/* c8 ignore next 2 */\na() // new\nb()\n', true],
+  ['an a < b line with a comment edit (.tsx)', 'a.tsx', 'ok = a < b // old\n', 'ok = a < b // new\n', false],
+  ['an a < b line with a comment edit (.jsx)', 'a.jsx', 'ok = a < b // old\n', 'ok = a < b // new\n', false],
+  ['<< after a line break, comment edit (.tsx)', 'a.tsx', 'x = a\n  << 2 // old\n', 'x = a\n  << 2 // new\n', false],
+  ['<= after a line break, comment edit (.jsx)', 'a.jsx', 'ok = a\n  <= b // old\n', 'ok = a\n  <= b // new\n', false],
+  ['a trailing comment edit below a next-line directive', 'a.ts', '// @ts-ignore\nx() // old\n', '// @ts-ignore\nx() // new\n', false],
+  ['c8 ignore next, comment edit on a code line', 'a.js', '/* c8 ignore next 2 */\na() // old\nb()\n', '/* c8 ignore next 2 */\na() // new\nb()\n', false],
   ['c8 ignore start/stop is not counted: a comment line removed', 'a.js', '/* c8 ignore start */\na()\n// c\nb()\n/* c8 ignore stop */\n',
     '/* c8 ignore start */\na()\nb()\n/* c8 ignore stop */\n', true],
+];
+
+// The line check's own guards, [name, path, a, b, expected].
+const LINES = [
+  ['a comment line edited', 'a.ts', '// old\nexport const a = 1\n', '// new\nexport const a = 1\n', true],
+  ['a blank line added', 'a.js', 'a()\nb()\n', 'a()\n\nb()\n', true],
+  ['trailing whitespace on a code line', 'a.js', 'a()  \nb()\n', 'a()\nb()\n', true],
+  ['a comment above a template', 'a.js', '// old\nx = `a`\n', '// new\nx = `a`\n', true],
+  ['a comment below the last template', 'a.js', 'x = `a`\n// old\n', 'x = `a`\n// new\n', true],
+  ['a comment holding backticks', 'a.js', 'a()\n// use `b`\n', 'a()\n// use `c`\n', true],
+  ['a comment below a < with no JSX closer after', 'a.js', 'y = a < b\n// old\nz()\n', 'y = a < b\n// new\nz()\n', true],
+  ['.ts has no JSX', 'a.ts', 'let a: Array<string> = []\n// old\nf(<T>a)\n', 'let a: Array<string> = []\n// new\nf(<T>a)\n', true],
+  ['a code line becomes a comment', 'a.js', 'x()\n', '// x()\n', false],
+  ['a comment line inside a template', 'a.js', 'x = `a\n// old\n`\n', 'x = `a\n// new\n`\n', false],
+  ['a blank line added inside a template', 'a.js', 'x = `a\nb`\n', 'x = `a\n\nb`\n', false],
+  ['a template closed on a comment-looking line', 'a.js', 'x = `\n// old\n// end`\ny()\n', 'x = `\n// new\n// end`\ny()\n', false],
+  ['trailing spaces on a line opening a template', 'a.js', 'x = `a  \nb`\n', 'x = `a\nb`\n', false],
+  ['an odd backtick count', 'a.js', '// it`s\nx = 1\n', '// it`s\nx = 1\n// new\n', false],
+  ['a string continued with \\', 'a.js', "x = 'a\\\n// old\n'\n", "x = 'a\\\n// new\n'\n", false],
+  ['trailing whitespace after a \\', 'a.js', "x = 'a\\\nb'\n", "x = 'a\\  \nb'\n", false],
+  ['a // line inside a block comment', 'a.js', '/*\n// old\n*/\nx()\n', '/*\n// new\n*/\nx()\n', false],
+  ['a block comment after a string holding /*', 'a.js', 's = "/*"; /* a\n// old\n*/\n', 's = "/*"; /* a\n// new\n*/\n', false],
+  ['*/* hiding an opener', 'a.js', 's = "/*"; y = a */* b\n// old\n*/\n', 's = "/*"; y = a */* b\n// new\n*/\n', false],
+  ['JSX text far from its tags', 'a.jsx', 'x = <div>\n  {a}\n  // old\n  {b}\n</div>\n', 'x = <div>\n  {a}\n  // new\n  {b}\n</div>\n', false],
+  ['JSX text in .js', 'a.js', 'x = <p>\n// old\n</p>\n', 'x = <p>\n// new\n</p>\n', false],
+  ['JSX text closed with spaces', 'a.mjs', 'x = <p>\n// old\n< /p>\n', 'x = <p>\n// new\n< /p>\n', false],
+  ['a multi-line JSX attribute string', 'a.tsx', 'x = <a b="\n// old\n" />\n', 'x = <a b="\n// new\n" />\n', false],
+  ['ignore next N far above', 'a.js', '/* c8 ignore next 9 */\na()\nb()\n// old\n', '/* c8 ignore next 9 */\na()\nb()\n// new\n', false],
+  ['a directive on the code line above', 'a.ts', 'x() /* prettier-ignore */\n', 'x() /* prettier-ignore */\n// new\n', false],
+  ['a comment naming a tool', 'a.ts', '// old\nx()\n', '// see the eslint docs\nx()\n', false],
+  ['/// is a TS reference', 'a.ts', 'x()\n', '/// <reference types="a" />\nx()\n', false],
+  ['U+2028 in a comment line', 'a.js', 'a()\n// old\n', `a()\n// new${LS}b()\n`, false],
+  ['a lone CR in a comment line', 'a.js', 'a()\n// old\n', 'a()\n// new\rb()\n', false],
 ];
 
 describe('COMMENT_EXTS', () => {
@@ -423,58 +341,39 @@ describe('COMMENT_EXTS', () => {
   });
 });
 
-describe('stripComments', () => {
-  for (const [name, ext, input, want] of STRIP) {
-    it(`${name} (${ext || 'none'})`, () => assert.equal(stripComments(input, ext), want));
-  }
-});
-
-describe('comments a tool reads are kept', () => {
-  for (const [name, ext, input] of TOOL_READ) {
-    it(`${name} (${ext})`, () => assert.equal(stripComments(input, ext), input));
-  }
-  it('a JSDoc type block in .ts is stripped', () => {
-    assert.equal(stripComments('/** @param {string} a */\nf(a)', '.ts'), 'f(a)');
-  });
-  it('a JSDoc @param with no type in .mjs is stripped', () => {
-    assert.equal(stripComments('/** @param a the thing */\nf(a)', '.mjs'), 'f(a)');
-  });
-  it('a next-line directive right above its code still classifies', () => {
-    const t = 'a() // c\n// eslint-disable-next-line no-eval\neval(x) // d\n';
-    assert.equal(stripComments(t, '.js'), 'a()\n// eslint-disable-next-line no-eval\neval(x)');
-  });
-  it('a file-level directive followed by a blank line still classifies', () => {
-    assert.equal(stripComments('// @ts-nocheck\n\n// c\nx()\n', '.ts'), '// @ts-nocheck\nx()');
-    assert.equal(stripComments('/* istanbul ignore file */\n\nx()\n', '.js'), '/* istanbul ignore file */\nx()');
-    assert.equal(stripComments('// deno-lint-ignore-file\n\nx()\n', '.ts'), '// deno-lint-ignore-file\nx()');
-  });
-  it('a // global in a line comment is prose', () => {
-    assert.equal(stripComments('// global state below\nx()', '.js'), 'x()');
-  });
-});
-
 describe('commentOnly', () => {
-  for (const [name, path, a, b, want] of PAIRS) {
+  for (const [name, path, a, b, want] of [...PAIRS, ...LINES]) {
     it(name, () => assert.equal(commentOnly(a, b, path), want));
+  }
+});
+
+describe('the safety corpus is reviewed', () => {
+  for (const [name, ext, t] of UNCLASSIFIED) {
+    it(`unclassified, comment edited: ${name}`, () => assert.equal(commentOnly(t, edit(t), `f${ext}`), false));
+  }
+  for (const [name, ext, t] of TOOL_READ) {
+    const variants = { edited: edit(t), dropped: t.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|#![^\n]*/, '') };
+    if (NEXT_LINE.test(t)) variants['moved off its line'] = t.replace('\n', '\n// Q\n');
+    for (const [how, b] of Object.entries(variants)) {
+      if (b !== t) it(`a tool-read comment ${how}: ${name}`, () => assert.equal(commentOnly(t, b, `f${ext}`), false));
+    }
   }
 });
 
 describe('nothing throws', () => {
   it('non-string input', () => {
-    assert.equal(stripComments(undefined, '.js'), null);
-    assert.equal(stripComments(Buffer.from('x()'), '.js'), null);
-    assert.equal(stripComments('x()', undefined), null);
     assert.equal(commentOnly(null, 'x()', 'a.js'), false);
+    assert.equal(commentOnly(Buffer.from('x()'), 'x()\n', 'a.js'), false);
     assert.equal(commentOnly('x()', 'y()', null), false);
-  });
-  it('deep nesting is null, not a RangeError', () => {
-    const deep = '`${'.repeat(20000) + '}`'.repeat(20000);
-    assert.equal(stripComments(deep, '.js'), null);
-    assert.equal(commentOnly(deep, deep + ' ', 'a.js'), false);
   });
   it('a non-UTF-8 blob decoded with replacement characters', () => {
     const bin = Buffer.from([0xff, 0xfe, 0x2f, 0x2f, 0x80, 0x0a, 0x00, 0xc3]).toString('utf8');
-    assert.doesNotThrow(() => stripComments(bin, '.js'));
-    assert.equal(commentOnly(bin, bin + '// c', 'a.js'), false);
+    assert.equal(commentOnly(bin, bin + '\n// c', 'a.js'), false);
+  });
+  it('a large file with many edits stays linear', () => {
+    const a = Array.from({ length: 50000 }, (_, i) => (i % 2 ? `// old ${i}` : `/* x */ x${i}()`)).join('\n');
+    const t = Date.now();
+    assert.equal(commentOnly(a, a.replaceAll('// old', '// new'), 'a.js'), true);
+    assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
   });
 });

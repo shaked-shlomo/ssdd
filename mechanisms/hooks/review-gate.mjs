@@ -21,12 +21,13 @@
 // stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
 // re-review reads that change, and the new stamp lands on the new blob.
 //
-// A change that is only comments (comment-strip.mjs: the JS/TS family) carries
-// a clean stamp over: reviewer R's stamp on F still counts when its blob and
-// the staged one strip to the same text, HEAD's side and both modes are
-// unchanged, the stamped blob can still be read, and R's entry records no
-// issues. The comment reviewer (reviewGate.commentReviewer) never carries: it
-// owes F with the delta, and when it isn't routed to F nothing carries.
+// A change that is only comments (comment-only.mjs: blank lines, whole-line
+// `//` comments and trailing whitespace in the JS/TS family) carries a clean
+// stamp over: reviewer R's stamp on F still counts when its blob and the staged
+// one differ only so, HEAD's side and both modes are unchanged, the stamped blob
+// can still be read, and R's entry records no issues. The comment reviewer
+// (reviewGate.commentReviewer) never carries: it owes F with the delta, and
+// when it isn't routed to F nothing carries.
 // Computed per judgment, never written: the stamp keeps its old key.
 //
 // A merge of the default branch that stopped (a conflict, or --no-commit)
@@ -76,7 +77,7 @@ import { isUtf8 } from 'node:buffer';
 import { extname, join, isAbsolute, resolve } from 'node:path';
 import { hookPermissionBody, parseHookStdin } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
-import { COMMENT_EXTS, commentOnly } from './comment-strip.mjs';
+import { COMMENT_EXTS, commentOnly } from './comment-only.mjs';
 
 // Every mode judges git's cwd (or --repo), never CLAUDE_PROJECT_DIR /
 // SSDD_PROJECT_DIR: a stamp lands where the commit that reads it runs.

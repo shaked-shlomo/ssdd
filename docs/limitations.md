@@ -47,9 +47,13 @@ real project.
   its own comments at run time (`Function.prototype.toString`, source maps,
   a test that greps the file), so editing a comment such code depends on
   carries the stamp.
-- The carry covers the JS/TS family only. Anything the scanner can't
-  classify (Flow comment types, ASI edge cases after a line break, JSX/TS
-  generic ambiguity in `.tsx`) costs a normal review instead.
+- The carry covers the JS/TS family only, and only blank lines, whole-line
+  `//` comments and trailing whitespace. A trailing comment on a code line,
+  a block or JSDoc comment, a comment naming a tool (`@`, `#`, `eslint`,
+  `ignore`, …), or a line that a template, JSX element, block comment or
+  `\` continuation may hold costs a normal review. Those guards read raw
+  characters, so a backtick, `<` or `/*` in a string elsewhere in the file
+  can cost a review too.
 - The merge rule needs git 2.38 (`merge-tree --write-tree`); older git
   judges every file of a merge. Only a merge of the default branch counts:
   another branch's commits weren't necessarily reviewed.

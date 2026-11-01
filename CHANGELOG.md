@@ -60,18 +60,19 @@ its own. See `SPEC.md` → v3.4.
   diff HEAD` for its routed files. `--stamp` keys the repo git finds from
   the cwd (or `--repo`), not `SSDD_PROJECT_DIR` / `CLAUDE_PROJECT_DIR`.
 - **A comment-only change carries a clean stamp.** When a staged JS/TS-family
-  file differs from a reviewer's stamped blob only in comments, that stamp
-  still meets the gate, if HEAD's side and both modes are unchanged, the
+  file differs from a reviewer's stamped blob only in blank lines, whole-line
+  `//` comments and trailing whitespace, that stamp still meets the gate, if HEAD's side and both modes are unchanged, the
   file is a regular file, and the stamp records no issues. The comment
   reviewer, `reviewGate.commentReviewer` (new; default
   `docs-sync-reviewer`), still owes the file and gets the `git diff <old>
   <new>` delta; when it isn't routed to the file, nothing carries.
   docs-sync's contract gains a section: check each changed comment's claim
-  against the code. The scanner (`comment-strip.mjs`) treats a comment a
-  tool reads (`eslint-`, `@ts-`, a shebang, …) as code, and answers "can't
-  tell" for anything it can't classify, which costs a normal review. The
-  carry is computed per judgment and never written; the stamp keeps its old
-  key.
+  against the code. The check (`comment-only.mjs`) is line-based and errs
+  toward review: a trailing comment, a block or JSDoc comment, a comment a
+  tool reads (`eslint`, `@ts-`, `ignore`, …), a line a template, JSX element,
+  block comment or `\` continuation may hold, and a line that moves a
+  next-line directive's target are all reviewed. The carry is computed per
+  judgment and never written; the stamp keeps its old key.
 - **A global `reviewGate.exclude` is no longer read.** Files it excluded
   (test files, in 3.3.2's example config) are routed to their reviewers
   again until the patterns move into each route's `exclude`, as the example
