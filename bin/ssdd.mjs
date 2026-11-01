@@ -581,6 +581,8 @@ function update(target) {
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, newTree, carried));
   armHook(target, log);
+  const dormant = dormantLine(target, { rerun: false }); // what armHook left unarmed
+  if (dormant) console.log(dormant);
   log(`packs     ${packs.join(', ') || 'none'}`);
   log(`with      ${parts.join(', ') || 'none'}`);
 
@@ -763,20 +765,30 @@ function obsoleteLines(target) {
   return obsolete.length ? [`obsolete config keys (ignored): ${obsolete.join(', ')}`] : [];
 }
 
+// The dormant pre-commit's WARNING line with its fix, '' when it runs the
+// gate. `status` and `update` both print it; `update` passes rerun: false, as
+// pointing at itself would be no fix (it has just run, and left it dormant).
+function dormantLine(target, { rerun }) {
+  const dormant = dormantHookDetail(target);
+  if (!dormant) return '';
+  const head = `WARNING: the pre-commit hook is dormant (${dormant.reason}) — `;
+  if (dormant.edit) {
+    return `${head}add ${dormant.edit.line} to ${dormant.edit.file}` +
+      `${rerun && dormant.edit.managed ? `, or rerun: update '${target}' (it restores SSDD's copy)` : ''}`;
+  }
+  const orUpdate = rerun && hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
+  return `${head}run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`;
+}
+
 // ── status: is the gate armed? ───────────────────────────────────────────────
 // A broken config blocks every commit, and a dormant pre-commit hook never
 // runs. Informational only.
 function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
-  const dormant = dormantHookDetail(target);
+  const dormant = dormantLine(target, { rerun: true });
+  if (dormant) console.log(dormant);
   const orUpdate = hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
-  if (dormant?.edit) {
-    console.log(`WARNING: the pre-commit hook is dormant (${dormant.reason}) — add ${dormant.edit.line} to ${dormant.edit.file}` +
-      `${dormant.edit.managed ? `, or rerun: update '${target}' (it restores SSDD's copy)` : ''}`);
-  } else if (dormant) {
-    console.log(`WARNING: the pre-commit hook is dormant (${dormant.reason}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
-  }
   const ledgerRule = ledgerIgnoreRule(target, '.superpowers/sdd/_/progress.md');
   if (ledgerRule) console.log(`WARNING: git ignores Superpowers ledgers here (${ledgerRule}) — remove that rule so .superpowers/sdd/*/progress.md is tracked`);
   const foreign = foreignHook(target);

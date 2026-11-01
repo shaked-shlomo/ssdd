@@ -1282,6 +1282,20 @@ describe('status: armed means the pre-commit runs the gate', () => {
     assert.match(ssdd('status', tgt).out, /^WARNING: .* to .*\.githooks\/pre-commit$/m);
   });
 
+  it('update names a dormant pre-commit too, with its fix and no "rerun update"', () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v2.0.0').code, 0);
+    put(tgt, '.githooks/pre-commit', '#!/bin/sh\necho hi\n', '755');
+    commitAll(tgt, 'ssdd');
+    let r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^WARNING: the pre-commit hook is dormant \(its pre-commit \((.*\.githooks\/pre-commit)\) doesn't run the review gate\) — add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to \1$/m);
+    // A path armHook won't touch: the fix is the arming command.
+    git(tgt, 'config', 'core.hooksPath', 'nowhere');
+    r = ssdd('update', tgt);
+    assert.match(r.out, /^WARNING: the pre-commit hook is dormant \(core\.hooksPath is "nowhere"\) — run: git -C '.*' config core\.hooksPath \.githooks$/m);
+    assert.doesNotMatch(r.out, /rerun: update/);
+  });
+
   it('a lock whose commit is not in the source: status says so, compares nothing, exits as before', () => {
     assert.equal(ssdd('install', tgt, 'claude-code', '--ref', 'v2.0.0').code, 0);
     commitAll(tgt, 'ssdd');
