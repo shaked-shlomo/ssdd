@@ -21,6 +21,14 @@
 // stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
 // re-review reads that change, and the new stamp lands on the new blob.
 //
+// A change that is only comments (comment-strip.mjs: the JS/TS family) carries
+// a clean stamp over: reviewer R's stamp on F still counts when its blob and
+// the staged one strip to the same text, HEAD's side and both modes are
+// unchanged, the stamped blob can still be read, and R's entry records no
+// issues. The comment reviewer (reviewGate.commentReviewer) never carries: it
+// owes F with the delta, and when it isn't routed to F nothing carries.
+// Computed per judgment, never written: the stamp keeps its old key.
+//
 // A merge of the default branch that stopped (a conflict, or --no-commit)
 // owes only what differs from git's own merge of the two sides: conflict
 // resolutions and edits made during the merge. A path equal to `git
@@ -63,9 +71,11 @@
 // go-ahead in chat (never self-authorized).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { join, isAbsolute, resolve } from 'node:path';
+import { isUtf8 } from 'node:buffer';
+import { extname, join, isAbsolute, resolve } from 'node:path';
 import { hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
+import { COMMENT_EXTS, commentOnly } from './comment-strip.mjs';
 
 let repo = resolveHookRepo(null);
 const gitIn = (opts, ...args) =>
@@ -239,8 +249,13 @@ function updateStamp(mutate) {
 }
 
 // Reviewers flagged issues on files that are about to be committed unchanged:
-// allowed (fix-or-triage), but worth a line so triage isn't silent.
-function triageNote(cfg) {
+// allowed (fix-or-triage), but worth a line so triage isn't silent. So is a
+// stamp that met the gate only by carrying over a comment-only change.
+function triageNote(cfg, { carried }) {
+  const byPath = new Map();
+  for (const { name, path } of carried) byPath.set(path, [...(byPath.get(path) ?? []), name]);
+  const carry = [...byPath].map(([path, names]) =>
+    `[ssdd-review-gate] carried over a comment-only change: ${names.join(', ')} on ${path}\n`).join('');
   const { staged } = stagedOwed();
   const stamp = readStamp();
   const lines = [];
@@ -254,9 +269,9 @@ function triageNote(cfg) {
       lines.push(`  • ${name} reported ${n} finding(s) on ${flagged.join(', ')} — unchanged since`);
     }
   }
-  return lines.length
+  return carry + (lines.length
     ? `[ssdd-review-gate] committing files reviewers flagged; make sure each finding was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
-    : '';
+    : '');
 }
 
 // [[reviewer, routedStagedPaths]] for every reviewer with at least one staged file.
@@ -266,18 +281,22 @@ const reviewerFiles = (cfg, staged) =>
     .filter(([, files]) => files.length);
 
 // The staged diff, judged: per reviewer with an unmet stamp, the routed staged
-// files it still owes (with the key it last stamped, if any); the unrouted
-// staged paths, for context; and the oversize warning if one is due.
+// files it still owes (with the key it last stamped, if any); the stamps that
+// carried over a comment-only change; the unrouted staged paths, for context;
+// and the oversize warning if one is due.
 function judge(cfg) {
   const { staged, merged } = stagedOwed();
   const stamp = readStamp();
+  const carries = carrier(cfg);
   const owed = [];
+  const carried = [];
   const routed = new Set();
   for (const [name, files] of reviewerFiles(cfg, staged)) {
     files.forEach((f) => routed.add(f));
     const mine = stamp.reviewers[name] ?? {};
     const missing = files
       .filter((f) => mine[f]?.key !== staged.get(f))
+      .filter((f) => !(carries(name, f, mine[f], staged.get(f)) && carried.push({ name, path: f })))
       .map((f) => {
         const prev = mine[f]?.key ?? null;
         return { path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) };
@@ -286,7 +305,7 @@ function judge(cfg) {
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
   return {
-    owed, unrouted, warning: oversizeWarning(cfg, routed.size),
+    owed, carried, unrouted, warning: oversizeWarning(cfg, routed.size),
     merged: merged?.paths.size ? { head: merged.head, count: merged.paths.size } : null,
   };
 }
@@ -298,15 +317,56 @@ function judge(cfg) {
 // the block message. The base moved when HEAD's side changed to something
 // other than the reviewed content (a rebase, not a commit of the stamped change).
 const KEY = /^(\d+):([0-9a-f]+)→(\d+):([0-9a-f]+)$/;
+const zero = (b) => /^0+$/.test(b); // no blob: an added file's old side, a deletion's new one
 function deltaFor(prev, now) {
   const p = KEY.exec(String(prev));
   const n = KEY.exec(String(now));
-  const zero = (b) => /^0+$/.test(b);
   if (!p || !n || zero(p[4]) || zero(n[4]) || p[4] === n[4]) return null;
   try {
     execFileSync('git', ['-C', repo, 'cat-file', '-e', p[4]], { stdio: 'ignore' });
   } catch { return 'gone'; }
   return { cmd: `git diff ${p[4]} ${n[4]}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
+}
+
+// Decision 3, for one judgment: → (name, path, entry, nowKey) → whether that
+// reviewer's stamp entry carries over a comment-only change to the staged key.
+// Only when the comment reviewer is routed to the path and isn't `name`; the
+// path is a COMMENT_EXTS file (checked first, so no other file reads a blob);
+// the entry's issues are none or 0 (a hand-edited "2" isn't); both keys parse,
+// with HEAD's side (mode and blob) and the new mode unchanged, a regular file
+// on the new side (a symlink's blob is its target; a gitlink has none) and a
+// blob on both new sides (a deletion never carries); both blobs read (a pruned
+// one fails the read) and are UTF-8; and commentOnly says so. Each blob is
+// read once per judgment. Any doubt or git failure is false, never a throw:
+// the gate must not turn one into an allow.
+function carrier(cfg) {
+  const cr = cfg?.reviewGate?.commentReviewer;
+  const crRoutes = routes(cfg).find(([n]) => n === cr)?.[1];
+  const texts = new Map(); // blob id → its UTF-8 text | null
+  const text = (id) => {
+    if (!texts.has(id)) {
+      let t = null;
+      try {
+        const buf = execFileSync('git', ['-C', repo, 'cat-file', 'blob', id], { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+        if (isUtf8(buf)) t = buf.toString('utf8');
+      } catch { /* pruned, or not a blob */ }
+      texts.set(id, t);
+    }
+    return texts.get(id);
+  };
+  return (name, path, entry, now) => {
+    try {
+      if (!crRoutes || name === cr || !crRoutes(path) || !COMMENT_EXTS.has(extname(path))) return false;
+      if (entry?.issues !== undefined && entry.issues !== 0) return false;
+      const p = KEY.exec(String(entry?.key));
+      const n = KEY.exec(String(now));
+      if (!p || !n || p[1] !== n[1] || p[2] !== n[2] || p[3] !== n[3] || !/^100(644|755)$/.test(n[3])) return false;
+      if (zero(p[4]) || zero(n[4])) return false;
+      const was = text(p[4]);
+      const is = text(n[4]);
+      return was !== null && is !== null && commentOnly(was, is, path);
+    } catch { return false; }
+  };
 }
 
 // Not a block: SDD.md §4 is per task — implement → review gate → commit — and a
@@ -478,7 +538,7 @@ if (process.argv[2] === '--check') {
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     process.stdout.write(
-      verdict.warning + triageNote(cfg) + '[ssdd-review-gate] nothing owed\n' +
+      verdict.warning + triageNote(cfg, verdict) + '[ssdd-review-gate] nothing owed\n' +
       (verdict.merged ? `${mergeLine(verdict.merged)}\n` : ''),
     );
     process.exit(0);
@@ -504,7 +564,7 @@ if (process.argv[2] === '--pre-commit') {
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     if (verdict.warning) process.stderr.write(verdict.warning);
-    process.stderr.write(triageNote(cfg));
+    process.stderr.write(triageNote(cfg, verdict));
     process.exit(0);
   }
   process.stderr.write(blockMessage(verdict, ` --repo ${repo}`));

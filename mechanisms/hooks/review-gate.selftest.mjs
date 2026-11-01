@@ -602,6 +602,161 @@ describe('the triage note', () => {
   });
 });
 
+// v3.6 Decision 3: a reviewer's clean stamp holds over a comment-only edit;
+// the comment reviewer still owes the file, with its delta.
+describe('the comment-only carry', () => {
+  const CARRY = {
+    routing: [
+      { reviewer: 'alpha', paths: ['^src/'] },
+      { reviewer: 'docs-sync-reviewer', paths: ['^src/'] },
+      { reviewer: 'beta', paths: ['^src/lib/'] },
+    ],
+  };
+  const ALL = 'alpha,beta,docs-sync-reviewer';
+  const V1 = '// greet the user\nexport const a = 1;\n';
+  const V2 = '// greet the user by name\nexport const a = 1;\n';
+  const CARRIED = /carried over a comment-only change: alpha, beta on src\/lib\/a\.ts/;
+  const setConfig = (body) => writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify(body));
+  const editStamp = (fn) => { const s = readStamp(dir); fn(s); writeFileSync(stampFile(dir), JSON.stringify(s)); };
+  const check = () => run(dir, ['--check']);
+  const owers = (out) => [...out.matchAll(/^ {2}• ([\w-]+)/gm)].map((m) => m[1]).sort();
+  // Stage v1, stamp the reviewers on it, run `between`, stage v2: → --check.
+  const edit = (path, v1, v2, between, who = ALL) => {
+    write(dir, path, v1);
+    const s = stamp(dir, who);
+    assert.strictEqual(s.status, 0, s.stderr);
+    between?.();
+    write(dir, path, v2);
+    return check();
+  };
+  const owes = (r, expected) => {
+    assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+    assert.deepStrictEqual(owers(r.stdout), expected, r.stdout);
+  };
+  beforeEach(() => setConfig(CARRY));
+
+  it('a comment-only edit keeps alpha\'s and beta\'s stamps; docs-sync owes it with a delta', () => {
+    write(dir, 'src/lib/a.ts', V1);
+    const was = git(dir, 'rev-parse', ':src/lib/a.ts').trim();
+    assert.strictEqual(stamp(dir, ALL).status, 0);
+    write(dir, 'src/lib/a.ts', V2);
+    const now = git(dir, 'rev-parse', ':src/lib/a.ts').trim();
+    const r = check();
+    owes(r, ['docs-sync-reviewer']);
+    assert.match(r.stdout, new RegExp(`• docs-sync-reviewer — owes[^\\n]*:\\n\\s+src/lib/a\\.ts[^\\n]*\\n\\s+review the change: git diff ${was} ${now}\\n`));
+    assert.strictEqual(stamp(dir, 'docs-sync-reviewer').status, 0);
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 0, pc.stderr);
+    assert.match(pc.stderr, CARRIED);
+    const ok = check();
+    assert.strictEqual(ok.status, 0, ok.stdout);
+    assert.match(ok.stdout, CARRIED);
+  });
+
+  describe('no carry: alpha owes', () => {
+    it('a code edit', () => {
+      owes(edit('src/lib/a.ts', V1, '// greet the user\nexport const a = 2;\n'), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('an edit to `// eslint-disable-next-line`', () => {
+      const r = edit('src/lib/a.ts', '// eslint-disable-next-line no-console\nconsole.log(1);\n',
+        '// eslint-disable-next-line no-alert\nconsole.log(1);\n');
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('the same comment edit in a .py file', () => {
+      owes(edit('src/x.py', V1, V2, null, 'alpha,docs-sync-reviewer'), ['alpha', 'docs-sync-reviewer']);
+    });
+    it('the stamped blob pruned', () => {
+      const r = edit('src/lib/a.ts', V1, V2, () => editStamp((s) => {
+        s.reviewers.alpha['src/lib/a.ts'].key = s.reviewers.alpha['src/lib/a.ts'].key.replace(/[0-9a-f]{40}$/, 'ab'.repeat(20));
+      }));
+      owes(r, ['alpha', 'docs-sync-reviewer']); // beta's stamp still carries
+      assert.match(r.stdout, /its stamped blob is gone/);
+    });
+    it('HEAD\'s side changed', () => {
+      write(dir, 'src/lib/a.ts', 'export const a = 1;\n');
+      git(dir, 'commit', '-qm', 'a');
+      const r = edit('src/lib/a.ts', V1, V2, () => {
+        git(dir, 'reset', '-q');
+        write(dir, 'src/lib/a.ts', 'export const a = 1;\nexport const b = 2;\n');
+        git(dir, 'commit', '-qm', 'another change');
+      });
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a mode change plus the comment edit', () => {
+      const r = edit('src/lib/a.ts', V1, V2, () => chmodSync(join(dir, 'src', 'lib', 'a.ts'), 0o755));
+      assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^100755 /);
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    for (const issues of [1, '2']) {
+      it(`an entry with issues: ${JSON.stringify(issues)}`, () => {
+        const r = edit('src/lib/a.ts', V1, V2, () => editStamp((s) => { s.reviewers.alpha['src/lib/a.ts'].issues = issues; }));
+        owes(r, ['alpha', 'docs-sync-reviewer']);
+      });
+    }
+    it('a comment edit in a .js file that also holds an invalid UTF-8 byte', () => {
+      const js = (comment) => Buffer.concat([Buffer.from(`// ${comment}\nexport const s = "`), Buffer.from([0xff]), Buffer.from('";\n')]);
+      owes(edit('src/lib/a.js', js('greet'), js('greet them')), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a symlink retarget that reads as a comment edit', () => {
+      // `x//old.ts` → `x//new.ts` strips to `x` both times, as source would.
+      const link = (target) => {
+        mkdirSync(join(dir, 'src', 'lib'), { recursive: true });
+        rmSync(join(dir, 'src', 'lib', 'a.ts'), { force: true });
+        symlinkSync(target, join(dir, 'src', 'lib', 'a.ts'));
+        git(dir, 'add', 'src/lib/a.ts');
+      };
+      link('x//old.ts');
+      assert.strictEqual(stamp(dir, ALL).status, 0);
+      link('x//new.ts');
+      assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^120000 /);
+      owes(check(), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a config whose commentReviewer isn\'t routed to the file', () => {
+      setConfig({ ...CARRY, reviewGate: { commentReviewer: 'nobody' } });
+      owes(edit('src/lib/a.ts', V1, V2), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+  });
+
+  it('--check and --pre-commit leave the stamp file byte-identical', () => {
+    write(dir, 'src/lib/a.ts', V1);
+    stamp(dir, ALL);
+    write(dir, 'src/lib/a.ts', V2);
+    const files = [stampFile(dir), join(dir, '.git', 'index')];
+    const snap = () => files.map((f) => readFileSync(f));
+    let before = snap();
+    assert.strictEqual(check().status, 1);
+    assert.strictEqual(preCommit(dir).status, 1);
+    assert.deepStrictEqual(snap(), before);
+    stamp(dir, 'docs-sync-reviewer');
+    before = snap();
+    assert.match(check().stdout, CARRIED);
+    assert.match(preCommit(dir).stderr, CARRIED);
+    assert.deepStrictEqual(snap(), before);
+  });
+
+  it('on an unborn branch, a comment-only edit carries', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ssdd-gate-unborn-'));
+    try {
+      git(fresh, 'init', '-q');
+      mkdirSync(join(fresh, '.ssdd'));
+      writeFileSync(join(fresh, '.ssdd', 'config.json'), JSON.stringify(CARRY));
+      write(fresh, 'src/lib/a.ts', V1);
+      assert.strictEqual(stamp(fresh, ALL).status, 0);
+      write(fresh, 'src/lib/a.ts', V2);
+      assert.match(readStamp(fresh).reviewers.alpha['src/lib/a.ts'].key, /^0{6}:0{40}→/);
+      const r = run(fresh, ['--check']);
+      assert.strictEqual(r.status, 1, r.stdout);
+      assert.deepStrictEqual(owers(r.stdout), ['docs-sync-reviewer']);
+      assert.strictEqual(stamp(fresh, 'docs-sync-reviewer').status, 0);
+      const pc = preCommit(fresh);
+      assert.strictEqual(pc.status, 0, pc.stderr);
+      assert.match(pc.stderr, CARRIED);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the block message names the delta', () => {
   it('after a full stamp, one changed file is named under its reviewers with "changed since"', () => {
     write(dir, 'src/a.ts', 'a\n');
