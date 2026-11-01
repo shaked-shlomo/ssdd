@@ -328,6 +328,7 @@ const LINES = [
   ['JSX text closed with spaces', 'a.mjs', 'x = <p>\n// old\n< /p>\n', 'x = <p>\n// new\n< /p>\n', false],
   ['a multi-line JSX attribute string', 'a.tsx', 'x = <a b="\n// old\n" />\n', 'x = <a b="\n// new\n" />\n', false],
   ['ignore next N far above', 'a.js', '/* c8 ignore next 9 */\na()\nb()\n// old\n', '/* c8 ignore next 9 */\na()\nb()\n// new\n', false],
+  ['a wrapped block directive above', 'a.js', '/* istanbul ignore\n   next */\nrisky()\n', '/* istanbul ignore\n   next */\n// new\nrisky()\n', false],
   ['a directive on the code line above', 'a.ts', 'x() /* prettier-ignore */\n', 'x() /* prettier-ignore */\n// new\n', false],
   ['a comment naming a tool', 'a.ts', '// old\nx()\n', '// see the eslint docs\nx()\n', false],
   ['/// is a TS reference', 'a.ts', 'x()\n', '/// <reference types="a" />\nx()\n', false],

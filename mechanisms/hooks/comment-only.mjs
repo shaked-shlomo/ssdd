@@ -74,8 +74,10 @@ function unsafe(c, k, gap, jsx) {
   // `ignore next 3` counts physical lines from above; a next-line directive
   // targets the line below it, so one above the gap (past blank and comment
   // lines, through the first code line's comment) would see its target move.
+  // A line that starts in a block comment may end a wrapped one.
   if (c.counted < k) return true;
   for (let i = k - 1; i >= 0; i--) {
+    if (c.open[i]) return true;
     const at = L[i].search(/\/[/*]/);
     if (at >= 0 && DIRECTIVE.test(L[i].slice(at + 2))) return true;
     if (!ignorable(L[i])) break;

@@ -783,16 +783,16 @@ describe('the comment-only carry', () => {
       owes(edit('src/lib/a.js', js('greet'), js('greet them')), ['alpha', 'beta', 'docs-sync-reviewer']);
     });
     it('a symlink retarget that reads as a comment edit', () => {
-      // `x//old.ts` → `x//new.ts` strips to `x` both times, as source would.
+      // `//old.ts` → `//new.ts` reads as a comment-line edit: only the mode stops it.
       const link = (target) => {
         mkdirSync(join(dir, 'src', 'lib'), { recursive: true });
         rmSync(join(dir, 'src', 'lib', 'a.ts'), { force: true });
         symlinkSync(target, join(dir, 'src', 'lib', 'a.ts'));
         git(dir, 'add', 'src/lib/a.ts');
       };
-      link('x//old.ts');
+      link('//old.ts');
       assert.strictEqual(stamp(dir, ALL).status, 0);
-      link('x//new.ts');
+      link('//new.ts');
       assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^120000 /);
       owes(check(), ['alpha', 'beta', 'docs-sync-reviewer']);
     });
