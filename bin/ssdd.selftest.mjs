@@ -1273,9 +1273,10 @@ describe('status: armed means the pre-commit runs the gate', () => {
     put(tgt, '.githooks/pre-commit', '#!/bin/sh\necho hi\n', '755');
     const r = ssdd('status', tgt);
     // core.hooksPath is already .githooks, so the fix is an edit, not the arming command.
-    assert.match(r.out, /^WARNING: the pre-commit hook is dormant \(its pre-commit \((.*\.githooks\/pre-commit)\) doesn't run the review gate\) — add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to \1, or rerun: update '.*' \(it restores SSDD's copy\)$/m);
+    assert.match(r.out, /^WARNING: the pre-commit hook is dormant \(its pre-commit \((.*\.githooks\/pre-commit)\) doesn't run the review gate\) — add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to \1$/m);
     assert.doesNotMatch(r.out, /— run: git/);
-    // A copy SSDD doesn't manage gets no update hint.
+    // An update keeps the edit, so rerunning one is no fix: no hint, managed or not.
+    assert.doesNotMatch(r.out, /rerun: update|restores SSDD's copy/);
     const lock = JSON.parse(get('.ssdd/ssdd.lock.json'));
     delete lock.managed['.githooks/pre-commit'];
     put(tgt, '.ssdd/ssdd.lock.json', JSON.stringify(lock));

@@ -356,7 +356,7 @@ export function collect(repo) {
   const at = (loaded.error ? 1 : 0) + onboarding.length;
   if (dormant) {
     const fix = dormant.edit
-      ? `add ${dormant.edit.line} to ${dormant.edit.file}${dormant.edit.managed ? ' (or rerun the ssdd update, which restores its copy)' : ''}`
+      ? `add ${dormant.edit.line} to ${dormant.edit.file}`
       : `run ${dormant.command}`;
     warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant.reason}): ask the user to ${fix}`);
   }

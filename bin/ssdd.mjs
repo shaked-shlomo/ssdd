@@ -772,10 +772,8 @@ function dormantLine(target, { rerun }) {
   const dormant = dormantHookDetail(target);
   if (!dormant) return '';
   const head = `WARNING: the pre-commit hook is dormant (${dormant.reason}) — `;
-  if (dormant.edit) {
-    return `${head}add ${dormant.edit.line} to ${dormant.edit.file}` +
-      `${rerun && dormant.edit.managed ? `, or rerun: update '${target}' (it restores SSDD's copy)` : ''}`;
-  }
+  // An edit is the only fix: `update` keeps a local edit to SSDD's copy.
+  if (dormant.edit) return `${head}add ${dormant.edit.line} to ${dormant.edit.file}`;
   const orUpdate = rerun && hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
   return `${head}run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`;
 }

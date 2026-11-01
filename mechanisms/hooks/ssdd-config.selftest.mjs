@@ -324,11 +324,11 @@ describe('dormantHook: armed means the pre-commit runs the gate', () => {
     assert.deepEqual(dormantHookDetail(dir), { reason: 'core.hooksPath is unset', command: 'git config core.hooksPath .githooks' });
     git('config', 'core.hooksPath', '.githooks');
     const file = join(dir, '.githooks', 'pre-commit');
-    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE, managed: false });
+    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE });
     assert.equal(dormantHookDetail(dir).command, '');
     putConfig('{}');
     writeFileSync(join(dir, '.ssdd', 'ssdd.lock.json'), JSON.stringify({ managed: { '.githooks/pre-commit': { src: 'x', sha256: 'y' } } }));
-    assert.equal(dormantHookDetail(dir).edit.managed, true);
+    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE }); // SSDD's copy: the fix is the same edit
     preCommit(dir, `#!/bin/sh\n${GATE}\n`);
     assert.equal(dormantHookDetail(dir), null);
   });

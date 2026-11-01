@@ -211,16 +211,15 @@ function hooksPath(root) {
 // → { reason: "core.hooksPath is unset" | `core.hooksPath is "<v>"` |
 //             "its pre-commit (<file>) doesn't run the review gate",
 //     command: the git command that arms it ('' when the fix is an edit),
-//     edit: { file, line, managed } when the pre-commit exists but lacks the
-//           gate call; managed: it is SSDD's copy, which `update` restores }
+//     edit: { file, line } when the pre-commit exists but lacks the gate
+//           call. An `update` keeps a local edit to SSDD's copy, so the fix
+//           is this edit even then }
 export const GATE_LINE = 'node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit';
 export function dormantHookDetail(root) {
   const h = hooksPath(root);
   if (!h || h.runs) return null;
   if (!h.exists) return { reason: h.value ? `core.hooksPath is "${h.value}"` : 'core.hooksPath is unset', command: ARM_HOOK };
-  let managed = false;
-  try { managed = h.own && !!JSON.parse(readFileSync(join(root, '.ssdd', 'ssdd.lock.json'), 'utf8'))?.managed?.['.githooks/pre-commit']; } catch { /* no lock */ }
-  return { reason: `its pre-commit (${h.file}) doesn't run the review gate`, command: '', edit: { file: h.file, line: GATE_LINE, managed } };
+  return { reason: `its pre-commit (${h.file}) doesn't run the review gate`, command: '', edit: { file: h.file, line: GATE_LINE } };
 }
 
 // The reason alone, '' when nothing is dormant.

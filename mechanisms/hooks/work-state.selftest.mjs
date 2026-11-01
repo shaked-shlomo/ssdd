@@ -480,6 +480,9 @@ describe('session start', () => {
     assert.match(run(['--session-start']).out,
       /^ {2}! the pre-commit hook is dormant \(its pre-commit \(.*\.githooks\/pre-commit\) doesn't run the review gate\): ask the user to add node "\$ROOT\/\.ssdd\/hooks\/review-gate\.mjs" --pre-commit to .*\.githooks\/pre-commit$/m);
     assert.doesNotMatch(run(['--session-start']).out, /ask the user to run git config/);
+    // SSDD's copy, edited: an update keeps the edit, so it's no fix to name.
+    put('.ssdd/ssdd.lock.json', JSON.stringify({ managed: { '.githooks/pre-commit': { src: 'x', sha256: 'y' } } }));
+    assert.doesNotMatch(run(['--session-start']).out, /rerun|restores/);
     put('.githooks/pre-commit', '#!/bin/sh\necho hi\nnode "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit\n');
     assert.doesNotMatch(run(['--session-start']).out, /dormant/);
   });

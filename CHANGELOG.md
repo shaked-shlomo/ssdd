@@ -57,7 +57,8 @@ its own. See `SPEC.md` → v3.6.
   review run before staging counts: stage, stamp and commit in any order, or
   in one call. A file whose staged copy differs from the work tree stays
   owed until it's added, and `--stamp` says so. Every reviewer reads `git
-  diff HEAD` for its routed files.
+  diff HEAD` for its routed files. `--stamp` keys the repo git finds from
+  the cwd (or `--repo`), not `SSDD_PROJECT_DIR` / `CLAUDE_PROJECT_DIR`.
 - **A comment-only change carries a clean stamp.** When a staged JS/TS-family
   file differs from a reviewer's stamped blob only in comments, that stamp
   still meets the gate, if HEAD's side and both modes are unchanged, the
