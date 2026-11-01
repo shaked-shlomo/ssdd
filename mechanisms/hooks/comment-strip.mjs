@@ -28,6 +28,8 @@ const JSDOC_TYPED_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx']);
 // `default` and `extends` are beyond Clarify 2's list: after them
 // (`export default /re/`, `class A extends /re/.constructor {}`) only an
 // expression (or a type, or `:`) can follow, and `x.default` is caught by the `.` rule.
+// After `extends` a `<` may open TS type parameters (`T extends <U>() => U`), so
+// in a JSX file it's null there; a `/` still opens a regex.
 const EXPR_KW = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
   'throw', 'case', 'do', 'else', 'yield', 'await', 'default', 'extends']);
 // Of those, these can also be identifiers (`var of = 4; n = of / 2`; `yield`
@@ -52,7 +54,7 @@ const TOOL_READ = [
   (b) => /^\s*(jshint|jslint)\s/.test(b),
   (b) => /@ts-/.test(b),
   (b) => /prettier-ignore/.test(b),
-  (b) => /\b(c8|istanbul|v8)\s+ignore\b/.test(b) || /node:coverage/.test(b),
+  (b) => /\b(c8|istanbul|v8)\s+ignore\b/i.test(b) || /node:coverage/i.test(b),
   (b) => /[#@]__PURE__|__NO_SIDE_EFFECTS__/.test(b),
   (b, raw) => /^\/\/\/\s*</.test(raw),
   (b) => /^[#@]\s*source(Mapping)?URL=/.test(b),
@@ -61,7 +63,7 @@ const TOOL_READ = [
   (b) => /\b(webpack|turbopack)[A-Z]\w*\s*:/.test(b),
   (b) => /@vite-ignore/.test(b),
   (b, raw) => raw.startsWith('/*!') || /@(license|preserve)\b/.test(b),
-  (b) => /biome-ignore|deno-(lint|fmt)-ignore|dprint-ignore|oxlint-|tslint:/.test(b),
+  (b) => /biome-ignore|deno-(lint|fmt|coverage)-ignore|dprint-ignore|oxlint-|tslint:/.test(b),
   (b) => /ssdd-lint-ignore/.test(b), // convention-lint.mjs reads it
   (b) => /@refresh\b/.test(b),
   (b) => /@(vitest|jest)-environment/.test(b),
@@ -73,7 +75,7 @@ const TOOL_READ = [
 const NEXT_LINE = /next-line|\bignore\b(?![-\s]+file)|expect-error/i;
 // Coverage tools count physical lines after `ignore next N`: removing any
 // comment line or blank line below it can move code in or out of the range.
-const COUNTED = /\b(c8|v8|istanbul)\s+ignore\s+next\s+\d/i;
+const COUNTED = /ignore\s+next\s+\d/i;
 const JSDOC_ALWAYS = /@(template|typedef|callback|import|overload|enum|this|private|protected|public|readonly|constructor|class|override)\b/;
 const JSDOC_WITH_BRACE = /@(type|param|arg|argument|returns?|satisfies|property|prop|extends|augments|implements)\b/;
 
@@ -289,6 +291,7 @@ class Scanner {
         // JSX allows space and comments after `<` (`< b>`, `</**/b>`), so where
         // an element could open, any `<` but `<<` and `<=` is either one or null.
         if (!exprPos()) fail('< after }, an ambiguous token, or a line break');
+        if (prev === 'kw' && lastWord === 'extends') fail('< after extends (TS type parameters?)');
         if (!(isIdStart(n) || n === '>')) fail('< in expression position that opens no element we read');
         this.jsxElement(); prev = 'value';
       } else if (c === '(' || c === '[' || c === '{') {
