@@ -38,7 +38,8 @@ The write-time rules you enforce live in `<project rules doc>` — read that
 first. Reference implementations: `<file>`, `<file>`.
 
 ## How to run
-1. `git diff --staged` (or the range the orchestrator names). Scope to <the
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Scope to <the
    file classes this lens concerns>.
 2. Verify against the actual files (open them), not hunks; trace each
    invariant end to end.

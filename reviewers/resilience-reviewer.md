@@ -15,7 +15,8 @@ same teardown machinery for recovery, not leakage. You own the tests.
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Scope to files with async state:
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Scope to files with async state:
    stores, services, hooks/effects with intervals, screens with loading/error
    branches, teardown paths (sign-out, reset actions).
 2. Verify against the actual files (open them), not hunks — a failure path's

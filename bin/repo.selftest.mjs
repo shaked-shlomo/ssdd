@@ -220,3 +220,17 @@ describe('shipped text matches the defaults', () => {
     assert.ok(said >= 2, `only ${said} sentence(s) on untracked files found`);
   });
 });
+
+describe('reviewer contracts', () => {
+  const REVIEWERS = ['convention-compliance', 'performance', 'resilience', 'security', 'docs-sync', 'gate'].map((n) => `reviewers/${n}-reviewer.md`)
+    .concat('reviewers/domain-reviewer-template.md');
+  it('every reviewer reads git diff HEAD', () => {
+    for (const f of REVIEWERS) {
+      assert.match(read(f), /`git diff HEAD`/, `${f} does not read git diff HEAD`);
+      assert.doesNotMatch(read(f), /git diff --staged/, `${f} still reads git diff --staged`);
+    }
+  });
+  it('docs-sync has the comment-only section', () => {
+    assert.match(read('reviewers/docs-sync-reviewer.md'), /comment-only/i);
+  });
+});

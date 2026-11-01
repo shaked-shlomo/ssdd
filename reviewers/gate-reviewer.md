@@ -24,9 +24,10 @@ message cites the owner's explicit go-ahead.
 
 ## How to run
 
-1. `git diff --staged` (or the named range). For each gate file in it, open
-   the whole file at HEAD (`git show HEAD:<path>`) and staged
-   (`git show :<path>`): a narrowed regex or a dropped hook entry is easy to
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. For each gate file in it, open
+   the whole file at HEAD (`git show HEAD:<path>`) and as it is now in the
+   work tree: a narrowed regex or a dropped hook entry is easy to
    miss in a hunk.
 2. **A framework update** (`.ssdd/ssdd.lock.json` moves to a tagged
    release, from `ssdd.mjs update`) is the go-ahead for the managed files it
@@ -47,10 +48,10 @@ paths: `git ls-files | grep -E '<regex>'`, before and after), an `exclude`
 widened, a reviewer renamed so its stamps and agent file no longer match.
 New code directories that no route covers count too.
 
-**2. Gate settings.** `reviewGate.stamping` back to `manual`,
-`reviewerModels` relaxed or removed, `maxRoutedFiles` raised far past the
-project's task commits, any `gitGuard.block*` set to `false`, an
-`extraRules` entry dropped or its pattern narrowed.
+**2. Gate settings.** `maxRoutedFiles` raised far past the
+project's task commits, `reviewGate.commentReviewer` changed to a reviewer
+routed narrower than the code it covers, any `gitGuard.block*` set to
+`false`, an `extraRules` entry dropped or its pattern narrowed.
 
 **3. Hook wiring.** `.claude/settings.json`, `.cursor/hooks.json` and
 `.githooks/pre-commit`: an SSDD hook entry removed, a `matcher` narrowed
@@ -65,8 +66,7 @@ the same finding as a loosened script.
 
 **5. Reviewers and process (`.ssdd/reviewers/`, `.ssdd/process/`,
 `.claude/agents/`).** A check deleted or made optional, the verdict line
-changed (the completion stamp parses `CLEAN` / `SECURE` / `N ISSUE(S)` /
-`N RISK(S)`), a reviewer's `tools` widened to editing tools, an agent
+changed, a reviewer's `tools` widened to editing tools, an agent
 symlink replaced with a diverging copy, a process step that requires review
 made optional.
 

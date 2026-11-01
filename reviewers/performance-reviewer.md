@@ -13,8 +13,9 @@ timeouts, fire-and-forget and tests are resilience's lane.
 
 ## How to run
 
-1. Read the project's perf rules index (if any), then `git diff --staged` (or
-   the named range).
+1. Read the project's perf rules index (if any), then
+   `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names.
    If the project uses a best-practices skill for its stack (a vendored one
    under `.agents/skills/`, or a plugin; `.ssdd/skills.json` lists what
    `/skills-audit` adopted), that skill IS the rules index for those files:
