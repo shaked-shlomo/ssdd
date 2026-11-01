@@ -61,8 +61,9 @@ its own. See `SPEC.md` → v3.4.
   the cwd (or `--repo`), not `SSDD_PROJECT_DIR` / `CLAUDE_PROJECT_DIR`.
 - **A comment-only change carries a clean stamp.** When a staged JS/TS-family
   file differs from a reviewer's stamped blob only in blank lines, whole-line
-  `//` comments and trailing whitespace, that stamp still meets the gate, if HEAD's side and both modes are unchanged, the
-  file is a regular file, and the stamp records no issues. The comment
+  `//` comments and trailing whitespace, that stamp still meets the gate, if
+  HEAD's side and both modes are unchanged, the file is a regular file, and
+  the stamp records no issues. The comment
   reviewer, `reviewGate.commentReviewer` (new; default
   `docs-sync-reviewer`), still owes the file and gets the `git diff <old>
   <new>` delta; when it isn't routed to the file, nothing carries.

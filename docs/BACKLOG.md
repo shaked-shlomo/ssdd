@@ -1,11 +1,10 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-11-01 at v3.3.2, with
-v3.4 built (3.4.0, unreleased; it waits for the owner's go-ahead to merge
-and tag). All five parts of v3 (`SPEC.md` → v3) have shipped; what's left
-of v3 is the migrations below. Not hardening. When an item ships, delete it
-here and record it in `CHANGELOG.md`. When one is planned, it gets a spec
-in `docs/specs/` and a row in `SPEC.md` first.
+The single list of remaining SSDD work. Updated 2026-11-01 at 3.4.0. All
+five parts of v3 (`SPEC.md` → v3) and v3.4 have shipped; what's left of v3
+is v3.5, v3.6 and the migrations below. Not hardening. When an item
+ships, delete it here and record it in `CHANGELOG.md`. When one is planned,
+it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
 
 **Threat model.** The git pre-commit and the harness hooks keep a
 cooperating agent on the process; they aren't a sandbox. A new evasion
@@ -14,9 +13,6 @@ and the spec that closes it records that incident.
 
 ## Next: the end of v3
 
-- **v3.4 — the gate lives in git** (`SPEC.md` → v3.4): built as 3.4.0,
-  unreleased (`CHANGELOG.md`). It ships before v3.5, which builds on its
-  gate.
 - **v3.5 — findings have outcomes** (`SPEC.md` → v3.5, draft) ships
   before the migrations (owner, 2026-10-22), so each project migrates once.
   Trimmed 2026-10-23 to the re-review list, `[pre-existing]` and the round
