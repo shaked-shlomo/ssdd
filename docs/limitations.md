@@ -16,9 +16,10 @@ real project.
 - A dormant pre-commit hook means no gate. It's dormant when the pre-commit
   git resolves doesn't run `review-gate.mjs … --pre-commit` on a line that
   isn't a comment: `core.hooksPath` unset (the fresh-clone state) or
-  pointing where there's no such hook, or a project hook that never calls the gate.
-  `status`, `update` and the session view name it, with the fix. A wrapper (a husky hook that calls
-  `.githooks/pre-commit`) reads as dormant: a false warning, never a block.
+  pointing where there's no such hook, or a project hook that never calls
+  the gate. `status`, `update` and the session view name it, with the fix.
+  A wrapper (a husky hook that calls `.githooks/pre-commit`) reads as
+  dormant: a false warning, never a block.
   `install` / `update` arm it when it's unset; otherwise the user runs
   `git config core.hooksPath .githooks`. git-guard still denies the agent
   any direct write to it. Once set, git ignores `.git/hooks` entirely. The

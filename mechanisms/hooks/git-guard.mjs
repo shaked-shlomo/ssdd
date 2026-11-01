@@ -12,7 +12,7 @@
 //   git add -A | -Av / -fA clusters | --all | git add .   (stages everything: check what went in)
 //   git commit … --amend                                  (rewrites the last commit)
 // plus any gitGuard.extraRules [{pattern, message}] from the working-tree
-// .ssdd/config.json (a block). Nothing else in the config is read: the nine
+// .ssdd/config.json (a block). Nothing else in the config is read: the four
 // toggles and reviewGate.stamping are gone, and the Edit/Write check of
 // .git/ssdd-review-* with them. Each comes back only with an incident that
 // shows the pre-commit alone isn't enough.

@@ -50,13 +50,16 @@ New code directories that no route covers count too.
 
 **2. Gate settings.** `maxRoutedFiles` raised far past the
 project's task commits, `reviewGate.commentReviewer` changed to a reviewer
-routed narrower than the code it covers, any `gitGuard.block*` set to
-`false`, an `extraRules` entry dropped or its pattern narrowed.
+routed narrower than the code it covers, an `extraRules` entry dropped or
+its pattern narrowed. An obsolete key that `status` names (ignored) is
+harmless.
 
 **3. Hook wiring.** `.claude/settings.json`, `.cursor/hooks.json` and
-`.githooks/pre-commit`: an SSDD hook entry removed, a `matcher` narrowed
-(e.g. `Bash` no longer matched), `failClosed` dropped in Cursor, a
-pre-commit step deleted or made non-fatal (`|| true`, `set -e` removed).
+`.githooks/pre-commit`: an SSDD hook entry removed (other than those
+`status` lists under "hook entries the template dropped (safe to
+remove)"), a `matcher` narrowed (e.g. `Bash` no longer matched),
+`failClosed` dropped in Cursor, a pre-commit step deleted or made
+non-fatal (`|| true`, `set -e` removed).
 
 **4. Hook scripts (`.ssdd/hooks/*.mjs`).** A new path that exits 0 on an
 error (a `catch` that allows), a deny turned into a warning, a bypass

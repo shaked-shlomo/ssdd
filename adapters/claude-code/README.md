@@ -72,7 +72,8 @@ none adds a rule of its own, and a missing one costs only what it adds.
   allowed call the model sees. The JSON permission body
   (`{"permission":"allow"|"deny",…}`) is for Cursor's `failClosed`.
   convention-lint's findings on an edit arrive as `additionalContext`
-  beside the tool result; at commit they print, and the commit goes on. A dormant pre-commit hook is named in the `SessionStart` view and by
+  beside the tool result; at commit they print, and the commit goes on. A
+  dormant pre-commit hook is named in the `SessionStart` view and by
   `status`.
 - Subagents may lack MCP access the main session has. If a reviewer's
   protocol needs MCP output (e.g. a platform's advisor/lint API), run that
