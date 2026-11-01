@@ -63,7 +63,7 @@ const TOOL_READ = [
   (b) => /\b(webpack|turbopack)[A-Z]\w*\s*:/.test(b),
   (b) => /@vite-ignore/.test(b),
   (b, raw) => raw.startsWith('/*!') || /@(license|preserve)\b/.test(b),
-  (b) => /biome-ignore|deno-(lint|fmt|coverage)-ignore|dprint-ignore|oxlint-|tslint:/.test(b),
+  (b) => /biome-ignore|deno-(lint|fmt|coverage)-ignore|dprint-ignore|oxlint-|tslint:/i.test(b),
   (b) => /ssdd-lint-ignore/.test(b), // convention-lint.mjs reads it
   (b) => /@refresh\b/.test(b),
   (b) => /@(vitest|jest)-environment/.test(b),
@@ -354,6 +354,17 @@ class Scanner {
     return name;
   }
 
+  // The character at or after j once whitespace and comments are skipped.
+  peekPastSpace(j) {
+    const s = this.s;
+    for (;;) {
+      if (isWS(s[j]) || isLT(s[j])) j++;
+      else if (s.startsWith('//', j)) { while (j < s.length && !isLT(s[j])) j++; }
+      else if (s.startsWith('/*', j)) { const close = s.indexOf('*/', j + 2); if (close < 0) return s[j]; j = close + 2; }
+      else return s[j];
+    }
+  }
+
   // Whitespace and comments inside a JSX tag.
   jsxTagSpace() {
     const s = this.s;
@@ -383,11 +394,16 @@ class Scanner {
           if (s[this.i + 1] !== '>') fail('JSX / in a tag');
           this.push('/'); this.push('>'); this.i += 2; this.depth--; return;
         }
-        if (c === '>') { this.push('>'); this.i++; break; }
+        if (c === '>') {
+          // In .tsx, `<U>(…) => U` is a generic function type or arrow, not an element.
+          if (this.ts && this.peekPastSpace(this.i + 1) === '(') fail('JSX tag followed by ( (a .tsx generic?)');
+          this.push('>'); this.i++; break;
+        }
         if (c === '{') { this.push('{'); this.i++; this.js(true); continue; }
         if (isIdStart(c)) {
           const st = this.i;
           while (isIdPart(s[this.i]) || s[this.i] === '-' || s[this.i] === ':') this.i++;
+          if (this.ts && s.slice(st, this.i) === 'extends') fail('JSX attribute named extends (a .tsx generic?)');
           for (const ch of s.slice(st, this.i)) this.push(ch);
           this.jsxTagSpace();
           if (s[this.i] === '=') {
