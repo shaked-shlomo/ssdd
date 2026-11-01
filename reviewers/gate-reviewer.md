@@ -59,7 +59,7 @@ harmless.
 `status` lists under "hook entries the template dropped (safe to
 remove)"), a `matcher` narrowed (e.g. `Bash` no longer matched),
 `failClosed` dropped in Cursor, a pre-commit step deleted or made
-non-fatal (`|| true`, `set -e` removed).
+non-fatal (`|| status=1` turned into `|| true`).
 
 **4. Hook scripts (`.ssdd/hooks/*.mjs`).** A new path that exits 0 on an
 error (a `catch` that allows), a deny turned into a warning, a bypass

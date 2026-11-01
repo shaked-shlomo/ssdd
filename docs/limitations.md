@@ -27,15 +27,19 @@ real project.
   path to the main checkout's `.githooks` makes each worktree run that copy
   of the shim (the gate still runs, on the worktree's own `.ssdd/hooks`);
   `status` notes it and `update` rewrites it.
-- `GIT_CONFIG_PARAMETERS=… git commit` (or `-c core.hooksPath=…`) can point
-  git at another hooks dir for one commit. git-guard can't see every form:
-  it reads the command line, not git run from a script *file*, a variable,
-  an alias, `xargs` / `find -exec`, another language's subprocess, a shell
-  wrapper (`bash -c`, `eval`, `… | sh`, a heredoc fed to a shell), or a
-  `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file. The pre-commit layer
-  guards a cooperating agent and is not a sandbox.
+- git-guard blocks `git -c core.hooksPath=… commit` and `git config …
+  core.hooksPath …` on the command line. The env forms pass it:
+  `GIT_CONFIG_PARAMETERS="'core.hooksPath=…'" git commit` (or
+  `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>`) points git at another hooks
+  dir for one commit, and the gate doesn't run. Nor does git-guard see git
+  run from a script *file*, a variable, an alias, `xargs` / `find -exec`,
+  another language's subprocess, a shell wrapper (`bash -c`, `eval`,
+  `… | sh`, a heredoc fed to a shell), or a `GIT_CONFIG_GLOBAL` /
+  `GIT_CONFIG_SYSTEM` file. The pre-commit layer guards a cooperating
+  agent and is not a sandbox.
 - The gate judges the repo and index git commits (git's own cwd), not
-  `SSDD_PROJECT_DIR`.
+  `SSDD_PROJECT_DIR`; `--stamp` and `--check` key git's cwd too, unless
+  `--repo` names another.
 - `--stamp` is an attestation the gate can't verify: not whether the
   reviewers ran, nor on which model.
 - A re-stage that changes nothing keeps its stamps, by design.

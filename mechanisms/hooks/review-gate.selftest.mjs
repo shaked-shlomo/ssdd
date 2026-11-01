@@ -587,6 +587,20 @@ describe('--repo', () => {
       for (const d of [r, elsewhere]) rmSync(d, { recursive: true, force: true });
     }
   });
+  it('--stamp without --repo stamps the repo it runs in, as --check and --pre-commit judge it, not the env\'s', () => {
+    const other = makeRepo();
+    try {
+      write(dir, 'src/a.ts', 'a\n');
+      write(other, 'src/a.ts', 'other\n');
+      const s = run(dir, ['--stamp', 'alpha,beta'], { env: { CLAUDE_PROJECT_DIR: other, SSDD_PROJECT_DIR: other } });
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.ok(existsSync(stampFile(dir)));
+      assert.ok(!existsSync(stampFile(other)));
+      assert.strictEqual(preCommit(dir).status, 0);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('a linked worktree', () => {
@@ -872,6 +886,22 @@ describe('the block message names the delta', () => {
     stamp(dir, 'alpha');
     assert.match(preCommit(dir).stderr, /--stamp beta\b/);
     assert.doesNotMatch(preCommit(dir).stderr, /--stamp alpha/);
+  });
+  it('its --repo is shell-quoted: a path with a space and a quote pastes as one word', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ssdd-quote-'));
+    const r = join(parent, "it's a repo");
+    try {
+      cpSync(dir, r, { recursive: true });
+      write(r, 'src/a.ts', 'a\n');
+      for (const out of [preCommit(r).stderr, run(r, ['--check', '--repo', r]).stdout]) {
+        const hint = /--stamp alpha,beta --repo (.+)$/m.exec(out)?.[1];
+        assert.ok(hint, out);
+        const word = spawnSync('sh', ['-c', `printf %s ${hint}`], { encoding: 'utf8' }).stdout;
+        assert.strictEqual(word, realpathSync(r));
+      }
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1396,7 +1426,7 @@ describe('git judges what git commits', () => {
       assert.strictEqual(blocked.status, 1, blocked.stderr);
       assert.strictEqual(git(top, 'rev-parse', 'HEAD'), head);
       assert.match(blocked.stderr, /alpha/);
-      assert.ok(blocked.stderr.includes(`--repo ${top}`), blocked.stderr);
+      assert.ok(blocked.stderr.includes(`--repo '${top}'`), blocked.stderr);
 
       git(top, 'add', 'src/a.ts');
       const s = run(dir, ['--stamp', 'alpha', '--repo', top]);

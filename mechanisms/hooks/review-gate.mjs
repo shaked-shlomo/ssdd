@@ -51,6 +51,7 @@
 //                                   so it can run before `git add`; a file whose
 //                                   staged copy differs stays owed until added.
 //                                   --repo for a commit in another work tree
+//                                   (default: cwd, as --check; never the env)
 //   --check [--repo <path>]         what the index owes, on stdout, without
 //                                   committing: exit 1 when a commit would be
 //                                   blocked; writes nothing
@@ -73,11 +74,13 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, s
 import { execFileSync, spawnSync } from 'node:child_process';
 import { isUtf8 } from 'node:buffer';
 import { extname, join, isAbsolute, resolve } from 'node:path';
-import { hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { hookPermissionBody, parseHookStdin } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 import { COMMENT_EXTS, commentOnly } from './comment-strip.mjs';
 
-let repo = resolveHookRepo(null);
+// Every mode judges git's cwd (or --repo), never CLAUDE_PROJECT_DIR /
+// SSDD_PROJECT_DIR: a stamp lands where the commit that reads it runs.
+let repo = process.cwd();
 const gitIn = (opts, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
 const git = (...args) => gitIn({}, ...args);
@@ -404,14 +407,18 @@ function oversizeWarning(cfg, routedCount) {
 
 // `abc1234→def5678`; the modes are shown only when they are the whole change.
 // Total: a key this gate did not write (a hand-edited stamp file) is echoed as
-// is, so the block message can never throw — a throw here would exit 1, which
-// the PreToolUse harness reads as non-blocking, i.e. the gate would fail open.
+// is, so the block message can never throw. A throw would still block the
+// commit (the pre-commit exits non-zero), but as a Node stack in place of the
+// list of what's owed and the --stamp line that clears it.
 const short = (key) => {
   const m = /^(\d+):([0-9a-f]+)→(\d+):([0-9a-f]+)$/.exec(String(key));
   if (!m) return String(key);
   const [, sm, sb, dm, db] = m;
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
+// One shell word, for a path pasted from the block message: single quotes, a
+// `'` inside as `'\''`, so a space or a quote in the repo path survives.
+const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
 const mergeLine = (merged) =>
   `  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`;
@@ -559,7 +566,7 @@ if (process.argv[2] === '--check') {
     );
     process.exit(0);
   }
-  process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${repo}` : ''));
+  process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${shq(repo)}` : ''));
   process.exit(1);
 }
 
@@ -583,7 +590,7 @@ if (process.argv[2] === '--pre-commit') {
     process.stderr.write(triageNote(cfg, verdict));
     process.exit(0);
   }
-  process.stderr.write(blockMessage(verdict, ` --repo ${repo}`));
+  process.stderr.write(blockMessage(verdict, ` --repo ${shq(repo)}`));
   process.exit(1);
 }
 

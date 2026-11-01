@@ -227,7 +227,7 @@ describe('reviewer contracts', () => {
   it('every reviewer reads git diff HEAD', () => {
     for (const f of REVIEWERS) {
       assert.match(read(f), /`git diff HEAD`/, `${f} does not read git diff HEAD`);
-      assert.doesNotMatch(read(f), /git diff --staged/, `${f} still reads git diff --staged`);
+      assert.doesNotMatch(read(f), /git diff --(staged|cached)/, `${f} still reads git diff --staged`);
     }
   });
   it('docs-sync has the comment-only section', () => {
