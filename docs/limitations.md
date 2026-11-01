@@ -54,6 +54,9 @@ real project.
   `\` continuation may hold costs a normal review. Those guards read raw
   characters, so a backtick, `<` or `/*` in a string elsewhere in the file
   can cost a review too.
+- A tool that reads a comment's presence rather than its words isn't
+  seen: a comment put into an empty block silences ESLint's `no-empty`,
+  and that carries.
 - The merge rule needs git 2.38 (`merge-tree --write-tree`); older git
   judges every file of a merge. Only a merge of the default branch counts:
   another branch's commits weren't necessarily reviewed.

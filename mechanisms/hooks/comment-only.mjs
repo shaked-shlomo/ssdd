@@ -14,9 +14,16 @@ import { extname } from 'node:path';
 export const COMMENT_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts']);
 // The files TypeScript parses with JSX on.
 const JSX_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx', '.tsx']);
-// A comment some tool reads (lint, types, coverage, bundlers, source maps): matched
-// anywhere in the comment, case-insensitive, so prose that names one is reviewed too.
-const DIRECTIVE = /[@#]|^\s*[/!]|lint|jshint|prettier|ignore|istanbul|\b[cv]8\b|coverage|global|exported|pure|side.?effects|webpack|turbopack|source(mapping)?url|license|preserve/i;
+// A comment some tool reads (lint, types, coverage, bundlers, scanners, source
+// maps): matched anywhere in the comment, case-insensitive, so prose that names
+// one is reviewed too.
+const DIRECTIVE = /[@#$]|^\s*[/!]|lint|jshint|prettier|ignore|istanbul|\b[cv]8\b|coverage|global|exported|pure|side.?effects|webpack|turbopack|source(mapping)?url|license|preserve|falls?.?through|no.?default|nosemgrep|codeql|nosec/i;
+// A pragma read from the file's header, so a line put anywhere above one may move it
+// out of reach: a hashbang (offset 0 only), Flow's, a docblock's, TS's file checks.
+const PRAGMA = /^\s*#!|@(no)?flow\b|@(jest|vitest)-environment|@jsx|@format\b|@prettier\b|@ts-(no)?check/i;
+// A trailing-whitespace change holding a line terminator JS sees and a `\n` split
+// doesn't: it splits the line, so a next-line directive's target moves.
+const SPLITS = /[\u2028\u2029]|\r(?!$)/;
 // A line comment: `//` then not `/` (`///` is a TS reference), not a directive,
 // and no line terminator JS sees but a `\n` split doesn't (it would end the comment).
 const isComment = (line) => {
@@ -47,15 +54,18 @@ function context(L) {
     inside = !inside;
     at = i + 2;
   }
-  // The last spot a JSX closer (`</`, `/>`, spaces allowed) starts at, tried at each `<` and `/`.
+  // The last spot a JSX closer starts at, tried at each `<` and `/`: `</` or `/>`,
+  // with spaces or comments between.
   let closer = -1;
-  const close = /<\s*\/|\/\s*>/y;
+  const close = /<\s*\/|\/(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*>/y;
   for (let i = text.length - 1; i >= 0 && closer < 0; i--) {
     if (text[i] !== '<' && text[i] !== '/') continue;
     close.lastIndex = i;
     if (close.test(text)) closer = lineAt(i);
   }
-  return { L, ticks, open, overlap: first(/\*\/\*|\/\*\//), lt: first(/</), closer, counted: first(/ignore\s+next\s+\d/i) };
+  let pragma = -1;
+  for (let k = L.length - 1; k >= 0 && pragma < 0; k--) if (PRAGMA.test(L[k])) pragma = k;
+  return { L, ticks, open, overlap: first(/\*\/\*|\/\*\//), lt: first(/</), closer, counted: first(/ignore\s+next\s+\d/i), pragma };
 }
 
 // Whether line k may start outside code (gap: a changed run of blank and comment
@@ -70,12 +80,12 @@ function unsafe(c, k, gap, jsx) {
   if (ticks[cut] > 0 && (total > ticks[cut] || total % 2)) return true;
   if ((L[cut - 1] ?? '').trimEnd().endsWith('\\') || c.open[cut] || c.overlap < cut) return true;
   if (jsx && c.lt < cut && c.closer >= cut) return true;
-  if (!gap) return false;
+  if (!gap) return /^\s*#!/.test(L[k]);
   // `ignore next 3` counts physical lines from above; a next-line directive
   // targets the line below it, so one above the gap (past blank and comment
   // lines, through the first code line's comment) would see its target move.
   // A line that starts in a block comment may end a wrapped one.
-  if (c.counted < k) return true;
+  if (c.counted < k || c.pragma >= k) return true;
   for (let i = k - 1; i >= 0; i--) {
     if (c.open[i]) return true;
     const at = L[i].search(/\/[/*]/);
@@ -106,7 +116,10 @@ export function commentOnly(a, b, path) {
         break;
       }
       if (A[i].trimEnd() !== B[j].trimEnd()) return false;
-      if (A[i] !== B[j]) spots.push([i, j, false]);
+      if (A[i] !== B[j]) {
+        if (SPLITS.test(A[i]) || SPLITS.test(B[j])) return false;
+        spots.push([i, j, false]);
+      }
       i++;
       j++;
     }
