@@ -376,6 +376,77 @@ describe('--stamp before git add', () => {
     git(dir, 'rm', '-q', '--cached', 'src/a.ts');
     assert.strictEqual(preCommit(dir).status, 0);
   });
+  // A staged deletion's path is in neither the index nor the work tree, so a
+  // scratch `add` of it is fatal; the copied index already records it.
+  const NONE = `000000:${'0'.repeat(40)}`;
+  const keyOf = (d, name, f) => readStamp(d).reviewers[name][f].key;
+  it('a staged deletion (git rm) is stamped, and commits', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    git(dir, 'rm', '-q', 'src/a.ts');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'alpha', 'src/a.ts'), new RegExp(`→${NONE}$`));
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a staged rename (git mv) is stamped as D + A, and commits', () => {
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    git(dir, 'mv', 'src/b.ts', 'src/c.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/b.ts'), new RegExp(`^100644:[0-9a-f]{40}→${NONE}$`));
+    assert.match(keyOf(dir, 'beta', 'src/c.ts'), new RegExp(`^${NONE}→100644:[0-9a-f]{40}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('git rm --cached of a file now ignored is stamped as a deletion, and commits', () => {
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    write(dir, '.gitignore', 'src/b.ts\n');
+    git(dir, 'rm', '-q', '--cached', 'src/b.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/b.ts'), new RegExp(`→${NONE}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a case-only rename on a case-insensitive filesystem is stamped as D + A, and commits', (t) => {
+    write(dir, 'src/B.ts', 'b\n');
+    commit(dir);
+    if (!existsSync(join(dir, 'src', 'b.ts'))) return t.skip('case-sensitive filesystem');
+    git(dir, 'mv', 'src/B.ts', 'src/b.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/B.ts'), new RegExp(`→${NONE}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('an edit and a git rm in one commit are both stamped, and commit', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    write(dir, 'src/a.ts', 'a edited\n');
+    git(dir, 'rm', '-q', 'src/b.ts');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(Object.keys(readStamp(dir).reviewers.beta).sort(), ['src/a.ts', 'src/b.ts']);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a git failure in the scratch index exits 1 with git\'s message and one line, no stack, nothing left', () => {
+    // A required clean filter that fails: nothing before the scratch `add` runs filters.
+    git(dir, 'config', 'filter.boom.clean', 'false');
+    git(dir, 'config', 'filter.boom.required', 'true');
+    put(dir, '.gitattributes', 'src/*.ts filter=boom\n');
+    put(dir, 'src/a.ts', 'a\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'alpha');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.strictEqual(s.stderr.match(/^fatal: .*boom/gm)?.length, 1, s.stderr); // git's own, once
+    assert.strictEqual(s.stderr.match(/^\[ssdd-review-gate\]/gm)?.length, 1, s.stderr);
+    assert.doesNotMatch(s.stderr, /^\s+at /m);
+    assert.throws(() => readStamp(dir));
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before);
+  });
   it('symlink, exec bit and eol=lf key as git add does', () => {
     put(dir, '.gitattributes', '* text=auto eol=lf\n');
     write(dir, 'src/a.ts', 'a\n');

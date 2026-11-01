@@ -173,7 +173,8 @@ function stagedOwed() {
 // finds the same keys. git computes them (eol and clean filters, the exec bit
 // and core.fileMode, symlinks, deletions) in a scratch copy of the index, which
 // is removed whatever happens; the real index is never touched. The scratch
-// `add` writes the blobs too, so deltaFor can find them later.
+// `add` writes the blobs too, so deltaFor can find them later. A git failure
+// there prints git's own message and one line of ours, and exits 1: no stack.
 // → { changes: Map<path, key>, merged }, merge-clean paths already out.
 function workTreeChanges(cfg) {
   const matches = routes(cfg).map(([, m]) => m);
@@ -190,11 +191,13 @@ function workTreeChanges(cfg) {
     ...list('diff', '--cached', '--name-only', '--no-renames', '-z'),
     ...(unborn ? list('ls-files', '-z') : list('diff-index', '--name-only', '--no-renames', '-z', 'HEAD')),
   ];
-  const paths = [...new Set([...changed, ...list('ls-files', '--others', '--exclude-standard', '-z')])]
-    .filter((p) => matches.some((m) => m(p)));
+  const untracked = list('ls-files', '--others', '--exclude-standard', '-z');
+  const paths = [...new Set([...changed, ...untracked])].filter((p) => matches.some((m) => m(p)));
   const gitDir = git('rev-parse', '--absolute-git-dir').trim();
   const tmp = join(gitDir, `ssdd-stamp-index-${process.pid}`);
+  let failed = false;
   try {
+    rmSync(tmp, { force: true }); // a copy left by a dead run under a reused pid is never read
     const real = git('rev-parse', '--git-path', 'index').trim();
     const realIndex = isAbsolute(real) ? real : join(repo, real);
     if (existsSync(realIndex)) {
@@ -206,18 +209,32 @@ function workTreeChanges(cfg) {
       const st = statSync(realIndex);
       utimesSync(tmp, st.atime, st.mtime);
     }
-    if (paths.length) {
+    // `add` of a path in neither the index nor the non-ignored work tree is
+    // fatal: a staged `git rm`, `git mv`'s old name, `rm --cached` of a file
+    // now ignored, a case-only rename's old spelling. The copied index already
+    // records each one's deletion, so only the rest go to `add`.
+    const known = new Set([...gitIn(onIndex(tmp), 'ls-files', '-z').split('\0'), ...untracked]);
+    const adds = paths.filter((p) => known.has(p));
+    if (adds.length) {
       // Literal pathspecs: the paths on stdin are names, not globs or `:` magic.
       const env = { ...onIndex(tmp).env, GIT_LITERAL_PATHSPECS: '1' };
-      gitIn({ env, input: paths.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
+      gitIn({ env, input: adds.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
     }
     const changes = indexChanges(tmp);
     const merged = mergeClean(changes, tmp);
     if (merged) for (const p of merged.paths) changes.delete(p);
     return { changes, merged };
+  } catch (e) {
+    // git's stderr already passed through (the message repeats it after its
+    // first line); name the step, not the stack.
+    const what = e?.status === undefined ? String(e?.message ?? e)
+      : `${String(e.message).split('\n')[0].replace(/^Command failed: /, '').replace(`git -C ${repo} `, 'git ')} failed`;
+    process.stderr.write(`[ssdd-review-gate] --stamp: ${what} on a scratch copy of the index — nothing stamped, the index untouched\n`);
+    failed = true;
   } finally {
     rmSync(tmp, { force: true });
   }
+  if (failed) process.exit(1); // after `finally`: exit inside `try` would skip it
 }
 
 const readStamp = () => {
