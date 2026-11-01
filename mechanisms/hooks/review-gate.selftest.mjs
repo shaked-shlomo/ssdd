@@ -711,6 +711,10 @@ describe('the comment-only carry', () => {
       assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^120000 /);
       owes(check(), ['alpha', 'beta', 'docs-sync-reviewer']);
     });
+    it('a comment reviewer routed elsewhere, not to the file', () => {
+      setConfig({ routing: [CARRY.routing[0], { reviewer: 'docs-sync-reviewer', paths: ['^docs/'] }, CARRY.routing[2]] });
+      owes(edit('src/lib/a.ts', V1, V2, null, 'alpha,beta'), ['alpha', 'beta']);
+    });
     it('a config whose commentReviewer isn\'t routed to the file', () => {
       setConfig({ ...CARRY, reviewGate: { commentReviewer: 'nobody' } });
       owes(edit('src/lib/a.ts', V1, V2), ['alpha', 'beta', 'docs-sync-reviewer']);

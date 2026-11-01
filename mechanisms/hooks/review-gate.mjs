@@ -294,13 +294,12 @@ function judge(cfg) {
   for (const [name, files] of reviewerFiles(cfg, staged)) {
     files.forEach((f) => routed.add(f));
     const mine = stamp.reviewers[name] ?? {};
-    const missing = files
-      .filter((f) => mine[f]?.key !== staged.get(f))
-      .filter((f) => !(carries(name, f, mine[f], staged.get(f)) && carried.push({ name, path: f })))
-      .map((f) => {
-        const prev = mine[f]?.key ?? null;
-        return { path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) };
-      });
+    const missing = [];
+    for (const f of files.filter((f) => mine[f]?.key !== staged.get(f))) {
+      if (carries(name, f, mine[f], staged.get(f))) { carried.push({ name, path: f }); continue; }
+      const prev = mine[f]?.key ?? null;
+      missing.push({ path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) });
+    }
     if (missing.length) owed.push({ name, files, missing });
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
