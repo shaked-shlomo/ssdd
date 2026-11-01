@@ -8,9 +8,12 @@
 // (or the extension isn't in COMMENT_EXTS). Everything it removes is something
 // the language treats as whitespace: a comment is a token boundary, and one
 // holding a line break is a line break for ASI. String, template, regex and
-// JSX-text bytes are never touched. Wherever the tokens can't tell what a
-// character is, it returns null, so the change counts as code: a wrong "comment
-// only" lets an unreviewed code change through, a wrong null costs a review.
+// JSX-text bytes are never touched. It returns null at each ambiguity it knows
+// (a `/` or JSX `<` it can't place, an HTML-like comment, a directive whose
+// target line would move); that list is what review and fuzzing against
+// TypeScript found, not a proof that none is left. A wrong "comment only" lets
+// an unreviewed code change through; a wrong null costs a review.
+// Not covered: Function.prototype.toString shows a function's comments.
 
 import { extname } from 'node:path';
 
@@ -26,8 +29,14 @@ const JSDOC_TYPED_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx']);
 // an expression or `:` can follow, and `x.default` is caught by the `.` rule.
 const EXPR_KW = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
   'throw', 'case', 'do', 'else', 'yield', 'await', 'default']);
+// Of those, these can also be identifiers (`var of = 4; n = of / 2`; `yield`
+// and `await` in sloppy or non-async code), so a `/` or `<` after one is ambiguous.
+const MAYBE_ID = new Set(['of', 'yield', 'await']);
 // The `)` closing the head of these is followed by a statement.
 const COND_KW = new Set(['if', 'while', 'for', 'with']);
+// TS-family files: a `>` may close type arguments (`y as A<B> / 2`, `f<T> / 2`)
+// and `void` may end a type (`y as () => void / 2`), where `/` is division.
+const TS_EXTS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 // Templates and JSX recurse; real code never nests this deep.
 const MAX_DEPTH = 1000;
 
@@ -56,8 +65,12 @@ const TOOL_READ = [
   (b) => /@refresh\b/.test(b),
   (b) => /@(vitest|jest)-environment/.test(b),
   (b) => /@(format|prettier)\b/.test(b),
+  (b, raw) => raw.startsWith('/*') && /^(::?|flow-include\b)/.test(b), // Flow comment types: /*: T */, /*:: … */
 ];
-const JSDOC_ALWAYS = /@(template|typedef|callback|import|overload|enum|this|private|protected|public|readonly)\b/;
+// A kept directive aimed at the next line: removing a comment line or a blank
+// line after it would move its target, so that can't be classified.
+const NEXT_LINE = /next-line|\bignore\b(?![-\s]+file)|expect-error/i;
+const JSDOC_ALWAYS = /@(template|typedef|callback|import|overload|enum|this|private|protected|public|readonly|constructor|class|override)\b/;
 const JSDOC_WITH_BRACE = /@(type|param|arg|argument|returns?|satisfies|property|prop|extends|augments|implements)\b/;
 
 function toolRead(raw, ext) {
@@ -68,7 +81,7 @@ function toolRead(raw, ext) {
 }
 
 // ---- characters --------------------------------------------------------------
-const isLT = (c) => c === '\n' || c === '\r' || c === ' ' || c === ' ';
+const isLT = (c) => c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029';
 const isWS = (c) => c === ' ' || c === '\t' || c === '\v' || c === '\f' ||
   (c > '\x7f' && !isLT(c) && /\s/.test(c));
 // Tokens that never merge with a neighbour, so a removed comment beside one leaves no space.
@@ -84,12 +97,17 @@ class Scanner {
     this.s = text;
     this.ext = ext;
     this.jsx = JSX_EXTS.has(ext);
+    this.ts = TS_EXTS.has(ext);
+    this.directive = false; // a kept next-line directive with no code after it yet
     this.i = 0;
     this.out = [];
     this.depth = 0;
   }
 
-  push(c) { this.out.push(c); }
+  push(c) {
+    if (this.directive && !isWS(c) && !isLT(c)) this.directive = false;
+    this.out.push(c);
+  }
 
   enter() { if (++this.depth > MAX_DEPTH) fail('too deep'); }
 
@@ -98,11 +116,12 @@ class Scanner {
     const o = this.out;
     while (o.length && TRIM.has(o[o.length - 1])) o.pop();
     if (o.length && o[o.length - 1] !== '\n') o.push('\n');
+    else if (this.directive) fail('a blank line after a next-line directive');
   }
 
   run() {
     const s = this.s;
-    if (s[0] === '﻿') { this.push(s[0]); this.i = 1; }
+    if (s[0] === '\uFEFF') { this.push(s[0]); this.i = 1; }
     if (s.startsWith('#!', this.i)) {
       while (this.i < s.length && !isLT(s[this.i])) this.push(s[this.i++]);
     }
@@ -132,8 +151,10 @@ class Scanner {
     this.i = end;
     if (toolRead(raw, this.ext)) {
       for (const c of raw) this.push(c);
+      if (NEXT_LINE.test(raw)) this.directive = true;
       return hasLT;
     }
+    if (this.directive) fail('a comment removed after a next-line directive');
     if (raw[1] === '/') return false; // the line break after it stays
     if (hasLT) this.codeNewline();
     const o = this.out;
@@ -218,9 +239,13 @@ class Scanner {
     //   'start' | 'op' | 'kw' | 'cond' — an expression may start: regex, JSX
     //   'value' — an operand just ended: division, less-than
     //   'rbrace' | 'incdec' — `}` `++` `--`: a `/` here can't be classified
+    //   'amb' — `of` `yield` `await`, and in TS a closing `>` or `void`: neither
+    //     a `/` nor a JSX-opening `<` can be classified
+    // After a line break, a `/` or JSX `<` that follows a value can't be either:
+    // ASI may end the statement there (`let x\n/re/`) or not (`x = a\n/ b`).
     let prev = 'start';
     let afterDot = false; // the last token was `.` or `?.`
-    let lineBreak = false; // a line break since the last token
+    let lineBreak = !inBrace; // a line break (or the start) since the last token
     let lastWord = null, lastWord2 = null, lastWordAfterDot = false;
     const exprPos = () => prev === 'start' || prev === 'op' || prev === 'kw' || prev === 'cond';
     for (;;) {
@@ -240,17 +265,20 @@ class Scanner {
       let word = null;
       let dot = false;
       if (c === '/') {
+        if (prev === 'value' && lineBreak) fail('/ after a line break');
         if (exprPos()) { this.regex(); prev = 'value'; }
         else if (prev === 'value') { this.push(c); this.i++; prev = 'op'; }
-        else fail(prev === 'rbrace' ? '/ after }' : '/ after ++ or --');
+        else fail(`/ after ${prev === 'rbrace' ? '}' : prev === 'incdec' ? '++ or --' : 'an ambiguous token'}`);
       } else if (c === '"' || c === "'") { this.string(c); prev = 'value'; }
       else if (c === '`') { this.template(); prev = 'value'; }
+      else if (c === '<' && s.startsWith('<!--', this.i)) fail('an HTML-like comment');
+      else if (c === '-' && lineBreak && s.startsWith('-->', this.i)) fail('an HTML-like comment');
       else if (c === '<' && (n === '<' || n === '=')) {
         // `<<` and `<=` are one operator: the second character never opens JSX.
         this.push(c); this.push(n); this.i += 2; prev = 'op';
-      } else if (c === '<' && this.jsx && (exprPos() || prev === 'rbrace')) {
+      } else if (c === '<' && this.jsx && (exprPos() || prev === 'rbrace' || prev === 'amb' || lineBreak)) {
         if (isIdStart(n) || n === '>') {
-          if (prev === 'rbrace') fail('< after }');
+          if (!exprPos()) fail('a JSX-opening < after }, an ambiguous token, or a line break');
           this.jsxElement(); prev = 'value';
         } else if (exprPos()) {
           fail('< in expression position that opens no element');
@@ -278,7 +306,9 @@ class Scanner {
         while (isIdPart(s[this.i])) this.i++;
         word = s.slice(st, this.i);
         for (const ch of word) this.push(ch);
-        prev = (!afterDot && EXPR_KW.has(word)) ? 'kw' : 'value';
+        prev = afterDot ? 'value'
+          : MAYBE_ID.has(word) || (this.ts && word === 'void') ? 'amb'
+            : EXPR_KW.has(word) ? 'kw' : 'value';
         lastWordAfterDot = afterDot;
       } else if (c === '.') {
         if (n === '.' && s[this.i + 2] === '.') { this.push('...'); this.i += 3; prev = 'op'; }
@@ -290,6 +320,9 @@ class Scanner {
       } else if (c === '!' && n !== '=' && prev === 'value' && !lineBreak) {
         // TS non-null assertion `x!` (no line break before it): the operand continues.
         this.push(c); this.i++;
+      } else if (c === '>' && this.ts && s[this.i - 1] !== '=' && n !== '=' && n !== '>') {
+        // May close type arguments (`as A<B>`, `f<T>`), after which `/` is division.
+        this.push(c); this.i++; prev = 'amb';
       } else {
         this.push(c); this.i++; prev = 'op';
       }
@@ -393,7 +426,7 @@ export function stripComments(text, ext) {
     if (typeof text !== 'string' || !COMMENT_EXTS.has(ext)) return null;
     // U+FFFD is what a non-UTF-8 blob decodes to: two blobs differing in those
     // bytes would read the same, so the text says nothing about the bytes.
-    if (text.includes('�')) return null;
+    if (text.includes('\uFFFD')) return null;
     return new Scanner(text, ext).run();
   } catch {
     return null; // Unclassifiable, a RangeError, anything: never classify on an error
