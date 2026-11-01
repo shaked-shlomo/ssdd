@@ -344,6 +344,9 @@ const LINES = [
   ['// falls through', 'a.js', 'switch (a) {\n  case 1: f();\n  case 2: g();\n}\n', 'switch (a) {\n  case 1: f();\n  // falls through\n  case 2: g();\n}\n', false],
   ['// no default', 'a.js', 'switch (a) {\n  case 1: f();\n}\n', 'switch (a) {\n  case 1: f();\n  // no default\n}\n', false],
   ['// nosemgrep', 'a.ts', 'a()\nrisky()\n', 'a()\n// nosemgrep\nrisky()\n', false],
+  ['// NOSONAR', 'a.ts', 'a()\nrisky()\n', 'a()\n// NOSONAR\nrisky()\n', false],
+  ['// codeql[js/x]', 'a.ts', 'a()\nrisky()\n', 'a()\n// codeql[js/x]\nrisky()\n', false],
+  ['// skipcq', 'a.js', 'a()\nrisky()\n', 'a()\n// skipcq: JS-0001\nrisky()\n', false],
   ['a comment above a Jest docblock', 'a.ts', '/**\n * @jest-environment jsdom\n */\ntest()\n', '// note\n/**\n * @jest-environment jsdom\n */\ntest()\n', false],
   ['a comment above // @flow', 'a.js', '// @flow\nx()\n', '// note\n// @flow\nx()\n', false],
   ['a comment below // @flow', 'a.js', '// @flow\nx()\n', '// @flow\nx()\n// note\n', true],
@@ -386,6 +389,13 @@ describe('nothing throws', () => {
   it('a non-UTF-8 blob decoded with replacement characters', () => {
     const bin = Buffer.from([0xff, 0xfe, 0x2f, 0x2f, 0x80, 0x0a, 0x00, 0xc3]).toString('utf8');
     assert.equal(commentOnly(bin, bin + '\n// c', 'a.js'), false);
+  });
+  it('a JSX closer behind a long comment chain stays linear', () => {
+    // A `/` then comments and no `>`: a backtracking regex took seconds on 26.
+    const a = `x = <p>\n// old\n/ ${'/*a*/ '.repeat(100000)}\n`;
+    const t = Date.now();
+    assert.equal(commentOnly(a, a.replace('// old', '// new'), 'a.jsx'), true);
+    assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
   });
   it('a large file with many edits stays linear', () => {
     const a = Array.from({ length: 50000 }, (_, i) => (i % 2 ? `// old ${i}` : `/* x */ x${i}()`)).join('\n');

@@ -17,7 +17,7 @@ const JSX_EXTS = new Set(['.js', '.mjs', '.cjs', '.jsx', '.tsx']);
 // A comment some tool reads (lint, types, coverage, bundlers, scanners, source
 // maps): matched anywhere in the comment, case-insensitive, so prose that names
 // one is reviewed too.
-const DIRECTIVE = /[@#$]|^\s*[/!]|lint|jshint|prettier|ignore|istanbul|\b[cv]8\b|coverage|global|exported|pure|side.?effects|webpack|turbopack|source(mapping)?url|license|preserve|falls?.?through|no.?default|nosemgrep|codeql|nosec/i;
+const DIRECTIVE = /[@#$]|^\s*[/!]|lint|jshint|prettier|ignore|istanbul|\b[cv]8\b|coverage|global|exported|pure|side.?effects|webpack|turbopack|source(mapping)?url|license|preserve|falls?.?through|no.?default|disable|enable|suppress|allow|next.?line|pragma|nosem|codeql|nosec|nosonar|noqa|nolint|noinspection|skipcq|coverity|gitleaks|bearer|\w\[/i;
 // A pragma read from the file's header, so a line put anywhere above one may move it
 // out of reach: a hashbang (offset 0 only), Flow's, a docblock's, TS's file checks.
 const PRAGMA = /^\s*#!|@(no)?flow\b|@(jest|vitest)-environment|@jsx|@format\b|@prettier\b|@ts-(no)?check/i;
@@ -54,14 +54,27 @@ function context(L) {
     inside = !inside;
     at = i + 2;
   }
-  // The last spot a JSX closer starts at, tried at each `<` and `/`: `</` or `/>`,
-  // with spaces or comments between.
+  // The last spot a JSX closer starts at: `<` then `/` past spaces, or `/` then
+  // `>` past spaces and comments. sig[p] is the first spot from p on that is
+  // neither; filled from the end so the scan stays linear (no regex backtracking).
+  const n = text.length;
+  const nl = new Int32Array(n + 1).fill(n); // the next \n at or after p
+  const end = new Int32Array(n + 2).fill(-1); // the next `*/` at or after p
+  const sig = new Int32Array(n + 2).fill(n);
+  const space = new Int32Array(n + 2).fill(n); // the next non-space spot
+  for (let p = n - 1; p >= 0; p--) {
+    nl[p] = text[p] === '\n' ? p : nl[p + 1];
+    end[p] = text[p] === '*' && text[p + 1] === '/' ? p : end[p + 1];
+    const ws = /\s/.test(text[p]);
+    space[p] = ws ? space[p + 1] : p;
+    if (ws) sig[p] = sig[p + 1];
+    else if (text[p] === '/' && text[p + 1] === '/') sig[p] = sig[nl[p]];
+    else if (text[p] === '/' && text[p + 1] === '*') sig[p] = end[p + 2] < 0 ? n : sig[end[p + 2] + 2];
+    else sig[p] = p;
+  }
   let closer = -1;
-  const close = /<\s*\/|\/(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*>/y;
-  for (let i = text.length - 1; i >= 0 && closer < 0; i--) {
-    if (text[i] !== '<' && text[i] !== '/') continue;
-    close.lastIndex = i;
-    if (close.test(text)) closer = lineAt(i);
+  for (let i = n - 1; i >= 0 && closer < 0; i--) {
+    if ((text[i] === '<' && text[space[i + 1]] === '/') || (text[i] === '/' && text[sig[i + 1]] === '>')) closer = lineAt(i);
   }
   let pragma = -1;
   for (let k = L.length - 1; k >= 0 && pragma < 0; k--) if (PRAGMA.test(L[k])) pragma = k;
