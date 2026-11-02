@@ -24,9 +24,10 @@ message cites the owner's explicit go-ahead.
 
 ## How to run
 
-1. `git diff --staged` (or the named range). For each gate file in it, open
-   the whole file at HEAD (`git show HEAD:<path>`) and staged
-   (`git show :<path>`): a narrowed regex or a dropped hook entry is easy to
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. For each gate file in it, open
+   the whole file at HEAD (`git show HEAD:<path>`) and as it is now in the
+   work tree: a narrowed regex or a dropped hook entry is easy to
    miss in a hunk.
 2. **A framework update** (`.ssdd/ssdd.lock.json` moves to a tagged
    release, from `ssdd.mjs update`) is the go-ahead for the managed files it
@@ -41,21 +42,24 @@ message cites the owner's explicit go-ahead.
 
 ## The checks
 
-**1. Routing (`.ssdd/config.json` → `routing`, `reviewGate.exclude`).** A
+**1. Routing (`.ssdd/config.json` → `routing`, each route's `exclude`).** A
 route removed, a `paths` regex narrowed (test it against the repo's real
 paths: `git ls-files | grep -E '<regex>'`, before and after), an `exclude`
 widened, a reviewer renamed so its stamps and agent file no longer match.
 New code directories that no route covers count too.
 
-**2. Gate settings.** `reviewGate.stamping` back to `manual`,
-`reviewerModels` relaxed or removed, `maxRoutedFiles` raised far past the
-project's task commits, any `gitGuard.block*` set to `false`, an
-`extraRules` entry dropped or its pattern narrowed.
+**2. Gate settings.** `maxRoutedFiles` raised far past the
+project's task commits, `reviewGate.commentReviewer` changed to a reviewer
+routed narrower than the code it covers, an `extraRules` entry dropped or
+its pattern narrowed. An obsolete key that `status` names (ignored) is
+harmless.
 
 **3. Hook wiring.** `.claude/settings.json`, `.cursor/hooks.json` and
-`.githooks/pre-commit`: an SSDD hook entry removed, a `matcher` narrowed
-(e.g. `Bash` no longer matched), `failClosed` dropped in Cursor, a
-pre-commit step deleted or made non-fatal (`|| true`, `set -e` removed).
+`.githooks/pre-commit`: an SSDD hook entry removed (other than those
+`status` lists under "hook entries the template dropped (safe to
+remove)"), a `matcher` narrowed (e.g. `Bash` no longer matched),
+`failClosed` dropped in Cursor, a pre-commit step deleted or made
+non-fatal (`|| status=1` turned into `|| true`).
 
 **4. Hook scripts (`.ssdd/hooks/*.mjs`).** A new path that exits 0 on an
 error (a `catch` that allows), a deny turned into a warning, a bypass
@@ -65,8 +69,7 @@ the same finding as a loosened script.
 
 **5. Reviewers and process (`.ssdd/reviewers/`, `.ssdd/process/`,
 `.claude/agents/`).** A check deleted or made optional, the verdict line
-changed (the completion stamp parses `CLEAN` / `SECURE` / `N ISSUE(S)` /
-`N RISK(S)`), a reviewer's `tools` widened to editing tools, an agent
+changed, a reviewer's `tools` widened to editing tools, an agent
 symlink replaced with a diverging copy, a process step that requires review
 made optional.
 

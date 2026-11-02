@@ -72,41 +72,38 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
 
 - Tests first where practical; every new failure/race behavior gets a
   regression test that fails against the pre-fix code.
-- Stage specific files by path (bulk staging is guard-blocked). Re-check
+- Stage specific files by path (bulk staging warns). Re-check
   `git status --short` before a commit that follows agent activity: a later
   `git add` sweeps earlier staged files along, and a `git stash`/`pop`
   silently unstages them.
-- **The review gate.** A commit touching a path routed in
-  `.ssdd/config.json` is blocked until every reviewer routed to each such
-  file has reviewed that file's exact staged change. Stamps are per
-  reviewer × per file, so after a fix only the changed files are owed again;
-  unrouted files (ledgers, docs) never void a stamp. To see what the index
-  owes without committing, run `node .ssdd/hooks/review-gate.mjs --check`
-  (exit 1 when a commit would be blocked); never a probe commit. The
-  procedure:
+- **The review gate.** git's pre-commit, on every harness: a commit
+  touching a path routed in `.ssdd/config.json` is blocked until every
+  reviewer routed to each such file has reviewed that file's exact change.
+  Stamps are per reviewer × per file, so after a fix only the changed files
+  are owed again; unrouted files (ledgers, docs) never void a stamp. To
+  see what the index owes without committing, run
+  `node .ssdd/hooks/review-gate.mjs --check` (exit 1 when a commit would
+  be blocked); never a probe commit. The procedure:
   1. Read the block message: per reviewer, the files it owes and why.
-  2. Dispatch those reviewers in parallel. Name each one's input (the staged
-     diff, a range, or a file list). For a file a reviewer stamped before,
-     the message gives `git diff <stamped blob> <staged blob>`: that change
-     is its input, not the whole file. A reviewer given nothing answers
-     `NO DIFF — scope not provided`, and that is never stamped. Dispatched
-     reviewers are read-only: no edits, commits, stamps, or `git stash`.
-  3. Fix or triage the findings, re-stage, then stamp. In Claude Code with
-     the subagent hooks wired, a reviewer that ends with its verdict line
-     stamps all its routed staged files, whatever its input named, so name
-     every file it owes (one staged or edited during its review stays owed;
-     a review on a model outside `reviewGate.reviewerModels` stamps
-     nothing). Otherwise:
+  2. Dispatch those reviewers in parallel. Name each one's input (`git diff
+     HEAD` for its files, a range, or a file list). For a file a reviewer
+     stamped before, the message gives `git diff <stamped blob> <staged
+     blob>`: that change is its input, not the whole file. A reviewer
+     given nothing answers `NO DIFF — scope not provided`, and that is
+     never stamped. Dispatched reviewers are read-only: no edits, commits,
+     stamps, or `git stash`.
+  3. Fix or triage the findings, then stamp:
      `node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>`, adding
      `--files <path,…>` when a reviewer re-read only those files and
-     `--repo <path>` for another work tree (the message prints it). With
-     `reviewGate.stamping: "hooks"` the agent can't run `--stamp`; completion
-     stamps are the only way.
-  4. Commit in a separate call from staging: the harness gate reads the
-     index before the command runs, so it refuses `git add … && git commit`,
-     `commit -a/-i/-o` and `commit <path>`. The one exception is a chained
-     `git add` that names files no reviewer is routed to (a doc, a ledger),
-     which can't change what the commit owes.
+     `--repo <path>` for another work tree (the message prints it). A stamp
+     keys the work tree as `git add` would, so stage, stamp and commit in
+     any order or one call; a file whose staged copy differs stays owed
+     until added.
+
+  **Comment-only changes.** A change only to comments in a JS/TS file
+  keeps the other reviewers' clean stamps when `reviewGate.commentReviewer`
+  (default `docs-sync-reviewer`) is routed to it; that one reviews the
+  delta.
 
   **Merges.** While a merge of the default branch is stopped (a conflict,
   or `--no-commit`), a staged file equal to git's own merge of the two sides
@@ -197,5 +194,4 @@ than an inline query, so the database enforces the read.
 5. **Effort follows the stakes.** High or above for brainstorming, the
    clarify pass and the final review; the session default for routine tasks;
    reviewers use the `effort` in their frontmatter. Reviewer files don't name
-   a model: the harness and session choose it. A Claude Code project that
-   wants a floor sets `reviewGate.reviewerModels`.
+   a model: the harness and session choose it.

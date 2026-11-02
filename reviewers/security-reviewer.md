@@ -14,7 +14,8 @@ agent was seen using in a real project is `⚠️` at most (SSDD's threat model,
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Open actual files; trace data
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Open actual files; trace data
    flows end to end — the leak is usually one hop away from the diff.
 2. Rate findings Critical / Important / Minor, each with a concrete exploit
    path ("attacker does X → sees Y").

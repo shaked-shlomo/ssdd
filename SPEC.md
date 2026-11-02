@@ -20,6 +20,6 @@ that date use the old numbers.
 | v2.5 | [v2.5 — close the remaining gate weaknesses](docs/specs/v2.5.md) | 2.5.0 (untagged) |
 | v2.6 | [v2.6 — simplify the gate to its threat model](docs/specs/v2.6.md) | 2.6.0 (untagged) |
 | v3 | [v3 — SSDD knows where the work is](docs/specs/v3.md) | 3.0.0–3.3.1 (Parts 1–5) |
-| v3.4 | [v3.4 — the gate lives in git](docs/specs/v3.4.md) | — (draft) |
-| v3.5 | [v3.5 — findings have outcomes](docs/specs/v3.5.md) | — (clarified; ships as 3.5.0 after v3.4) |
+| v3.4 | [v3.4 — the gate lives in git](docs/specs/v3.4.md) | 3.4.0 |
+| v3.5 | [v3.5 — findings have outcomes](docs/specs/v3.5.md) | — (clarified; building) |
 | v3.6 | [v3.6 — one backlog](docs/specs/v3.6.md) | — (draft) |

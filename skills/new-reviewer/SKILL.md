@@ -45,8 +45,7 @@ lens. Ask which to create.
    - a third-person description under 300 chars, with no `": "` inside it
      (plain YAML) and no route list
    - `effort: medium` if the lens is mechanical; no `model:` (the harness and
-     session choose it; a project that wants a floor sets
-     `reviewGate.reviewerModels`)
+     session choose it)
    - the lens, its boundary with neighbors, and checks that each trace to
      a real bug in a one-line example
 2. Add the route to `.ssdd/config.json` with a `$comment` saying why: the

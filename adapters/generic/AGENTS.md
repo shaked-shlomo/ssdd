@@ -25,9 +25,8 @@ A commit touching paths routed in `.ssdd/config.json` is blocked until their
 reviewers have reviewed them; the block message says what to run. Never stamp
 without running the reviewers; `SSDD_REVIEW_SKIP=1` needs the user's go-ahead.
 Reviews happen at the gate and in the final whole-plan review; don't start
-others unless asked. Stage files by path, and commit in a separate call. No
-`--no-verify`/`-n`, force-push or `core.hooksPath` changes; amend only an
-unpushed commit.
+others unless asked. Stage files by path. No `--no-verify`/`-n`, force-push
+or `core.hooksPath` changes; amend only an unpushed commit.
 
 Reviewers are `.ssdd/reviewers/*.md`: subagents of the same name (Claude Code's
 `.claude/agents/` links to them), or checklists where there are none. Skills

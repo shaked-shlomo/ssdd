@@ -38,8 +38,8 @@ with ~50 shipped plans and packages what made that project reliable:
 
 It works **whatever drives the work**: Claude Code, Cursor, Codex, or a human
 in a terminal. The process and reviewers are plain markdown; the enforcement
-is a zero-dependency Node script with a portable git-hook mode plus earlier
-interception in agent harnesses.
+is zero-dependency Node scripts, with the review gate in git's pre-commit and
+earlier checks in agent harnesses.
 
 ## How it works
 
@@ -91,15 +91,14 @@ and keeps the project's edits: [docs/usage.md](docs/usage.md#updating-an-injecte
 
 ## When a new model generation ships
 
-The session view says when a session starts on a newer generation than the
-instructions were reviewed for. Run `/doctor prompt-audit` and re-run a recent
-plan's task on it: [docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
+Instructions tuned for one generation drift with the next. Run `/doctor
+prompt-audit` and re-run a recent plan's task on it: [docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
 
 ## Known limitations
 
-The gate is not a sandbox: the hooks catch what a cooperating agent does by
-mistake or habit, and the git pre-commit layer is the backstop for what they
-can't see. Every limit: [docs/limitations.md](docs/limitations.md).
+The gate is not a sandbox. The git pre-commit is the gate, on every harness;
+the harness hooks add earlier checks for what a cooperating agent does by
+mistake or habit. Every limit: [docs/limitations.md](docs/limitations.md).
 
 ## Development
 

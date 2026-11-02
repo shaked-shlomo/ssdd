@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
+import { OBSOLETE_KEYS, dormantHook, dormantHookDetail, foreignHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 
 let dir;
 function git(...args) {
@@ -53,43 +53,71 @@ describe('loadSsddConfig', () => {
     assert.deepEqual(reviewers(loadSsddConfig(dir).cfg), ['b']);
   });
 
-  it('bakes the global exclude into each route', () => {
+  it('the nine removed keys are ignored and named', () => {
     putConfig({
-      routing: [{ reviewer: 'a', paths: ['^src/'] }, { reviewer: 'b', paths: ['^src/'], exclude: ['gen/'] }],
-      reviewGate: { exclude: ['\\.test\\.ts$'] },
+      routing: [{ reviewer: 'a', paths: ['^src/'], exclude: ['gen/'] }],
+      reviewGate: { stamping: 'hooks', reviewerModels: ['opus'], exclude: ['\\.test\\.ts$'], maxRoutedFiles: 3 },
+      preCommit: { blockUntracked: true },
+      gitGuard: { blockBulkAdd: false, blockNoVerify: false, blockAmend: true, blockHooksPath: false, extraRules: [{ pattern: 'x' }] },
+      modelReview: { generation: 6 },
     });
-    const { cfg } = loadSsddConfig(dir);
-    assert.deepEqual(cfg.routing.find((x) => x.reviewer === 'a').exclude, ['\\.test\\.ts$']);
-    assert.deepEqual(cfg.routing.find((x) => x.reviewer === 'b').exclude, ['\\.test\\.ts$', 'gen/']);
-    assert.deepEqual(cfg.reviewGate.exclude, []);
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, OBSOLETE_KEYS);
+    assert.equal(OBSOLETE_KEYS.length, 9);
+    assert.deepEqual(r.cfg.routing[0].exclude, ['gen/']);
+    assert.equal(r.cfg.reviewGate.maxRoutedFiles, 3);
+    assert.deepEqual(r.cfg.gitGuard.extraRules.map((x) => x.pattern), ['x']);
   });
 
-  it('returns the settings as given; guard toggles default on', () => {
-    putConfig({
-      reviewGate: { stamping: 'hooks', reviewerModels: ['opus'], maxRoutedFiles: 3 },
-      gitGuard: { blockAmend: false, extraRules: [{ pattern: 'x' }] },
-    });
+  it('only the removed keys the file holds are named, in the same order', () => {
+    putConfig({ gitGuard: { blockAmend: true }, reviewGate: { stamping: 'manual' }, modelReview: { generation: 5 } });
+    assert.deepEqual(loadSsddConfig(dir).obsolete, ['reviewGate.stamping', 'gitGuard.blockAmend', 'modelReview.generation']);
+    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }] });
+    assert.deepEqual(loadSsddConfig(dir).obsolete, []);
+  });
+
+  it("a wrong-typed removed section isn't an error", () => {
+    putConfig({ modelReview: 'x', preCommit: 1 });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, []);
+  });
+
+  it('a malformed removed key is not an error either', () => {
+    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }], reviewGate: { exclude: ['('], reviewerModels: 'x' }, modelReview: { generation: 0 } });
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, ['reviewGate.reviewerModels', 'reviewGate.exclude', 'modelReview.generation']);
+    assert.deepEqual(r.cfg.routing.map((x) => x.exclude), [[]]);
+  });
+
+  it('returns the settings as given', () => {
+    putConfig({ reviewGate: { maxRoutedFiles: 3 }, gitGuard: { extraRules: [{ pattern: 'x' }] } });
     const { cfg } = loadSsddConfig(dir);
-    assert.equal(cfg.reviewGate.stamping, 'hooks');
-    assert.deepEqual(cfg.reviewGate.reviewerModels, ['opus']);
-    assert.deepEqual(cfg.reviewGate.reviewerModelSets, [['opus']]);
     assert.equal(cfg.reviewGate.maxRoutedFiles, 3);
-    assert.equal(cfg.gitGuard.blockAmend, false);
-    for (const k of ['blockBulkAdd', 'blockNoVerify', 'blockHooksPath']) assert.equal(cfg.gitGuard[k], true);
     assert.deepEqual(cfg.gitGuard.extraRules.map((r) => r.pattern), ['x']);
   });
 
-  it('defaults: manual stamping, no model sets, no extra rules', () => {
+  it('defaults: no extra rules, no routes', () => {
     putConfig({});
-    const { cfg } = loadSsddConfig(dir);
-    assert.equal(cfg.reviewGate.stamping, 'manual');
-    for (const k of ['blockBulkAdd', 'blockNoVerify', 'blockHooksPath']) assert.equal(cfg.gitGuard[k], true, k);
-    assert.equal(cfg.gitGuard.blockAmend, false, 'an amend is local and reversible: off unless the config says true');
-    putConfig({ gitGuard: { blockAmend: true } });
-    assert.equal(loadSsddConfig(dir).cfg.gitGuard.blockAmend, true);
-    assert.deepEqual(cfg.reviewGate.reviewerModelSets, []);
-    assert.deepEqual(cfg.gitGuard.extraRules, []);
-    assert.deepEqual(cfg.routing, []);
+    const r = loadSsddConfig(dir);
+    assert.deepEqual(r.cfg.gitGuard, { extraRules: [] });
+    assert.deepEqual(r.cfg.routing, []);
+    assert.deepEqual(r.obsolete, []);
+  });
+
+  it('commentReviewer defaults to docs-sync-reviewer', () => {
+    putConfig({});
+    assert.equal(loadSsddConfig(dir).cfg.reviewGate.commentReviewer, 'docs-sync-reviewer');
+    putConfig({ reviewGate: { commentReviewer: 'doc-reviewer' } });
+    assert.equal(loadSsddConfig(dir).cfg.reviewGate.commentReviewer, 'doc-reviewer');
+    for (const v of ['', '  ', 7, null, ['x'], {}]) {
+      putConfig({ reviewGate: { commentReviewer: v } });
+      const r = loadSsddConfig(dir);
+      assert.equal(r.error, undefined, JSON.stringify(v));
+      assert.equal(r.cfg.reviewGate.commentReviewer, 'docs-sync-reviewer', JSON.stringify(v));
+    }
   });
 
   it('a broken config is an error', () => {
@@ -150,29 +178,6 @@ describe('loadSsddConfig', () => {
       assert.match(r.error ?? '', why, JSON.stringify(route));
       assert.deepEqual(r.cfg.routing, []);
     }
-  });
-
-  it('a reviewGate.exclude that is not a list of regex sources is a config error', () => {
-    putConfig({ routing: [{ reviewer: 'a', paths: ['^src/'] }], reviewGate: { exclude: ['('] } });
-    const r = loadSsddConfig(dir);
-    assert.match(r.error, /reviewGate\.exclude: "\(" isn't a valid regex/);
-    assert.deepEqual(r.cfg.routing.map((x) => x.exclude), [[]]);
-  });
-
-  it('preCommit.blockUntracked defaults to false and reads true', () => {
-    putConfig({});
-    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: false });
-    putConfig({ preCommit: { blockUntracked: true } });
-    assert.deepEqual(loadSsddConfig(dir).cfg.preCommit, { blockUntracked: true });
-    putConfig({ preCommit: { blockUntracked: 'yes' } });
-    assert.equal(loadSsddConfig(dir).cfg.preCommit.blockUntracked, false);
-  });
-
-  it('a non-object preCommit is a config error', () => {
-    putConfig({ preCommit: true });
-    const r = loadSsddConfig(dir);
-    assert.match(r.error, /"preCommit" must be an object/);
-    assert.equal(r.cfg.preCommit.blockUntracked, false);
   });
 
   it('a "root" key does not move the repo root', () => {
@@ -264,6 +269,14 @@ describe('productionGuard', () => {
     assert.equal(r.error, undefined);
     assert.equal(r.cfg.productionGuard.writePath, 'migrations on merge to main');
   });
+  it('config.example.json holds none of the removed keys and loads clean', { skip: !existsSync(EXAMPLE) }, () => {
+    putConfig(readFileSync(EXAMPLE, 'utf8'));
+    const r = loadSsddConfig(dir);
+    assert.equal(r.error, undefined);
+    assert.deepEqual(r.obsolete, []);
+    assert.deepEqual(Object.keys(r.cfg.gitGuard), ['extraRules']);
+    assert.ok(r.cfg.routing.length && r.cfg.routing.every((x) => x.exclude.includes('\\.test\\.')), 'each route excludes test files');
+  });
 });
 
 describe('skillsAudited', () => {
@@ -279,38 +292,70 @@ describe('skillsAudited', () => {
   });
 });
 
-describe('modelReview', () => {
-  it('defaults to generation 5', () => {
-    putConfig({});
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.deepEqual(r.cfg.modelReview, { generation: 5 });
+describe('dormantHook: armed means the pre-commit runs the gate', () => {
+  const GATE = 'node "$ROOT/.ssdd/hooks/review-gate.mjs" --pre-commit';
+  const preCommit = (where, body) => {
+    mkdirSync(join(where, '.githooks'), { recursive: true });
+    writeFileSync(join(where, '.githooks', 'pre-commit'), body);
+    chmodSync(join(where, '.githooks', 'pre-commit'), 0o755);
+  };
+
+  it('a pre-commit that does not call the gate is dormant', () => {
+    preCommit(dir, '#!/bin/sh\necho hi\n');
+    git('config', 'core.hooksPath', '.githooks');
+    assert.equal(dormantHook(dir), `its pre-commit (${join(dir, '.githooks', 'pre-commit')}) doesn't run the review gate`);
+    assert.equal(foreignHook(dir), '', 'a pre-commit without the gate is not a foreign one that "still runs"');
   });
 
-  it('keeps a valid section', () => {
-    putConfig({ modelReview: { generation: 6 } });
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.deepEqual(r.cfg.modelReview, { generation: 6 });
+  it('a pre-commit that names the gate without --pre-commit is dormant', () => {
+    preCommit(dir, '#!/bin/sh\nnode "$ROOT/.ssdd/hooks/review-gate.mjs" --check\n');
+    git('config', 'core.hooksPath', '.githooks');
+    assert.match(dormantHook(dir), /doesn't run the review gate/);
   });
 
-  it('a bad section is a config error', () => {
-    for (const mr of ['x', { generation: 0 }, { generation: '6' }, { generation: 5.5 }]) {
-      putConfig({ modelReview: mr });
-      const r = loadSsddConfig(dir);
-      assert.match(r.error ?? '', /modelReview/, JSON.stringify(mr));
-      assert.deepEqual(r.cfg.modelReview, { generation: 5 }, JSON.stringify(mr));
-    }
+  it('a pre-commit whose only gate line is commented out is dormant', () => {
+    preCommit(dir, `#!/bin/sh\n# ${GATE}\n  #${GATE}\n`);
+    git('config', 'core.hooksPath', '.githooks');
+    assert.match(dormantHook(dir), /doesn't run the review gate/);
   });
 
-  const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', 'config.example.json');
-  it("config.example.json's modelReview is valid", { skip: !existsSync(EXAMPLE) }, () => {
-    const { modelReview } = JSON.parse(readFileSync(EXAMPLE, 'utf8'));
-    assert.ok(modelReview, 'the example has a modelReview section');
-    putConfig({ modelReview });
-    const r = loadSsddConfig(dir);
-    assert.equal(r.error, undefined);
-    assert.equal(r.cfg.modelReview.generation, 5);
+  it('dormantHookDetail names the fix: the arming command, or the line to add', () => {
+    preCommit(dir, '#!/bin/sh\necho hi\n');
+    assert.deepEqual(dormantHookDetail(dir), { reason: 'core.hooksPath is unset', command: 'git config core.hooksPath .githooks' });
+    git('config', 'core.hooksPath', '.githooks');
+    const file = join(dir, '.githooks', 'pre-commit');
+    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE });
+    assert.equal(dormantHookDetail(dir).command, '');
+    putConfig('{}');
+    writeFileSync(join(dir, '.ssdd', 'ssdd.lock.json'), JSON.stringify({ managed: { '.githooks/pre-commit': { src: 'x', sha256: 'y' } } }));
+    assert.deepEqual(dormantHookDetail(dir).edit, { file, line: GATE }); // SSDD's copy: the fix is the same edit
+    preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+    assert.equal(dormantHookDetail(dir), null);
+  });
+
+  it('a customized pre-commit that calls the gate is armed', () => {
+    preCommit(dir, `#!/bin/sh\nROOT="$(git rev-parse --show-toplevel)"\nnpm run lint || exit 1\n${GATE} || exit 1\necho done\n`);
+    git('config', 'core.hooksPath', '.githooks');
+    assert.equal(dormantHook(dir), '');
+  });
+
+  it('an unset core.hooksPath is still dormant, with its own wording', () => {
+    preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+    assert.equal(dormantHook(dir), 'core.hooksPath is unset');
+  });
+
+  it('an absolute path to another checkout\'s .githooks that calls the gate is armed', () => {
+    const other = mkdtempSync(join(tmpdir(), 'ssdd-cfg-other-'));
+    try {
+      preCommit(dir, `#!/bin/sh\n${GATE}\n`);
+      preCommit(other, `#!/bin/sh\n# shared\n${GATE}\n`);
+      git('config', 'core.hooksPath', join(other, '.githooks'));
+      assert.equal(dormantHook(dir), '');
+      assert.equal(foreignHook(dir), join(other, '.githooks'));
+      // The same path, with a pre-commit that skips the gate, is dormant.
+      preCommit(other, '#!/bin/sh\nexit 0\n');
+      assert.equal(dormantHook(dir), `its pre-commit (${join(other, '.githooks', 'pre-commit')}) doesn't run the review gate`);
+      assert.equal(foreignHook(dir), '');
+    } finally { rmSync(other, { recursive: true, force: true }); }
   });
 });
-

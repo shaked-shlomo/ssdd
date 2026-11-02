@@ -204,8 +204,8 @@ describe('README', () => {
 });
 
 describe('shipped text matches the defaults', () => {
-  it('untracked files are a warning unless preCommit.blockUntracked says otherwise', () => {
-    assert.match(read('mechanisms/config.example.json'), /"blockUntracked": false/);
+  it('untracked files are a warning, never a block', () => {
+    assert.doesNotMatch(read('mechanisms/config.example.json'), /blockUntracked/);
     const shipped = (p) => /^(process|skills|adapters|reviewers|mechanisms)\/.*\.(md|mdc)$/.test(p) || /^(README\.md|docs\/[^/]+\.md)$/.test(p);
     const bad = []; let said = 0;
     for (const f of tracked().filter(shipped)) {
@@ -221,18 +221,16 @@ describe('shipped text matches the defaults', () => {
   });
 });
 
-describe('shipped text matches the hooks', () => {
-  it('a completion stamp covers the routed staged files, not what the dispatch named', () => {
-    // review-gate.mjs's SubagentStart snapshots every staged file routed to the
-    // reviewer's type; the prompt plays no part.
-    for (const f of ['adapters/claude-code/CLAUDE.md', 'process/SDD.md']) {
-      const said = read(f).replace(/\s+/g, ' ').split(/(?<=\.) /).filter((s) => /verdict line/.test(s) && /\bstamps\b/.test(s));
-      assert.ok(said.length, `${f}: no sentence on completion stamps`);
-      for (const s of said) {
-        assert.match(s, /\brouted\b/, `${f}: ${s}`);
-        assert.match(s, /\bstaged\b/, `${f}: ${s}`);
-        assert.doesNotMatch(s, /dispatched on/, `${f}: ${s}`);
-      }
+describe('reviewer contracts', () => {
+  const REVIEWERS = ['convention-compliance', 'performance', 'resilience', 'security', 'docs-sync', 'gate'].map((n) => `reviewers/${n}-reviewer.md`)
+    .concat('reviewers/domain-reviewer-template.md');
+  it('every reviewer reads git diff HEAD', () => {
+    for (const f of REVIEWERS) {
+      assert.match(read(f), /`git diff HEAD`/, `${f} does not read git diff HEAD`);
+      assert.doesNotMatch(read(f), /git diff --(staged|cached)/, `${f} still reads git diff --staged`);
     }
+  });
+  it('docs-sync has the comment-only section', () => {
+    assert.match(read('reviewers/docs-sync-reviewer.md'), /comment-only/i);
   });
 });
