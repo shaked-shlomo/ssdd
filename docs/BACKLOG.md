@@ -1,8 +1,8 @@
 # SSDD backlog
 
-The single list of remaining SSDD work. Updated 2026-11-01 at 3.4.0. All
-five parts of v3 (`SPEC.md` → v3) and v3.4 have shipped; what's left of v3
-is v3.5, v3.6 and the migrations below. Not hardening. When an item
+The single list of remaining SSDD work. Updated 2026-11-02 at 3.5.0. All
+five parts of v3 (`SPEC.md` → v3), v3.4 and v3.5 have shipped; what's left
+of v3 is v3.6 and the migrations below. Not hardening. When an item
 ships, delete it here and record it in `CHANGELOG.md`. When one is planned,
 it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
 
@@ -13,12 +13,6 @@ and the spec that closes it records that incident.
 
 ## Next: the end of v3
 
-- **v3.5 — findings have outcomes** (`SPEC.md` → v3.5, draft) ships
-  before the migrations (owner, 2026-10-22), so each project migrates once.
-  Trimmed 2026-10-23 to the re-review list, `[pre-existing]` and the round
-  cap; blocking on open findings and the commit-message record are
-  deferred in its Out list. Revised 2026-10-30 to read findings from
-  `--stamp --report` on any harness, built on v3.4.
 - **v3.6 — one backlog** (`SPEC.md` → v3.6, draft): the standard
   `BACKLOG.md` and `/migrate-backlog`, split from v3.5. Whether it also
   ships before the migrations is its Open 1.
