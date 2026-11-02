@@ -32,7 +32,8 @@ the same change** — a stale canonical doc actively misleads the next session.
 
 ## How to run
 
-1. `git diff --staged --name-only` (or the range the orchestrator names) →
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names →
    for each changed file, walk the Documentation Map's triggers and list which
    docs should have changed.
 2. Diff the docs that should have changed. Missing = ❌. Changed but
@@ -44,6 +45,12 @@ the same change** — a stale canonical doc actively misleads the next session.
    judgment calls, `✅ <coupling>` when satisfied. Do NOT edit. End with
    **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input, answer
    `NO DIFF — scope not provided`.
+
+**A comment-only delta.** When the gate hands you a change that only
+edits comments, check each changed comment's claim against the code it
+describes: a name, a count, a behavior, a "why". A wrong claim is ❌.
+The other reviewers' stamps carried over this change; you're the one
+reading it.
 
 ## Notes
 

@@ -10,6 +10,107 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.4.0] — 2026-11-01
+
+v3.4, the gate lives in git: the review gate is the pre-commit, which every
+harness and every human meets at `git commit`. The harness hooks keep only
+what holds the pre-commit in the loop, what guards an action that goes out,
+and two conveniences (the session view, edit-time lint); none adds a rule of
+its own. See `SPEC.md` → v3.4.
+
+### Removed
+- **The harness review gate**: `review-gate.mjs` on Claude Code's
+  PreToolUse(Bash) and Cursor's `beforeShellExecution`, with the shape checks
+  it needed because it ran before the command (the repo walk, the refusal of
+  `git add … && git commit`, `commit -a/-i/-o` and `commit <path>`, the `if`
+  filter) and `commandStart`, `gitInvocation` and `isCommit` in `git-cmd.mjs`.
+  git runs the pre-commit on the index it commits, in the repo it commits
+  to, so a chained add, a `cd` or `-a` is judged right without them.
+- **Completion stamps**: the `SubagentStart` / `SubagentStop` entries, the
+  transcript reader, the verdict parser, the model allow-list and
+  `model-id.mjs`. They were Claude-only and opt-in, no project turned them
+  on, and a reviewer dispatched before `git add` stamped nothing, silently.
+- git-guard's PreToolUse(Edit|Write) entry and its check of
+  `.git/ssdd-review-*` paths, and its rules for the `GIT_CONFIG_PARAMETERS`
+  / `GIT_CONFIG_KEY_<n>` env forms, abbreviated write options
+  (`--unset-a`) and shell expansion before the key. No agent was seen using
+  any of them; each comes back with the incident that shows one.
+- Four Claude Code hook entries (9 → 5) and one Cursor entry (6 → 5).
+- Nine config keys no project set: `reviewGate.stamping`,
+  `reviewGate.reviewerModels`, `reviewGate.exclude`,
+  `preCommit.blockUntracked`, `gitGuard.blockBulkAdd`,
+  `gitGuard.blockNoVerify`, `gitGuard.blockAmend`,
+  `gitGuard.blockHooksPath` and `modelReview.generation`, with the session
+  view's new-model line (the checklist stays in `docs/usage.md`). A config
+  that still holds one keeps working: the key is ignored, and `status` and
+  `update` name it.
+
+### Changed
+- **One gate, in git.** `.githooks/pre-commit` runs `review-gate.mjs
+  --pre-commit`, the same on every harness. Its block message names `--repo
+  <its repo>` in the stamp command, since it can't know the agent's cwd.
+  `SSDD_REVIEW_SKIP=1 git commit …` still works. A stale harness entry
+  that still calls `review-gate.mjs` with no mode exits 0 and prints
+  nothing (`{"permission":"allow"}` for Cursor).
+- **`--stamp` before `git add`.** A stamp keys each routed file's work-tree
+  content as `git add` would (through a scratch copy of the index), so a
+  review run before staging counts: stage, stamp and commit in any order, or
+  in one call. A file whose staged copy differs from the work tree stays
+  owed until it's added, and `--stamp` says so. Every reviewer reads `git
+  diff HEAD` for its routed files. `--stamp` keys the repo git finds from
+  the cwd (or `--repo`), not `SSDD_PROJECT_DIR` / `CLAUDE_PROJECT_DIR`.
+- **A comment-only change carries a clean stamp.** When a staged JS/TS-family
+  file differs from a reviewer's stamped blob only in blank lines, whole-line
+  `//` comments and trailing whitespace, that stamp still meets the gate, if
+  HEAD's side and both modes are unchanged, the file is a regular file, and
+  the stamp records no issues. The comment
+  reviewer, `reviewGate.commentReviewer` (new; default
+  `docs-sync-reviewer`), still owes the file and gets the `git diff <old>
+  <new>` delta; when it isn't routed to the file, nothing carries.
+  docs-sync's contract gains a section: check each changed comment's claim
+  against the code. The check (`comment-only.mjs`) is line-based and errs
+  toward review: a trailing comment, a block or JSDoc comment, a comment a
+  tool reads (`eslint`, `@ts-`, `ignore`, …), a line a template, JSX element,
+  block comment or `\` continuation may hold, and a line that moves a
+  next-line directive's target are all reviewed. The carry is computed per
+  judgment and never written; the stamp keeps its old key.
+- **A global `reviewGate.exclude` is no longer read.** Files it excluded
+  (test files, in 3.3.2's example config) are routed to their reviewers
+  again until the patterns move into each route's `exclude`, as the example
+  config now does.
+- git-guard blocks only what keeps the pre-commit running: `commit -n` /
+  `--no-verify` and writes to `core.hooksPath`, plus `extraRules` (the
+  example's force push). `git add -A` / `.` / `--all` and `commit --amend`
+  run with a warning that says what to do instead: `additionalContext`
+  under Claude Code, `agent_message` on Cursor's allow, best effort.
+- Convention lint warns at commit too: `--staged` prints its findings and
+  exits 0. A file-list run (CI) still exits 1 on a finding, and a config it
+  can't read still fails the commit.
+- **Armed means the gate runs.** The pre-commit git resolves must run
+  `review-gate.mjs … --pre-commit` on a line that isn't a comment;
+  otherwise `status`, `update` and the session view call it dormant and
+  give the fix. A wrapper that calls `.githooks/pre-commit` reads as
+  dormant: a false warning, never a block.
+- **`status` and `update` report wiring.** For Claude Code's seeded
+  `.claude/settings.json` they list the template's hook entries the project
+  lacks, with what each runs, and the entries the template dropped as safe
+  to remove. Nothing rewrites a project-owned file.
+- `SDD.md` §4, the AGENTS template ("commit in a separate call" goes) and
+  the CLAUDE.md template (now `@AGENTS.md` alone) match;
+  `docs/limitations.md` records what the pre-commit can't see.
+
+### Upgrade (optional)
+- Remove the `.claude/settings.json` entries `update` lists as safe to
+  remove (`status` lists them too, once the lock is on 3.4.0). Until you do
+  they're harmless: the old review-gate entries exit 0 and git-guard on an
+  edit allows.
+- Delete the config keys `status` names as obsolete.
+- Move a `reviewGate.exclude` into each route's `exclude`. This replaces
+  3.3.2's upgrade step, which added `reviewGate.exclude` for tests.
+- `AGENTS.md` and `CLAUDE.md` are project-owned: `update` prints how their
+  templates changed. Drop "commit in a separate call" and CLAUDE.md's
+  completion-stamp paragraph.
+
 ## [3.3.2] — 2026-10-30
 
 From the 2026-10-23 audit: the process cost more than it caught in places.

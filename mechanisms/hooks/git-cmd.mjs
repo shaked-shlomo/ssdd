@@ -1,7 +1,7 @@
-// Shared command grammar for the harness hooks (git-guard, review-gate): ONE
-// definition of "what does this shell string do with git", so the two hooks
-// can't drift apart. Ported from the source project's hardened hooks.
-// Not a shell parser — enough structure for flag scans and cd / -C tracking.
+// Shared command grammar for the harness hooks (git-guard, shell-view): ONE
+// definition of "what does this shell string do with git", so they can't drift
+// apart. Ported from the source project's hardened hooks.
+// Not a shell parser — enough structure for flag scans and word splitting.
 
 const HEREDOC = /<<-?\s*['"]?(\w+)['"]?[\s\S]*?\n[ \t]*\1\b/g;
 
@@ -30,9 +30,6 @@ export const cluster = (letter) => String.raw`\s-[a-zA-Z]*${letter}[a-zA-Z]*\b`;
  * (`;` `&` `|` newline), so `git commit -m x && git log -n 3` is not `commit -n`.
  */
 export const gitRule = (sub, tail) => new RegExp(GIT + sub + String.raw`\b[^;&|\n]*(?:` + tail + ')');
-
-/** Is there a `git commit` in this (skeletonized) string? */
-export const isCommit = (probe) => new RegExp(GIT + String.raw`commit\b`).test(probe);
 
 // Collapse the global-option run after `git` (`git -C <p> …`, `git -c k=v …`)
 // so free-form regexes — a project's gitGuard.extraRules — see the subcommand
@@ -86,39 +83,4 @@ export function splitCommands(cmd) {
   }
   endCmd();
   return cmds;
-}
-
-// Words that run the next word as the command: `sudo git …`, `env X=1 git …`.
-const PREFIXES = new Set(['sudo', 'command', 'env', 'nohup', 'time', 'exec', 'nice', 'builtin']);
-const isAssign = (w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
-const base = (w) => (w ?? '').split('/').pop();
-
-/** Index of the word that is actually run, past `VAR=x`, `sudo`, `env -i …`. */
-export function commandStart(words) {
-  let i = 0;
-  for (;;) {
-    while (i < words.length && isAssign(words[i])) i++;
-    if (!PREFIXES.has(base(words[i]))) return i;
-    i++;
-    while (i < words.length && words[i].startsWith('-')) i++; // the prefix's own flags
-  }
-}
-
-/**
- * For a tokenized command, `{ dashC, sub, args }`: the `-C <path>` values in
- * order (git composes them relatively), the subcommand, and the words after
- * it. `null` if it isn't git. `VAR=value` and runner prefixes are skipped.
- */
-export function gitInvocation(words) {
-  let i = commandStart(words);
-  if (base(words[i]) !== 'git') return null;
-  const dashC = [];
-  for (i++; i < words.length; i++) {
-    const w = words[i];
-    if (w === '-C') { dashC.push(words[++i] ?? ''); continue; }
-    if (['-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--exec-path', '--super-prefix'].includes(w)) { i++; continue; }
-    if (w.startsWith('-')) continue;
-    break;
-  }
-  return { dashC, sub: words[i] ?? '', args: words.slice(i + 1) };
 }

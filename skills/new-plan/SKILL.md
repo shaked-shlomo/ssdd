@@ -19,7 +19,7 @@ holds, and why: `.ssdd/process/SDD.md` §2.
 3. A multi-task plan gets `<ledgers>/NN-<slug>-ledger.md` from
    `.ssdd/process/templates/task-ledger-template.md`.
 4. Stage the plan with the work's first commit (the pre-commit hook warns about
-   untracked files, and blocks on them with `preCommit.blockUntracked`).
+   untracked files).
 
 ## Syncing back
 

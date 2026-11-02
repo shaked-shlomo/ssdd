@@ -1,12 +1,13 @@
 // Regression tests for the SSDD review gate. Each case builds a scratch git
 // repo with its own .ssdd/config.json, stages files, and runs the gate the way
-// git and Claude Code do: `--pre-commit` (exit 1 = blocked, 0 = passed) and
-// stdin PreToolUse mode (exit 2 = blocked). The stamp file lives inside the
-// scratch repo's .git, so cases never see each other.
+// git does: `--pre-commit` (exit 1 = blocked, 0 = passed), plus `--stamp` and
+// `--check`. The pre-commit is the only gate; with no mode the script is
+// inert. The stamp file lives inside the scratch repo's .git, so cases never
+// see each other.
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
-import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,13 +64,6 @@ function run(dir, args, { input, env } = {}) {
   return { status: r.status, stderr: r.stderr, stdout: r.stdout };
 }
 const preCommit = (dir, env) => run(dir, ['--pre-commit'], { env });
-const hook = (dir, command, env) =>
-  run(dir, [], { input: JSON.stringify({ tool_input: { command } }), env });
-const cursorHook = (dir, command, env) =>
-  run(dir, [], {
-    input: JSON.stringify({ command, hook_event_name: 'beforeShellExecution' }),
-    env,
-  });
 const stamp = (dir, reviewers, files) =>
   run(dir, ['--stamp', reviewers, ...(files ? ['--files', files] : [])]);
 const stampFile = (dir) => join(dir, '.git', 'ssdd-review-stamp.json');
@@ -86,41 +80,25 @@ describe('modes', () => {
   it('passes when only unrouted files are staged', () => {
     write(dir, 'docs/x.md', 'x\n');
     assert.strictEqual(preCommit(dir).status, 0);
-    assert.strictEqual(hook(dir, 'git commit -m x').status, 0);
   });
-  it('blocks an unstamped routed file: exit 1 in --pre-commit, exit 2 under PreToolUse', () => {
+  it('blocks an unstamped routed file with exit 1', () => {
     write(dir, 'src/a.ts', 'a\n');
     const pc = preCommit(dir);
     assert.strictEqual(pc.status, 1);
     assert.match(pc.stderr, /alpha/);
     assert.match(pc.stderr, /beta/);
-    assert.strictEqual(hook(dir, 'git commit -m x').status, 2);
-    assert.strictEqual(cursorHook(dir, 'git commit -m x').status, 2);
   });
-  it('ignores a non-commit command under PreToolUse', () => {
-    write(dir, 'src/a.ts', 'a\n');
-    assert.strictEqual(hook(dir, 'git status').status, 0);
-    assert.strictEqual(hook(dir, 'git commit -m x').status, 2);
-  });
-  it('a commit MESSAGE mentioning the bypass token does not bypass', () => {
-    write(dir, 'src/a.ts', 'a\n');
-    assert.strictEqual(hook(dir, 'git commit -m "set SSDD_REVIEW_SKIP=1 never"').status, 2);
-  });
-  it('SSDD_REVIEW_SKIP=1 bypasses with the banner, in both modes', () => {
+  it('SSDD_REVIEW_SKIP=1 bypasses with the banner', () => {
     write(dir, 'src/a.ts', 'a\n');
     const pc = preCommit(dir, { SSDD_REVIEW_SKIP: '1' });
     assert.strictEqual(pc.status, 0);
     assert.match(pc.stderr, /bypassed via SSDD_REVIEW_SKIP=1/);
-    const h = hook(dir, 'SSDD_REVIEW_SKIP=1 git commit -m x');
-    assert.strictEqual(h.status, 0);
-    assert.match(h.stderr, /bypassed via SSDD_REVIEW_SKIP=1/);
   });
   it('a repo without .ssdd/config.json is disarmed', () => {
     const bare = makeRepo(null);
     try {
       write(bare, 'src/a.ts', 'a\n');
       assert.strictEqual(preCommit(bare).status, 0);
-      assert.strictEqual(hook(bare, 'git commit -m x').status, 0);
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }
@@ -221,7 +199,6 @@ describe('stamps are per reviewer, per routed file', () => {
     const pc = preCommit(dir);
     assert.strictEqual(pc.status, 1);
     assert.match(pc.stderr, /never stamped on this diff/);
-    assert.strictEqual(hook(dir, 'git commit -m x').status, 2);
   });
   it('a malformed key in a stamp file is echoed, not thrown on — the gate stays closed', () => {
     write(dir, 'src/a.ts', 'a\n');
@@ -232,9 +209,6 @@ describe('stamps are per reviewer, per routed file', () => {
     assert.strictEqual(pc.status, 1);
     assert.match(pc.stderr, /src\/a\.ts\s+changed since its last stamp \(was garbage\)/);
     assert.match(pc.stderr, /\(was 42\)/);
-    const h = hook(dir, 'git commit -m x');
-    assert.strictEqual(h.status, 2);
-    assert.match(h.stderr, /was garbage/);
   });
   it('a version-1 stamp file (whole-diff hash) counts as no stamp', () => {
     write(dir, 'src/a.ts', 'a\n');
@@ -277,10 +251,11 @@ describe('--stamp --files', () => {
     assert.match(r.stderr, /src\/b\.ts/);
     assert.throws(() => readStamp(dir));
   });
-  it('refuses a file that is not staged, writing nothing', () => {
+  it('refuses a file that is not changed, writing nothing', () => {
     write(dir, 'src/a.ts', 'a\n');
     const r = stamp(dir, 'beta', 'src/nope.ts');
     assert.strictEqual(r.status, 1);
+    assert.match(r.stderr, /src\/nope\.ts — not changed, or not routed to beta/);
     assert.throws(() => readStamp(dir));
   });
   it('refuses an unrouted file, writing nothing', () => {
@@ -293,7 +268,7 @@ describe('--stamp --files', () => {
     write(dir, 'src/b.ts', 'b\n');
     const r = stamp(dir, 'beta,alpha'); // alpha covers src/a.ts only
     assert.strictEqual(r.status, 1);
-    assert.match(r.stderr, /no staged file routes to alpha/);
+    assert.match(r.stderr, /no changed file routes to alpha/);
     assert.throws(() => readStamp(dir));
   });
   it('refuses a reviewer name the routing table does not know, writing nothing', () => {
@@ -315,6 +290,559 @@ describe('--stamp --files', () => {
     write(dir, 'src/b.ts', 'b\n');
     assert.strictEqual(stamp(dir, 'beta,alpha', 'src/b.ts').status, 1);
     assert.throws(() => readStamp(dir));
+  });
+});
+
+// A reviewer can stamp before `git add`: --stamp keys the work tree through a
+// scratch index, so the keys are the ones `git add` would stage.
+describe('--stamp before git add', () => {
+  const put = (d, path, content) => {
+    mkdirSync(dirname(join(d, path)), { recursive: true });
+    writeFileSync(join(d, path), content);
+  };
+  const commit = (d, msg = 'c') => git(d, 'commit', '-qm', msg);
+  const scratchLeft = (d) => readdirSync(git(d, 'rev-parse', '--absolute-git-dir').trim()).filter((f) => f.startsWith('ssdd-stamp-index'));
+
+  it('an unstaged edit is stamped; adding it commits with no new stamp', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    put(dir, 'src/a.ts', 'a edited\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before); // the real index is untouched
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a staged edit reverted in the work tree is not stamped; the commit stays owed', () => {
+    write(dir, 'src/a.ts', 'good\n');
+    commit(dir);
+    write(dir, 'src/a.ts', 'EVIL\n'); // staged
+    put(dir, 'src/a.ts', 'good\n'); // work tree back to what HEAD holds
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.throws(() => readStamp(dir));
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+  it('a staged new file deleted from the work tree is not stamped; the commit stays owed', () => {
+    write(dir, 'src/b.ts', 'b\n'); // staged
+    rmSync(join(dir, 'src', 'b.ts'));
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.throws(() => readStamp(dir));
+    assert.strictEqual(preCommit(dir).status, 1);
+  });
+  it('stat-dirty tracked files do not make --stamp rewrite the real index', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    const later = Date.now() / 1000 + 100;
+    for (const f of ['src/a.ts', 'src/b.ts']) utimesSync(join(dir, f), later, later); // content unchanged
+    put(dir, 'src/c.ts', 'c\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'beta', 'src/c.ts');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before);
+  });
+  it('paths are literal pathspecs: a glob-named file does not drag in other files', () => {
+    const cfg = { routing: [{ reviewer: 'beta', paths: ['^src/'], exclude: [String.raw`\.gen\.ts$`] }] };
+    const r = makeRepo(cfg);
+    try {
+      put(r, 'src/*.ts', 'star\n'); // routed; as a glob it would match every .ts under src/
+      put(r, 'src/z.gen.ts', 'only a glob would stage this\n'); // excluded: not on the path list
+      const s = stamp(r, 'beta');
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(Object.keys(readStamp(r).reviewers.beta), ['src/*.ts']);
+      const blob = git(r, 'hash-object', 'src/z.gen.ts').trim();
+      assert.throws(() => git(r, 'cat-file', '-e', blob)); // the scratch add never hashed it
+    } finally {
+      rmSync(r, { recursive: true, force: true });
+    }
+  });
+  it('an untracked routed file is stamped', () => {
+    put(dir, 'src/a.ts', 'new\n');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a deletion not yet staged is stamped', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    rmSync(join(dir, 'src', 'a.ts'));
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'rm', '-q', '--cached', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  // A staged deletion's path is in neither the index nor the work tree, so a
+  // scratch `add` of it is fatal; the copied index already records it.
+  const NONE = `000000:${'0'.repeat(40)}`;
+  const keyOf = (d, name, f) => readStamp(d).reviewers[name][f].key;
+  it('a staged deletion (git rm) is stamped, and commits', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    commit(dir);
+    git(dir, 'rm', '-q', 'src/a.ts');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'alpha', 'src/a.ts'), new RegExp(`→${NONE}$`));
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a staged rename (git mv) is stamped as D + A, and commits', () => {
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    git(dir, 'mv', 'src/b.ts', 'src/c.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/b.ts'), new RegExp(`^100644:[0-9a-f]{40}→${NONE}$`));
+    assert.match(keyOf(dir, 'beta', 'src/c.ts'), new RegExp(`^${NONE}→100644:[0-9a-f]{40}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('git rm --cached of a file now ignored is stamped as a deletion, and commits', () => {
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    write(dir, '.gitignore', 'src/b.ts\n');
+    git(dir, 'rm', '-q', '--cached', 'src/b.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/b.ts'), new RegExp(`→${NONE}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a case-only rename on a case-insensitive filesystem is stamped as D + A, and commits', (t) => {
+    write(dir, 'src/B.ts', 'b\n');
+    commit(dir);
+    if (!existsSync(join(dir, 'src', 'b.ts'))) return t.skip('case-sensitive filesystem');
+    git(dir, 'mv', 'src/B.ts', 'src/b.ts');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(keyOf(dir, 'beta', 'src/B.ts'), new RegExp(`→${NONE}$`));
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('an edit and a git rm in one commit are both stamped, and commit', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    write(dir, 'src/b.ts', 'b\n');
+    commit(dir);
+    write(dir, 'src/a.ts', 'a edited\n');
+    git(dir, 'rm', '-q', 'src/b.ts');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(Object.keys(readStamp(dir).reviewers.beta).sort(), ['src/a.ts', 'src/b.ts']);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a git failure in the scratch index exits 1 with git\'s message and one line, no stack, nothing left', () => {
+    // A required clean filter that fails: nothing before the scratch `add` runs filters.
+    git(dir, 'config', 'filter.boom.clean', 'false');
+    git(dir, 'config', 'filter.boom.required', 'true');
+    put(dir, '.gitattributes', 'src/*.ts filter=boom\n');
+    put(dir, 'src/a.ts', 'a\n');
+    const before = readFileSync(join(dir, '.git', 'index'));
+    const s = stamp(dir, 'alpha');
+    assert.strictEqual(s.status, 1, s.stderr);
+    assert.strictEqual(s.stderr.match(/^fatal: .*boom/gm)?.length, 1, s.stderr); // git's own, once
+    assert.strictEqual(s.stderr.match(/^\[ssdd-review-gate\]/gm)?.length, 1, s.stderr);
+    assert.doesNotMatch(s.stderr, /^\s+at /m);
+    assert.throws(() => readStamp(dir));
+    assert.deepStrictEqual(scratchLeft(dir), []);
+    assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), before);
+  });
+  it('symlink, exec bit and eol=lf key as git add does', () => {
+    put(dir, '.gitattributes', '* text=auto eol=lf\n');
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'add', '.gitattributes');
+    commit(dir);
+    put(dir, 'src/c.ts', 'one\r\ntwo\r\n');
+    put(dir, 'src/x.ts', 'x\n');
+    chmodSync(join(dir, 'src', 'x.ts'), 0o755);
+    symlinkSync('a.ts', join(dir, 'src', 'l.ts'));
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    git(dir, 'add', '-A');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('--files refuses an ignored, an unchanged and an unrouted file, writing nothing', () => {
+    put(dir, '.gitignore', 'src/ignored.ts\n');
+    write(dir, 'src/a.ts', 'a\n');
+    git(dir, 'add', '.gitignore');
+    commit(dir);
+    put(dir, 'src/ignored.ts', 'i\n');
+    put(dir, 'src/b.ts', 'b\n'); // changed and routed: the stamp is valid, the other files are not
+    put(dir, 'docs/x.md', 'x\n');
+    for (const f of ['src/ignored.ts', 'src/a.ts', 'docs/x.md']) {
+      const r = stamp(dir, 'beta', f);
+      assert.strictEqual(r.status, 1, f);
+      assert.match(r.stderr, /not changed, or not routed to beta/, f);
+      assert.throws(() => readStamp(dir), f);
+    }
+    assert.deepStrictEqual(scratchLeft(dir), []);
+  });
+  it('a file staged, then edited, is stamped on the work tree', () => {
+    write(dir, 'src/a.ts', 'v1\n');
+    put(dir, 'src/a.ts', 'v2\n');
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(s.stderr, /src\/a\.ts: stamped the work-tree copy; the staged copy differs/);
+    assert.strictEqual(preCommit(dir).status, 1);
+    git(dir, 'add', 'src/a.ts');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('a same-size edit in the instant of the stage is still keyed (the scratch copy must stay racy)', () => {
+    // `v1` -> `v2`: same size, and the file's stat made equal to its index
+    // entry's, with the index as old as the entry. Git rehashes such an entry
+    // (racy-clean); a copy of the index with a newer mtime would trust the stat.
+    git(dir, 'config', 'core.trustctime', 'false');
+    const file = join(dir, 'src', 'a.ts');
+    const t = Math.floor(Date.now() / 1000) - 5; // whole seconds: no sub-second part to differ
+    put(dir, 'src/a.ts', 'v1\n');
+    utimesSync(file, t, t);
+    git(dir, 'add', 'src/a.ts');
+    put(dir, 'src/a.ts', 'v2\n');
+    utimesSync(file, t, t);
+    utimesSync(join(dir, '.git', 'index'), t, t);
+    const s = stamp(dir, 'alpha,beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(s.stderr, /src\/a\.ts: stamped the work-tree copy; the staged copy differs/);
+  });
+  it('--check and --pre-commit write nothing: the stamp file and the index stay byte-identical', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    assert.strictEqual(stamp(dir, 'alpha,beta').status, 0);
+    const files = [stampFile(dir), join(dir, '.git', 'index')];
+    const snap = () => files.map((f) => readFileSync(f));
+    const before = snap();
+    run(dir, ['--check']);
+    preCommit(dir);
+    assert.deepStrictEqual(snap(), before);
+  });
+  it('paths with spaces and non-ASCII letters stamp and then commit', () => {
+    put(dir, 'src/a b.ts', 'sp\n');
+    put(dir, 'src/é.ts', 'e\n');
+    const s = stamp(dir, 'beta');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.deepStrictEqual(Object.keys(readStamp(dir).reviewers.beta).sort(), ['src/a b.ts', 'src/é.ts']);
+    git(dir, '-c', 'core.quotePath=false', 'add', '-A');
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+  it('in a linked worktree, --stamp --repo <wt> keys the worktree\'s files', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-wt-parent-')));
+    const wt = join(parent, 'wt');
+    try {
+      git(dir, 'worktree', 'add', '-q', wt, '-b', 'wt-branch');
+      mkdirSync(join(wt, '.ssdd'));
+      writeFileSync(join(wt, '.ssdd', 'config.json'), JSON.stringify(CONFIG));
+      put(wt, 'src/a.ts', 'w\n');
+      const mainIndex = readFileSync(join(dir, '.git', 'index'));
+      const s = run(dir, ['--stamp', 'alpha,beta', '--repo', wt]);
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(readFileSync(join(dir, '.git', 'index')), mainIndex);
+      assert.deepStrictEqual(scratchLeft(wt), []);
+      git(wt, 'add', 'src/a.ts');
+      assert.strictEqual(preCommit(wt).status, 0);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+  it('on an unborn branch, --stamp keys the first commit\'s files', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ssdd-gate-unborn-'));
+    try {
+      git(fresh, 'init', '-q');
+      mkdirSync(join(fresh, '.ssdd'));
+      writeFileSync(join(fresh, '.ssdd', 'config.json'), JSON.stringify(CONFIG));
+      put(fresh, 'src/a.ts', 'staged\n');
+      git(fresh, 'add', 'src/a.ts');
+      put(fresh, 'src/b.ts', 'untracked\n');
+      const s = stamp(fresh, 'alpha,beta');
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.deepStrictEqual(scratchLeft(fresh), []);
+      git(fresh, 'add', 'src/b.ts');
+      assert.strictEqual(preCommit(fresh).status, 0);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+});
+
+// Both reviewers cover src/lib/; alpha also covers the rest of src/ but not
+// test files, and a stamp for both fits one file under src/lib/.
+const LIB_CONFIG = {
+  routing: [
+    { reviewer: 'alpha', paths: ['^src/'], exclude: [String.raw`\.test\.ts$`] },
+    { reviewer: 'beta', paths: ['^src/lib/'] },
+  ],
+};
+
+describe('--repo', () => {
+  it('--stamp --repo <r> from another directory unblocks that repo, and a restage voids it', () => {
+    const r = makeRepo(LIB_CONFIG);
+    const elsewhere = makeRepo();
+    try {
+      write(r, 'src/lib/a.ts', 'a\n');
+      const s = run(elsewhere, ['--stamp', 'alpha,beta', '--repo', r]);
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.strictEqual(run(elsewhere, ['--check', '--repo', r]).status, 0);
+      assert.strictEqual(preCommit(r).status, 0);
+      write(r, 'src/lib/a.ts', 'changed\n');
+      assert.strictEqual(preCommit(r).status, 1);
+    } finally {
+      for (const d of [r, elsewhere]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+  it('--stamp without --repo stamps the repo it runs in, as --check and --pre-commit judge it, not the env\'s', () => {
+    const other = makeRepo();
+    try {
+      write(dir, 'src/a.ts', 'a\n');
+      write(other, 'src/a.ts', 'other\n');
+      const s = run(dir, ['--stamp', 'alpha,beta'], { env: { CLAUDE_PROJECT_DIR: other, SSDD_PROJECT_DIR: other } });
+      assert.strictEqual(s.status, 0, s.stderr);
+      assert.ok(existsSync(stampFile(dir)));
+      assert.ok(!existsSync(stampFile(other)));
+      assert.strictEqual(preCommit(dir).status, 0);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a linked worktree', () => {
+  let r; let parent; let wt;
+  beforeEach(() => {
+    r = makeRepo(LIB_CONFIG);
+    parent = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-wt-parent-')));
+    wt = join(parent, 'wt');
+    git(r, 'worktree', 'add', '-q', wt, '-b', 'wt-branch');
+    mkdirSync(join(wt, '.ssdd'));
+    writeFileSync(join(wt, '.ssdd', 'config.json'), JSON.stringify(LIB_CONFIG));
+    write(wt, 'src/lib/w.ts', 'w\n'); // staged ONLY in the worktree; the main checkout is clean
+  });
+  afterEach(() => { for (const d of [r, parent]) rmSync(d, { recursive: true, force: true }); });
+
+  it('--pre-commit judges git\'s cwd, not a decoy in the env', () => {
+    const pc = run(wt, ['--pre-commit'], { env: { SSDD_PROJECT_DIR: r, CLAUDE_PROJECT_DIR: r } });
+    assert.strictEqual(pc.status, 1, pc.stderr);
+    assert.match(pc.stderr, /src\/lib\/w\.ts/);
+  });
+  it('--stamp --repo <wt> from the main checkout unblocks the worktree', () => {
+    const s = run(r, ['--stamp', 'alpha,beta', '--repo', wt]);
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.strictEqual(preCommit(wt).status, 0);
+  });
+});
+
+describe('route exclude', () => {
+  let r;
+  beforeEach(() => { r = makeRepo(LIB_CONFIG); });
+  afterEach(() => { rmSync(r, { recursive: true, force: true }); });
+
+  it('a per-route exclude drops test files from that route', () => {
+    write(r, 'src/x.test.ts', 'x\n');
+    assert.strictEqual(preCommit(r).status, 0);
+    const s = run(r, ['--stamp', 'alpha']);
+    assert.strictEqual(s.status, 1);
+    assert.match(s.stderr, /no changed file routes to alpha/);
+  });
+  it('an obsolete reviewGate.exclude is ignored', () => {
+    const o = makeRepo({ reviewGate: { exclude: [String.raw`\.test\.ts$`] }, routing: [{ reviewer: 'alpha', paths: ['^src/'] }] });
+    try {
+      write(o, 'src/x.test.ts', 'x\n');
+      const pc = preCommit(o);
+      assert.strictEqual(pc.status, 1);
+      assert.match(pc.stderr, /alpha/);
+    } finally {
+      rmSync(o, { recursive: true, force: true });
+    }
+  });
+  it('everything else still routes', () => {
+    write(r, 'src/z.ts', 'z\n');
+    const pc = preCommit(r);
+    assert.strictEqual(pc.status, 1);
+    assert.match(pc.stderr, /alpha/);
+    assert.doesNotMatch(pc.stderr, /beta/);
+  });
+});
+
+describe('parallel --stamp', () => {
+  it('runs both land', async () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const go = (name) => new Promise((done) => {
+      const c = spawn(NODE, [HOOK, '--stamp', name], { cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir, SSDD_REVIEW_SKIP: '' } });
+      c.on('close', done);
+    });
+    await Promise.all([go('alpha'), go('beta')]);
+    assert.deepStrictEqual(Object.keys(readStamp(dir).reviewers).sort(), ['alpha', 'beta']);
+    assert.strictEqual(preCommit(dir).status, 0);
+  });
+});
+
+describe('the triage note', () => {
+  it('names a flagged file', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    stamp(dir, 'alpha,beta');
+    // Nothing in v3.4 writes `issues`: the test plays the writer.
+    const s = readStamp(dir);
+    s.reviewers.alpha['src/a.ts'].issues = 1;
+    writeFileSync(stampFile(dir), JSON.stringify(s));
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 0, pc.stderr);
+    assert.match(pc.stderr, /alpha reported 1 finding/);
+  });
+});
+
+// v3.4 Decision 3: a reviewer's clean stamp holds over a comment-only edit;
+// the comment reviewer still owes the file, with its delta.
+describe('the comment-only carry', () => {
+  const CARRY = {
+    routing: [
+      { reviewer: 'alpha', paths: ['^src/'] },
+      { reviewer: 'docs-sync-reviewer', paths: ['^src/'] },
+      { reviewer: 'beta', paths: ['^src/lib/'] },
+    ],
+  };
+  const ALL = 'alpha,beta,docs-sync-reviewer';
+  const V1 = '// greet the user\nexport const a = 1;\n';
+  const V2 = '// greet the user by name\nexport const a = 1;\n';
+  const CARRIED = /carried over a comment-only change: alpha, beta on src\/lib\/a\.ts/;
+  const setConfig = (body) => writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify(body));
+  const editStamp = (fn) => { const s = readStamp(dir); fn(s); writeFileSync(stampFile(dir), JSON.stringify(s)); };
+  const check = () => run(dir, ['--check']);
+  const owers = (out) => [...out.matchAll(/^ {2}• ([\w-]+)/gm)].map((m) => m[1]).sort();
+  // Stage v1, stamp the reviewers on it, run `between`, stage v2: → --check.
+  const edit = (path, v1, v2, between, who = ALL) => {
+    write(dir, path, v1);
+    const s = stamp(dir, who);
+    assert.strictEqual(s.status, 0, s.stderr);
+    between?.();
+    write(dir, path, v2);
+    return check();
+  };
+  const owes = (r, expected) => {
+    assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+    assert.deepStrictEqual(owers(r.stdout), expected, r.stdout);
+  };
+  beforeEach(() => setConfig(CARRY));
+
+  it('a comment-only edit keeps alpha\'s and beta\'s stamps; docs-sync owes it with a delta', () => {
+    write(dir, 'src/lib/a.ts', V1);
+    const was = git(dir, 'rev-parse', ':src/lib/a.ts').trim();
+    assert.strictEqual(stamp(dir, ALL).status, 0);
+    write(dir, 'src/lib/a.ts', V2);
+    const now = git(dir, 'rev-parse', ':src/lib/a.ts').trim();
+    const r = check();
+    owes(r, ['docs-sync-reviewer']);
+    assert.match(r.stdout, new RegExp(`• docs-sync-reviewer — owes[^\\n]*:\\n\\s+src/lib/a\\.ts[^\\n]*\\n\\s+review the change: git diff ${was} ${now}\\n`));
+    assert.strictEqual(stamp(dir, 'docs-sync-reviewer').status, 0);
+    const pc = preCommit(dir);
+    assert.strictEqual(pc.status, 0, pc.stderr);
+    assert.match(pc.stderr, CARRIED);
+    const ok = check();
+    assert.strictEqual(ok.status, 0, ok.stdout);
+    assert.match(ok.stdout, CARRIED);
+  });
+
+  describe('no carry: alpha owes', () => {
+    it('a code edit', () => {
+      owes(edit('src/lib/a.ts', V1, '// greet the user\nexport const a = 2;\n'), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('an edit to `// eslint-disable-next-line`', () => {
+      const r = edit('src/lib/a.ts', '// eslint-disable-next-line no-console\nconsole.log(1);\n',
+        '// eslint-disable-next-line no-alert\nconsole.log(1);\n');
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('the same comment edit in a .py file', () => {
+      owes(edit('src/x.py', V1, V2, null, 'alpha,docs-sync-reviewer'), ['alpha', 'docs-sync-reviewer']);
+    });
+    it('the stamped blob pruned', () => {
+      const r = edit('src/lib/a.ts', V1, V2, () => editStamp((s) => {
+        s.reviewers.alpha['src/lib/a.ts'].key = s.reviewers.alpha['src/lib/a.ts'].key.replace(/[0-9a-f]{40}$/, 'ab'.repeat(20));
+      }));
+      owes(r, ['alpha', 'docs-sync-reviewer']); // beta's stamp still carries
+      assert.match(r.stdout, /its stamped blob is gone/);
+    });
+    it('HEAD\'s side changed', () => {
+      write(dir, 'src/lib/a.ts', 'export const a = 1;\n');
+      git(dir, 'commit', '-qm', 'a');
+      const r = edit('src/lib/a.ts', V1, V2, () => {
+        git(dir, 'reset', '-q');
+        write(dir, 'src/lib/a.ts', 'export const a = 1;\nexport const b = 2;\n');
+        git(dir, 'commit', '-qm', 'another change');
+      });
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a mode change plus the comment edit', () => {
+      const r = edit('src/lib/a.ts', V1, V2, () => chmodSync(join(dir, 'src', 'lib', 'a.ts'), 0o755));
+      assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^100755 /);
+      owes(r, ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    for (const issues of [1, '2']) {
+      it(`an entry with issues: ${JSON.stringify(issues)}`, () => {
+        const r = edit('src/lib/a.ts', V1, V2, () => editStamp((s) => { s.reviewers.alpha['src/lib/a.ts'].issues = issues; }));
+        owes(r, ['alpha', 'docs-sync-reviewer']);
+      });
+    }
+    it('a comment edit in a .js file that also holds an invalid UTF-8 byte', () => {
+      const js = (comment) => Buffer.concat([Buffer.from(`// ${comment}\nexport const s = "`), Buffer.from([0xff]), Buffer.from('";\n')]);
+      owes(edit('src/lib/a.js', js('greet'), js('greet them')), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a symlink retarget that reads as a comment edit', () => {
+      // `//old.ts` → `//new.ts` reads as a comment-line edit: only the mode stops it.
+      const link = (target) => {
+        mkdirSync(join(dir, 'src', 'lib'), { recursive: true });
+        rmSync(join(dir, 'src', 'lib', 'a.ts'), { force: true });
+        symlinkSync(target, join(dir, 'src', 'lib', 'a.ts'));
+        git(dir, 'add', 'src/lib/a.ts');
+      };
+      link('//old.ts');
+      assert.strictEqual(stamp(dir, ALL).status, 0);
+      link('//new.ts');
+      assert.match(git(dir, 'ls-files', '-s', 'src/lib/a.ts'), /^120000 /);
+      owes(check(), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+    it('a comment reviewer routed elsewhere, not to the file', () => {
+      setConfig({ routing: [CARRY.routing[0], { reviewer: 'docs-sync-reviewer', paths: ['^docs/'] }, CARRY.routing[2]] });
+      owes(edit('src/lib/a.ts', V1, V2, null, 'alpha,beta'), ['alpha', 'beta']);
+    });
+    it('a config whose commentReviewer isn\'t routed to the file', () => {
+      setConfig({ ...CARRY, reviewGate: { commentReviewer: 'nobody' } });
+      owes(edit('src/lib/a.ts', V1, V2), ['alpha', 'beta', 'docs-sync-reviewer']);
+    });
+  });
+
+  it('--check and --pre-commit leave the stamp file byte-identical', () => {
+    write(dir, 'src/lib/a.ts', V1);
+    stamp(dir, ALL);
+    write(dir, 'src/lib/a.ts', V2);
+    const files = [stampFile(dir), join(dir, '.git', 'index')];
+    const snap = () => files.map((f) => readFileSync(f));
+    let before = snap();
+    assert.strictEqual(check().status, 1);
+    assert.strictEqual(preCommit(dir).status, 1);
+    assert.deepStrictEqual(snap(), before);
+    stamp(dir, 'docs-sync-reviewer');
+    before = snap();
+    assert.match(check().stdout, CARRIED);
+    assert.match(preCommit(dir).stderr, CARRIED);
+    assert.deepStrictEqual(snap(), before);
+  });
+
+  it('on an unborn branch, a comment-only edit carries', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ssdd-gate-unborn-'));
+    try {
+      git(fresh, 'init', '-q');
+      mkdirSync(join(fresh, '.ssdd'));
+      writeFileSync(join(fresh, '.ssdd', 'config.json'), JSON.stringify(CARRY));
+      write(fresh, 'src/lib/a.ts', V1);
+      assert.strictEqual(stamp(fresh, ALL).status, 0);
+      write(fresh, 'src/lib/a.ts', V2);
+      assert.match(readStamp(fresh).reviewers.alpha['src/lib/a.ts'].key, /^0{6}:0{40}→/);
+      const r = run(fresh, ['--check']);
+      assert.strictEqual(r.status, 1, r.stdout);
+      assert.deepStrictEqual(owers(r.stdout), ['docs-sync-reviewer']);
+      assert.strictEqual(stamp(fresh, 'docs-sync-reviewer').status, 0);
+      const pc = preCommit(fresh);
+      assert.strictEqual(pc.status, 0, pc.stderr);
+      assert.match(pc.stderr, CARRIED);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
   });
 });
 
@@ -352,77 +880,28 @@ describe('the block message names the delta', () => {
     const { stderr } = preCommit(dir);
     assert.match(stderr, /also staged, routed to no reviewer: \.ssdd\/ledgers\/01-demo-ledger\.md, docs\/x\.md/);
   });
-  it('PreToolUse mode prints the same delta and warning on stderr with exit 2', () => {
-    const d = makeRepo({ ...CONFIG, reviewGate: { maxRoutedFiles: 1 } });
-    try {
-      write(d, 'src/a.ts', 'a\n');
-      write(d, 'src/b.ts', 'b\n');
-      stamp(d, 'alpha,beta');
-      write(d, 'src/b.ts', 'b2\n');
-      const h = hook(d, 'git commit -m x');
-      assert.strictEqual(h.status, 2);
-      assert.match(h.stderr, /WARNING: 2 routed file\(s\) staged \(limit 1\)/);
-      assert.match(h.stderr, /• beta — owes 1 of 2 routed file\(s\):\n\s+src\/b\.ts\s+changed since its last stamp/);
-      assert.doesNotMatch(h.stderr, /• alpha/);
-      const out = JSON.parse(h.stdout);
-      assert.strictEqual(out.permission, 'deny');
-      assert.match(out.agentMessage, /• beta — owes 1 of 2/);
-      assert.strictEqual(out.agent_message, out.agentMessage);
-      assert.strictEqual(out.user_message, out.userMessage);
-    } finally {
-      rmSync(d, { recursive: true, force: true });
-    }
-  });
-  it('Cursor payload cwd is the git root when CLAUDE_PROJECT_DIR is unset', () => {
-    const host = makeRepo();
-    try {
-      write(dir, 'src/a.ts', 'a\n');
-      const env = { ...process.env, SSDD_REVIEW_SKIP: '' };
-      delete env.CLAUDE_PROJECT_DIR;
-      delete env.SSDD_PROJECT_DIR;
-      const h = spawnSync(NODE, [HOOK], {
-        input: JSON.stringify({
-          command: 'git commit -m x',
-          hook_event_name: 'beforeShellExecution',
-          cwd: dir,
-        }),
-        cwd: host,
-        env,
-        encoding: 'utf8',
-      });
-      assert.strictEqual(h.status, 2);
-      assert.match(h.stderr, /alpha/);
-      const out = JSON.parse(h.stdout);
-      assert.strictEqual(out.permission, 'deny');
-      assert.strictEqual(out.agent_message, out.agentMessage);
-    } finally {
-      rmSync(host, { recursive: true, force: true });
-    }
-  });
-  it('the payload cwd wins over CLAUDE_PROJECT_DIR (the Bash call runs there)', () => {
-    // v2.0 judged CLAUDE_PROJECT_DIR's index, so a commit run from another
-    // work tree was checked against the wrong (often empty) index.
-    const dirty = makeRepo();
-    try {
-      write(dirty, 'src/a.ts', 'a\n');
-      const h = run(dir, [], {
-        input: JSON.stringify({
-          tool_input: { command: 'git commit -m x' },
-          cwd: dirty,
-        }),
-      });
-      assert.strictEqual(h.status, 2);
-      assert.match(h.stderr, /--repo /);
-    } finally {
-      rmSync(dirty, { recursive: true, force: true });
-    }
-  });
   it('the --stamp command it prints names exactly the owing reviewers', () => {
     write(dir, 'src/a.ts', 'a\n');
     write(dir, 'src/b.ts', 'b\n');
     stamp(dir, 'alpha');
     assert.match(preCommit(dir).stderr, /--stamp beta\b/);
     assert.doesNotMatch(preCommit(dir).stderr, /--stamp alpha/);
+  });
+  it('its --repo is shell-quoted: a path with a space and a quote pastes as one word', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ssdd-quote-'));
+    const r = join(parent, "it's a repo");
+    try {
+      cpSync(dir, r, { recursive: true });
+      write(r, 'src/a.ts', 'a\n');
+      for (const out of [preCommit(r).stderr, run(r, ['--check', '--repo', r]).stdout]) {
+        const hint = /--stamp alpha,beta --repo (.+)$/m.exec(out)?.[1];
+        assert.ok(hint, out);
+        const word = spawnSync('sh', ['-c', `printf %s ${hint}`], { encoding: 'utf8' }).stdout;
+        assert.strictEqual(word, realpathSync(r));
+      }
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 });
 
@@ -460,20 +939,6 @@ describe('the delta since the last stamp', () => {
     const now = git(dir, 'rev-parse', ':src/a.ts').trim();
     assert.match(was, /^[0-9a-f]{40}$/);
     assert.strictEqual(deltaUnder(preCommit(dir).stderr, 'alpha'), `git diff ${was} ${now}`);
-  });
-  it('hooks mode gives the same delta line', () => {
-    const d = makeRepo({ ...CONFIG, reviewGate: { stamping: 'hooks' } });
-    try {
-      write(d, 'src/a.ts', 'a\n');
-      stamp(d, 'alpha,beta');
-      write(d, 'src/a.ts', 'a\nb\n');
-      const { stderr } = preCommit(d);
-      assert.deepStrictEqual(diffBody(d, deltaUnder(stderr, 'alpha')), ['+b']);
-      assert.match(stderr, /Dispatch each owing reviewer/);
-      assert.match(stderr, /that diff is its input/);
-    } finally {
-      rmSync(d, { recursive: true, force: true });
-    }
   });
   it('no delta for a never-stamped file or a deletion', () => {
     write(dir, 'src/a.ts', 'a\n');
@@ -634,12 +1099,9 @@ describe('merges', () => {
     assert.ok(!owesB(stderr), stderr);
     assert.match(stderr, /merge: 1 staged path\(s\) match git's own merge with [0-9a-f]{7} — owed by no one/);
   });
-  it('the harness hook and --check apply it too', () => {
+  it('--check applies it too', () => {
     conflictedMerge(dir);
     resolveA(dir);
-    const h = hook(dir, 'git commit -m m');
-    assert.strictEqual(h.status, 2);
-    assert.ok(!owesB(h.stderr), h.stderr);
     const c = run(dir, ['--check']);
     assert.strictEqual(c.status, 1);
     assert.match(c.stdout, /src\/a\.ts/);
@@ -657,11 +1119,11 @@ describe('merges', () => {
     const r = stamp(dir, 'beta', 'src/b.ts');
     assert.strictEqual(r.status, 1);
     assert.match(r.stderr, /src\/b\.ts — matches git's own merge with [0-9a-f]{7}, so it is owed by no one/);
-    assert.doesNotMatch(r.stderr, /not staged, or not routed/);
+    assert.doesNotMatch(r.stderr, /not changed, or not routed/);
     const both = stamp(dir, 'beta', 'src/b.ts,src/nope.ts');
     assert.strictEqual(both.status, 1);
     assert.match(both.stderr, /src\/b\.ts — matches git's own merge/);
-    assert.match(both.stderr, /src\/nope\.ts — not staged, or not routed to beta/);
+    assert.match(both.stderr, /src\/nope\.ts — not changed, or not routed to beta/);
     assert.throws(() => readStamp(dir));
   });
   it('once the resolution is stamped, the merge commits', () => {
@@ -870,17 +1332,13 @@ describe('the config a commit is judged by', () => {
     git(d, 'commit', '-qm', 'config');
   };
 
-  it('a broken config blocks every mode, with the parse error', () => {
+  it('a broken config blocks --pre-commit and --stamp, with the parse error', () => {
     commitConfig(dir, CONFIG);
     setConfig(dir, '{ "routing": [');
     const pc = preCommit(dir);
     assert.strictEqual(pc.status, 1);
     assert.match(pc.stderr, /\.ssdd\/config\.json is not valid JSON/);
-    const h = hook(dir, 'git commit -m x');
-    assert.strictEqual(h.status, 2);
-    assert.match(h.stderr, /not valid JSON/);
-    assert.doesNotMatch(h.stderr, /Fix the JSON/);
-    assert.match(JSON.parse(h.stdout).userMessage, /\.ssdd\/config\.json can't be used/);
+    assert.doesNotMatch(pc.stderr, /Fix the JSON/);
     write(dir, 'src/a.ts', 'a\n');
     const s = stamp(dir, 'alpha');
     assert.strictEqual(s.status, 1);
@@ -902,46 +1360,6 @@ describe('the config a commit is judged by', () => {
     setConfig(dir, { routing: [] });
     write(dir, 'src/a.ts', 'a\n');
     assert.strictEqual(preCommit(dir).status, 0);
-    assert.strictEqual(hook(dir, 'git commit -m x').status, 0);
-  });
-});
-
-// v3.3.2: the dormant-hook note moved to session start (work-state.mjs); the
-// gate no longer repeats it on every commit.
-describe('dormant pre-commit hook', () => {
-  it('neither an allowed nor a blocked commit carries a note', () => {
-    mkdirSync(join(dir, '.githooks'), { recursive: true });
-    writeFileSync(join(dir, '.githooks', 'pre-commit'), '#!/bin/sh\n');
-    write(dir, 'docs/x.md', 'x\n');
-    const ok = hook(dir, 'git commit -m x');
-    assert.strictEqual(ok.status, 0);
-    assert.strictEqual(ok.stdout, '');
-    assert.doesNotMatch(ok.stderr, /dormant/);
-    write(dir, 'src/a.ts', 'a\n');
-    const blocked = hook(dir, 'git commit -m x');
-    assert.strictEqual(blocked.status, 2);
-    assert.doesNotMatch(blocked.stderr, /dormant/);
-  });
-});
-
-// v3.3.2: under Claude Code an allow prints nothing (it would only add to the
-// session's context); Cursor's failClosed still gets {"permission": "allow"}.
-describe('allow output', () => {
-  it('Claude Code: nothing on a non-commit, a clean commit or the bypass', () => {
-    assert.deepEqual([hook(dir, 'git status'), hook(dir, 'ls')].map((r) => [r.status, r.stdout]), [[0, ''], [0, '']]);
-    write(dir, 'docs/x.md', 'x\n');
-    const clean = hook(dir, 'git commit -m x');
-    assert.deepEqual([clean.status, clean.stdout], [0, '']);
-    write(dir, 'src/a.ts', 'a\n');
-    const skip = hook(dir, 'SSDD_REVIEW_SKIP=1 git commit -m x');
-    assert.deepEqual([skip.status, skip.stdout], [0, '']);
-  });
-  it('Cursor: a permission body every time', () => {
-    for (const c of ['git status', 'git commit -m x']) {
-      const r = cursorHook(dir, c);
-      assert.strictEqual(r.status, 0, r.stderr);
-      assert.strictEqual(JSON.parse(r.stdout).permission, 'allow');
-    }
   });
 });
 
@@ -965,16 +1383,100 @@ function armPreCommit(d) {
   git(d, 'add', '.ssdd/config.json');
 }
 
-describe('the pre-commit layer is the backstop for shell hand-offs', () => {
-  it("`bash -c 'git commit -m x'` is not unwrapped by the harness hook, and git's own hook refuses it", { skip: !PRE_COMMIT }, () => {
+describe('git judges what git commits', () => {
+  // alpha alone, so one --stamp settles the commit.
+  const ALPHA = { routing: [{ reviewer: 'alpha', paths: ['^src/a\\.ts$'] }] };
+  const env = { ...process.env, SSDD_REVIEW_SKIP: '' };
+  const sh = (cwd, file, args) => spawnSync(file, args, { cwd, encoding: 'utf8', env });
+  let extra; // a worktree's parent directory, when a shape makes one
+  afterEach(() => { if (extra) rmSync(extra, { recursive: true, force: true }); extra = null; });
+
+  // Each shape: where git commits (`top`, as git spells it) and how the command runs.
+  const topOf = (d) => git(d, 'rev-parse', '--show-toplevel').trim();
+  const SHAPES = [
+    ['commit -am x', (d) => ({ top: topOf(d), go: () => sh(d, 'git', ['commit', '-am', 'x']) })],
+    ['commit -m x src/a.ts', (d) => ({ top: topOf(d), go: () => sh(d, 'git', ['commit', '-m', 'x', 'src/a.ts']) })],
+    ['bash -c "git add src/a.ts && git commit -m x"', (d) => ({
+      top: topOf(d), go: () => sh(d, 'bash', ['-c', 'git add src/a.ts && git commit -m x']),
+    })],
+    ['git -C <worktree> commit -m x, from the main checkout', (d) => {
+      extra = realpathSync(mkdtempSync(join(tmpdir(), 'ssdd-wt-commit-')));
+      const wt = join(extra, 'wt');
+      git(d, 'worktree', 'add', '-q', wt, '-b', 'wt-commit');
+      // core.hooksPath is relative, so the worktree finds its hooks in its own tree;
+      // info/exclude is shared, and keeps them out of the index.
+      cpSync(join(d, '.githooks'), join(wt, '.githooks'), { recursive: true });
+      cpSync(join(d, '.ssdd'), join(wt, '.ssdd'), { recursive: true });
+      write(wt, 'src/a.ts', 'a2\n');
+      return { top: topOf(wt), go: () => sh(d, 'git', ['-C', wt, 'commit', '-m', 'x']) };
+    }],
+  ];
+
+  for (const [name, make] of SHAPES) {
+    it(`${name}: refused on what git commits, passes after --stamp`, { skip: !PRE_COMMIT }, () => {
+      writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify(ALPHA));
+      write(dir, 'src/a.ts', 'a1\n');
+      git(dir, 'commit', '-qm', 'a1');
+      armPreCommit(dir);
+      writeFileSync(join(dir, 'src', 'a.ts'), 'a2\n'); // modified, not staged
+      const { top, go } = make(dir);
+      const head = git(top, 'rev-parse', 'HEAD');
+
+      const blocked = go();
+      assert.strictEqual(blocked.status, 1, blocked.stderr);
+      assert.strictEqual(git(top, 'rev-parse', 'HEAD'), head);
+      assert.match(blocked.stderr, /alpha/);
+      assert.ok(blocked.stderr.includes(`--repo '${top}'`), blocked.stderr);
+
+      git(top, 'add', 'src/a.ts');
+      const s = run(dir, ['--stamp', 'alpha', '--repo', top]);
+      assert.strictEqual(s.status, 0, s.stderr);
+      const landed = go();
+      assert.strictEqual(landed.status, 0, landed.stderr);
+      assert.notStrictEqual(git(top, 'rev-parse', 'HEAD'), head);
+    });
+  }
+
+  it('SSDD_REVIEW_SKIP=1 git commit lands with the banner', { skip: !PRE_COMMIT }, () => {
     armPreCommit(dir);
     write(dir, 'src/a.ts', 'a\n');
     const head = git(dir, 'rev-parse', 'HEAD');
+    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '1' } });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /bypassed via SSDD_REVIEW_SKIP=1/);
+    assert.notStrictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+  });
+});
 
-    // The harness hook does not see inside the shell string.
-    assert.strictEqual(hook(dir, "bash -c 'git commit -m x'").status, 0);
+describe('stale wiring is harmless', () => {
+  const noMode = (payload) => run(dir, [], { input: payload === '' ? '' : JSON.stringify(payload) });
+  it('a Claude PreToolUse, SubagentStart and SubagentStop payload exit 0 and print nothing', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    for (const payload of [
+      { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, cwd: dir },
+      { hook_event_name: 'SubagentStart', agent_id: 'a1', agent_type: 'alpha', cwd: dir },
+      { hook_event_name: 'SubagentStop', agent_id: 'a1', agent_type: 'alpha', cwd: dir, last_assistant_message: 'CLEAN' },
+      '',
+    ]) {
+      const r = noMode(payload);
+      assert.deepStrictEqual([r.status, r.stdout, r.stderr], [0, '', ''], JSON.stringify(payload));
+    }
+    assert.throws(() => readStamp(dir), 'nothing stamped');
+    assert.ok(!existsSync(join(dir, '.git', 'ssdd-review-dispatch')), 'nothing snapshotted');
+  });
+  it('a Cursor beforeShellExecution payload is allowed, so a failClosed entry cannot block shell calls', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const r = noMode({ command: 'git commit -m x', hook_event_name: 'beforeShellExecution', cwd: dir });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.deepStrictEqual(JSON.parse(r.stdout), { permission: 'allow' });
+  });
+});
 
-    // Run for real, the commit is refused by git's pre-commit.
+describe('a shell hand-off is judged by git\'s pre-commit', () => {
+  it("`bash -c 'git commit -m x'` is refused by git's own hook", { skip: !PRE_COMMIT }, () => {
+    armPreCommit(dir);
+    write(dir, 'src/a.ts', 'a\n');
+    const head = git(dir, 'rev-parse', 'HEAD');
     const r = spawnSync('bash', ['-c', 'git commit -m x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
     assert.strictEqual(r.status, 1, r.stderr);
     assert.match(r.stderr, /alpha/);
@@ -982,19 +1484,25 @@ describe('the pre-commit layer is the backstop for shell hand-offs', () => {
   });
 });
 
-describe('the pre-commit runs every step', () => {
-  it('a lint finding does not hide what the review gate owes', { skip: !PRE_COMMIT }, () => {
+describe('the pre-commit warns on lint findings', () => {
+  it('a lint finding warns; the commit lands once the gate is met', { skip: !PRE_COMMIT }, () => {
     writeFileSync(join(dir, '.ssdd', 'config.json'), JSON.stringify({
       ...CONFIG, lint: [{ name: 'no-todo', pattern: 'TODO', message: 'no TODOs', include: '^src/' }],
     }));
     armPreCommit(dir);
     write(dir, 'src/a.ts', 'TODO\n');
     const head = git(dir, 'rev-parse', 'HEAD');
-    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env: { ...process.env, SSDD_REVIEW_SKIP: '' } });
-    assert.strictEqual(r.status, 1, r.stderr);
-    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
-    assert.match(r.stderr, /alpha/);
+    const env = { ...process.env, SSDD_REVIEW_SKIP: '' };
+    const refused = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env });
+    assert.strictEqual(refused.status, 1, refused.stderr);
+    assert.match(refused.stderr, /\[ssdd-convention-lint\] 1 finding/);
+    assert.match(refused.stderr, /alpha/);
     assert.strictEqual(git(dir, 'rev-parse', 'HEAD'), head);
+    stamp(dir, 'alpha,beta');
+    const r = spawnSync('git', ['commit', '-m', 'x'], { cwd: dir, encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /\[ssdd-convention-lint\] 1 finding/);
+    assert.notStrictEqual(git(dir, 'rev-parse', 'HEAD'), head);
   });
 });
 

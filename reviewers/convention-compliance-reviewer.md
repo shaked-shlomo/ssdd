@@ -39,7 +39,8 @@ against them. Dimensions that recur across projects:
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Open the actual files, not just
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Open the actual files, not just
    hunks — conventions often concern what's *around* the change.
 2. For each dimension above that the project declares, check every touched
    file. Cite the rule you're enforcing (doc + section) in each finding.

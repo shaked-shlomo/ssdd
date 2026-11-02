@@ -1,5 +1,6 @@
 // Regression tests for the SSDD git guard. Each case feeds a PreToolUse(Bash)
-// payload on stdin and asserts the exit code: 2 = blocked, 0 = allowed.
+// payload on stdin and asserts the exit code: 2 = blocked, 0 = allowed (a
+// warning is an allow that carries a message).
 //
 // The guard runs against a scratch git repo with its own .ssdd/config.json, so
 // the extraRules cases (force push) pin the framework's shipped pattern rather
@@ -14,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 const hooksDir = dirname(fileURLToPath(import.meta.url));
@@ -24,10 +25,6 @@ const NODE = process.execPath;
 
 // Mirrors mechanisms/config.example.json → gitGuard (minus $comment keys).
 const GIT_GUARD = {
-  blockBulkAdd: true,
-  blockNoVerify: true,
-  blockAmend: false,
-  blockHooksPath: true,
   extraRules: [
     {
       // --force (not --force-with-lease / --force-if-includes), bundled short -f, +refspec.
@@ -58,6 +55,17 @@ function guard(command) {
   return status;
 }
 
+// A warning is an allow with a message: Claude Code gets it as
+// hookSpecificOutput.additionalContext, Cursor as agent_message on the body.
+function runGuard(command, harness = 'claude') {
+  const payload = harness === 'cursor'
+    ? { command, hook_event_name: 'beforeShellExecution' }
+    : { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } };
+  return spawnSync(NODE, [HOOK], {
+    input: JSON.stringify(payload), cwd: REPO, env: { ...process.env, CLAUDE_PROJECT_DIR: REPO }, encoding: 'utf8',
+  });
+}
+
 function cursorGuard(command, { bom = false } = {}) {
   const json = JSON.stringify({
     command,
@@ -73,21 +81,9 @@ function cursorGuard(command, { bom = false } = {}) {
 }
 
 const BLOCKED = [
-  ['bulk add -A', 'git add -A'],
-  ['bulk add .', 'git add .'],
-  ['bulk add --all', 'git add --all'],
   ['commit --no-verify', 'git commit -m x --no-verify'],
   ['force push', 'git push origin main --force'],
   // Bypasses via tokens between `git`/subcommand/flag — the class this suite pins.
-  ['global flag before add', 'git -C /tmp/x add -A'],
-  ['-c config before add', 'git -c user.name=x add --all'],
-  ['--git-dir=<p> before add', 'git --git-dir=/tmp/x/.git add .'],
-  ['--work-tree <p> before add', 'git --work-tree /tmp/x add -A'],
-  ['--git-dir <p> before add', 'git --git-dir /tmp/x/g add --all'],
-  ['stacked global flags before add', 'git --no-pager -c a=b --work-tree /tmp/x add -A'],
-  ['flag between add and -A', 'git add --force -A'],
-  ['bundled short flags', 'git add -vA'],
-  ['bundled short flags reversed', 'git add -Av'],
   ['global flag before commit --no-verify', 'git -c core.hooksPath=/dev/null commit --no-verify'],
   // extraRules from .ssdd/config.json get the same normalization for free.
   ['global flag before force push', 'git -C /tmp/x push origin main --force'],
@@ -116,15 +112,12 @@ const BLOCKED = [
   ['git config --local core.hooksPath', 'git config --local core.hooksPath x'],
   ['git config --unset core.hooksPath', 'git config --unset core.hooksPath'],
   // v2.1 — ported from the source project's hardened guard.
-  ['bulk add with -fA cluster', 'git add -fA'],
   ['-C before commit -n', 'git -C /tmp/wt commit -n'],
   ['double-quoted -c core.hooksPath', 'git -c "core.hooksPath=/dev/null" commit -m "x"'],
   ['lower-case core.hookspath', 'git -c core.hookspath=/dev/null commit -m "x"'],
   ['git config core.hooksPath chained before commit', 'git config core.hooksPath /dev/null && git commit -m "x"'],
   ['-c core.hooksPath on the second commit', 'git commit -m "x" && git -c core.hooksPath=/dev/null commit -m "y"'],
   ['VAR=value before git -c core.hooksPath', 'X=1 git -c core.hooksPath=/x commit -m x'],
-  ['GIT_CONFIG_PARAMETERS sets core.hooksPath', `GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git commit -m x`],
-  ['GIT_CONFIG_KEY_<n> sets core.hooksPath', 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m x'],
   // v2.1.1 — runner prefixes are still seen through.
   ['git by absolute path', '/usr/bin/git commit -nm x'],
   ['env -i before git -c core.hooksPath', 'env -i git -c core.hooksPath=/x commit -m x'],
@@ -135,6 +128,8 @@ const BLOCKED = [
   ['--unset-all', 'git config --unset-all core.hooksPath'],
   ['--add', 'git config --add core.hooksPath /x'],
   ['--replace-all', 'git config --replace-all core.hooksPath /x'],
+  ['-e', 'git config -e core.hooksPath'],
+  ['--edit', 'git config --edit core.hooksPath'],
   ['the set subcommand', 'git config set core.hooksPath /x'],
   ['the unset subcommand', 'git config unset core.hooksPath'],
   ['a read, then a write', 'git config --get core.hooksPath && git config core.hooksPath /x'],
@@ -146,13 +141,28 @@ const BLOCKED = [
   ['a process substitution is a value', 'git config core.hooksPath <(true)'],
   ['a quoted write option', "git config '--unset' core.hooksPath"],
   ['get after an option is not the subcommand', 'git config --file .git/config get core.hooksPath /x'],
-  ['an abbreviated write option', 'git config --unset-a core.hooksPath'],
   ['a read flag quoted inside an option value', 'git config --comment "x --get" core.hooksPath /x'],
   ['a read flag as an option value', 'git config --comment --get core.hooksPath /x'],
-  ['an option from a variable', 'git config $OP core.hooksPath'],
-  ['an option from a command substitution', 'git config `echo --unset` core.hooksPath'],
-  ['an option from a brace expansion', 'git config --unset{,-all} core.hooksPath'],
-  ['an option from a zsh glob group', 'git config --(unset) core.hooksPath'],
+];
+
+const WARNED = [
+  ['git add -A', 'git add -A', /stage/],
+  ['git add .', 'git add .', /stage/],
+  ['git add --all', 'git add --all', /stage/],
+  ['git add -Av', 'git add -Av', /stage/],
+  ['git commit --amend', 'git commit --amend', /amend/],
+  ['git commit --amend --no-edit', 'git commit --amend --no-edit', /amend/],
+  // The bypass shapes the bulk-add block pinned still reach the warning.
+  ['a global flag before add', 'git -C /tmp/x add -A', /stage/],
+  ['-c config before add', 'git -c user.name=x add --all', /stage/],
+  ['--git-dir=<p> before add', 'git --git-dir=/tmp/x/.git add .', /stage/],
+  ['--work-tree <p> before add', 'git --work-tree /tmp/x add -A', /stage/],
+  ['--git-dir <p> before add', 'git --git-dir /tmp/x/g add --all', /stage/],
+  ['stacked global flags before add', 'git --no-pager -c a=b --work-tree /tmp/x add -A', /stage/],
+  ['a flag between add and -A', 'git add --force -A', /stage/],
+  ['bundled short flags', 'git add -vA', /stage/],
+  ['-fA cluster', 'git add -fA', /stage/],
+  ['a global flag before --amend', 'git -C /tmp/x commit --amend', /amend/],
 ];
 
 const ALLOWED = [
@@ -189,7 +199,6 @@ const ALLOWED = [
   ['core.hooksPath quoted in a commit message', 'git commit -m "docs: never git -c core.hooksPath=x"'],
   ['core.hooksPath in a heredoc body', "cat > x.md <<'EOF'\ngit -c core.hooksPath=/dev/null commit\nEOF"],
   ['--amend in a heredoc message', "git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"],
-  ['commit --amend (blockAmend is off by default)', 'git commit --amend'],
   // v2.6: shell hand-offs aren't unwrapped; the pre-commit layer is the backstop.
   ['bash -c wrapping commit -n', "bash -c 'git commit -anm x'"],
   ['sh -c wrapping a bulk add', 'sh -c "git add -A && git commit -m x"'],
@@ -214,15 +223,22 @@ const ALLOWED = [
   ['read, || fallback', 'git config core.hooksPath || echo unset'],
   ['read, then another command', 'git config core.hooksPath; ls .githooks'],
   ['read inside $(…) in a string', `echo "hooksPath = '$(git config core.hooksPath)'"`],
+  // v3.4 — the env route and the shell-expanded options are the pre-commit layer's, not the guard's.
+  ['GIT_CONFIG_PARAMETERS naming core.hooksPath', `GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git commit -m x`],
+  ['GIT_CONFIG_KEY_<n> naming core.hooksPath', 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m x'],
+  ['an abbreviated option (--unset-a)', 'git config --unset-a core.hooksPath'],
+  ['an abbreviated option (--rep)', 'git config --rep core.hooksPath'],
+  ['an option from a variable', 'git config $OP core.hooksPath'],
+  ['an option from a command substitution', 'git config `echo --unset` core.hooksPath'],
+  ['an option from a brace expansion', 'git config --unset{,-all} core.hooksPath'],
+  ['an option from a zsh glob group', 'git config --(unset) core.hooksPath'],
   ['Hatedate 07-11: a plain read after a cat', 'cat .githooks/pre-commit 2>/dev/null || ls .githooks/ .git/hooks/ 2>/dev/null; git config core.hooksPath'],
 ];
 
 describe('git-guard', () => {
   it('the embedded gitGuard block matches config.example.json', { skip: !existsSync(EXAMPLE_CONFIG) }, () => {
     const { gitGuard } = JSON.parse(readFileSync(EXAMPLE_CONFIG, 'utf8'));
-    for (const toggle of ['blockBulkAdd', 'blockNoVerify', 'blockAmend', 'blockHooksPath']) {
-      assert.strictEqual(gitGuard[toggle], GIT_GUARD[toggle], toggle);
-    }
+    assert.deepStrictEqual(Object.keys(gitGuard).filter((k) => k !== '$comment'), ['extraRules']);
     assert.deepStrictEqual(
       gitGuard.extraRules.map(({ pattern, message }) => ({ pattern, message })),
       GIT_GUARD.extraRules,
@@ -241,6 +257,48 @@ describe('git-guard', () => {
     });
   }
 
+  for (const [name, command, re] of WARNED) {
+    it(`warns on ${name}`, () => {
+      const c = runGuard(command);
+      assert.strictEqual(c.status, 0, c.stderr);
+      const out = JSON.parse(c.stdout);
+      assert.deepStrictEqual(Object.keys(out), ['hookSpecificOutput']);
+      assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PreToolUse');
+      assert.match(out.hookSpecificOutput.additionalContext, re);
+      assert.match(out.hookSpecificOutput.additionalContext, /^\[ssdd-git-guard\] /);
+      const u = runGuard(command, 'cursor');
+      assert.strictEqual(u.status, 0, u.stderr);
+      const body = JSON.parse(u.stdout);
+      assert.strictEqual(body.permission, 'allow');
+      assert.match(body.agent_message, re);
+    });
+  }
+
+  it('two warnings in one call join with a newline', () => {
+    const c = runGuard('git add -A && git commit --amend');
+    assert.strictEqual(c.status, 0);
+    const lines = JSON.parse(c.stdout).hookSpecificOutput.additionalContext.split('\n');
+    assert.strictEqual(lines.length, 2);
+    assert.match(lines[0], /stage/);
+    assert.match(lines[1], /amend/);
+  });
+
+  it('a block wins over a warning in the same call, with no warning printed', () => {
+    for (const command of ['git add -A && git commit -n -m x', 'git add -A && git push --force']) {
+      const c = runGuard(command);
+      assert.strictEqual(c.status, 2, command);
+      assert.strictEqual(JSON.parse(c.stdout).permission, 'deny');
+      assert.doesNotMatch(c.stdout, /additionalContext/);
+    }
+  });
+
+  it('a warning names nothing it should not: a quoted mention and a path add stay silent', () => {
+    for (const command of ['git commit -m "revert git add -A"', 'git add src/a.ts', "git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"]) {
+      const c = runGuard(command);
+      assert.deepEqual([c.status, c.stdout], [0, ''], command);
+    }
+  });
+
   for (const [name, command] of BLOCKED) {
     it(`blocks Cursor payload: ${name}`, () => {
       assert.strictEqual(cursorGuard(command), 2);
@@ -253,45 +311,6 @@ describe('git-guard', () => {
     });
   }
 
-  it('review-gate --check runs under stamping "hooks" (only --stamp is the reviewers\' own)', () => {
-    const d = mkdtempSync(join(tmpdir(), 'ssdd-guard-hooks-'));
-    try {
-      spawnSync('git', ['-C', d, 'init', '-q']);
-      mkdirSync(join(d, '.ssdd'));
-      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({ reviewGate: { stamping: 'hooks' } }));
-      const at = (command) => spawnSync(NODE, [HOOK], {
-        input: JSON.stringify({ tool_input: { command } }), cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8',
-      }).status;
-      assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --check'), 0);
-      assert.strictEqual(at('node .ssdd/hooks/review-gate.mjs --stamp alpha'), 2);
-    } finally {
-      rmSync(d, { recursive: true, force: true });
-    }
-  });
-
-  it('blockAmend: true blocks --amend; with no gitGuard section it is off', () => {
-    const d = mkdtempSync(join(tmpdir(), 'ssdd-guard-amend-'));
-    try {
-      spawnSync('git', ['-C', d, 'init', '-q']);
-      mkdirSync(join(d, '.ssdd'));
-      const at = (command, payload = { tool_input: { command } }) => spawnSync(NODE, [HOOK], {
-        input: JSON.stringify(payload), cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8',
-      }).status;
-      const AMENDS = ['git commit --amend', 'git -C /tmp/x commit --amend', 'git commit --amend --no-edit'];
-      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({ gitGuard: { blockAmend: true } }));
-      for (const c of AMENDS) {
-        assert.strictEqual(at(c), 2, c);
-        assert.strictEqual(at(c, { command: c, hook_event_name: 'beforeShellExecution' }), 2, c);
-      }
-      assert.strictEqual(at("git commit -F - <<'EOF'\nnever run git commit --amend\nEOF"), 0);
-      writeFileSync(join(d, '.ssdd', 'config.json'), JSON.stringify({}));
-      for (const c of AMENDS) assert.strictEqual(at(c), 0, c);
-      assert.strictEqual(at('git commit --no-verify'), 2);
-    } finally {
-      rmSync(d, { recursive: true, force: true });
-    }
-  });
-
   it('a wrong-type section elsewhere keeps extraRules on', () => {
     const file = join(REPO, '.ssdd', 'config.json');
     writeFileSync(file, JSON.stringify({ routing: {}, gitGuard: GIT_GUARD }));
@@ -303,7 +322,7 @@ describe('git-guard', () => {
   });
 
   it('strips a UTF-8 BOM on Cursor stdin', () => {
-    assert.strictEqual(cursorGuard('git add -A', { bom: true }), 2);
+    assert.strictEqual(cursorGuard('git commit --no-verify', { bom: true }), 2);
     assert.strictEqual(cursorGuard('git add src/foo.ts', { bom: true }), 0);
   });
 
@@ -323,7 +342,7 @@ describe('git-guard', () => {
 
   it('deny JSON includes Cursor snake_case keys and keeps camelCase', () => {
     const { status, stdout } = spawnSync(NODE, [HOOK], {
-      input: JSON.stringify({ tool_input: { command: 'git add -A' } }),
+      input: JSON.stringify({ tool_input: { command: 'git commit --no-verify' } }),
       cwd: REPO,
       env: { ...process.env, CLAUDE_PROJECT_DIR: REPO },
       encoding: 'utf8',
@@ -331,8 +350,94 @@ describe('git-guard', () => {
     assert.strictEqual(status, 2);
     const out = JSON.parse(stdout);
     assert.strictEqual(out.permission, 'deny');
-    assert.match(out.agentMessage, /git add -A/);
+    assert.match(out.agentMessage, /--no-verify/);
     assert.strictEqual(out.agent_message, out.agentMessage);
     assert.strictEqual(out.user_message, out.userMessage);
+  });
+});
+
+// The guard follows the working-tree config, and only extraRules is in it.
+describe('git-guard: the working-tree config', () => {
+  let base; let repo;
+  const makeRepo = (extra = {}) => {
+    base = mkdtempSync(join(tmpdir(), 'ssdd-guard-cfg-'));
+    repo = join(base, 'repo');
+    mkdirSync(join(repo, '.ssdd'), { recursive: true });
+    const g = (...args) => {
+      const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    };
+    g('init', '-q');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    // HEAD holds the config; the cases below edit the working-tree copy.
+    writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify({ routing, ...extra }));
+    writeFileSync(join(repo, 'README'), 'base\n');
+    g('add', 'README', '.ssdd/config.json');
+    g('commit', '-qm', 'base');
+  };
+  const setConfig = (body) => writeFileSync(join(repo, '.ssdd', 'config.json'), JSON.stringify(body));
+  const routing = [{ reviewer: 'alpha-reviewer', paths: ['^src/'] }];
+  const hook = (payload) => spawnSync(NODE, [HOOK], {
+    input: JSON.stringify({ ...payload, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+  });
+  const bash = (command) => hook({ tool_input: { command } });
+  const warning = (r) => JSON.parse(r.stdout).hookSpecificOutput?.additionalContext;
+  afterEach(() => { if (base) rmSync(base, { recursive: true, force: true }); base = null; });
+
+  it('an unstaged extraRules entry takes effect', () => {
+    makeRepo();
+    assert.strictEqual(bash('make deploy').status, 0);
+    setConfig({ routing, gitGuard: { extraRules: [{ pattern: '\\bmake\\s+deploy\\b', message: 'Blocked: no deploys from here.' }] } });
+    const r = bash('make deploy');
+    assert.strictEqual(r.status, 2, r.stderr);
+    assert.match(r.stderr, /no deploys from here/);
+  });
+
+  it('a broken config keeps --no-verify blocked and warns on add -A', () => {
+    makeRepo();
+    writeFileSync(join(repo, '.ssdd', 'config.json'), '{ nope');
+    assert.strictEqual(bash('git commit --no-verify').status, 2);
+    assert.strictEqual(bash('git add .').status, 0);
+    assert.match(warning(bash('git add -A')), /stage/);
+    assert.match(warning(bash('git commit --amend')), /amend/);
+  });
+
+  it('blockNoVerify: false no longer turns the block off', () => {
+    makeRepo();
+    // Every key the guard used to read, set the way that used to change it.
+    const old = {
+      routing,
+      gitGuard: { blockNoVerify: false, blockAmend: true, blockBulkAdd: false, blockHooksPath: false },
+      reviewGate: { stamping: 'hooks' },
+    };
+    for (const where of ['working tree', 'HEAD']) {
+      if (where === 'HEAD') {
+        spawnSync('git', ['-C', repo, 'commit', '-qam', 'old keys'], { encoding: 'utf8' });
+      } else setConfig(old);
+      assert.strictEqual(bash('git commit -n -m x').status, 2, where);
+      assert.strictEqual(bash('git -c core.hooksPath=/dev/null commit -m x').status, 2, where);
+      assert.strictEqual(bash('git config core.hooksPath /x').status, 2, where);
+      assert.match(warning(bash('git add -A')), /stage/, where);
+      const amend = bash('git commit --amend');
+      assert.strictEqual(amend.status, 0, where);   // blockAmend: true blocks nothing now
+      assert.match(warning(amend), /amend/, where);
+      // reviewGate.stamping "hooks" no longer guards --stamp or the stamp files.
+      for (const command of ['node .ssdd/hooks/review-gate.mjs --stamp alpha-reviewer', 'echo {} > .git/ssdd-review-stamp.json', 'rm -rf .git/ssdd-review-dispatch']) {
+        const r = bash(command);
+        assert.deepEqual([r.status, r.stdout], [0, ''], `${where}: ${command}`);
+      }
+    }
+  });
+
+  it('an Edit payload on .git/ssdd-review-stamp.json is allowed (stale wiring is harmless)', () => {
+    makeRepo();
+    for (const tool_name of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      const r = hook({ hook_event_name: 'PreToolUse', tool_name, tool_input: { file_path: join(repo, '.git/ssdd-review-stamp.json'), content: '{}' } });
+      assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''], tool_name);
+    }
+    const cursor = hook({ hook_event_name: 'afterFileEdit', file_path: join(repo, '.git/ssdd-review-stamp.json') });
+    assert.strictEqual(cursor.status, 0);
   });
 });
