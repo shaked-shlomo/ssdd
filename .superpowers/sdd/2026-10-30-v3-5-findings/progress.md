@@ -15,4 +15,5 @@ Task 1 — the v3.4 assumptions (B1–B9), against 1e6a9ff:
 - B9 holds: VERSION 3.4.0.
 Task 1: complete (no code).
 Task 2: complete (6ab3177; added-lines 6/6, convention-lint unchanged and passing).
-- Task 3: real data (AC1). The sampler re-run first (2026-11-02): 2,434 replies with a verdict, x = 1,911 (was 1,687 on 2026-10-30). parseReport over the same final replies: 2,463 with a verdict (it reads `clean`/`secure` case-insensitively), 0 throws, parsed ❌ (findings + still-open answers) = N in 1,941; 4,484 findings, 3,533 with a place.
+- Task 3: real data (AC1). The sampler re-run first (2026-11-02): 2,434 replies with a verdict, x = 1,911 (was 1,687 on 2026-10-30). parseReport over the same final replies: 2,435 with a verdict, 0 throws, parsed ❌ (findings + still-open answers) = N in 1,913 (≥ 1,911); 4,439 findings, 3,493 with a place.
+- Task 3: the commit-time security review flagged CLEAN/SECURE read case-insensitively (a line "Clean up later" read as a verdict), looser than 3cf89af's parseVerdict. Fixed: upper case only, as before, with a test; the real-data counts above are after the fix.

@@ -38,6 +38,9 @@ describe('the verdict', () => {
     assert.match(parse('❌ a — src/a.ts:1 — b\nlooks fine to me').error, /no verdict/);
     assert.match(parse('CLEAN\none\ntwo\nthree').error, /no verdict/);
   });
+  it('a sentence starting with "Clean" is not a verdict', () => {
+    assert.equal(parseVerdict('❌ race — src/a.ts:1\nClean up later.'), null);
+  });
   it('an empty report is an error', () => {
     assert.match(parse('').error, /empty/);
     assert.match(parse(' \n\n').error, /empty/);

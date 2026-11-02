@@ -35,8 +35,8 @@ function findVerdict(lines) {
   }
   for (const [l, index] of tail) {
     if (/\bNO DIFF\b/.test(l)) return { noDiff: true };
-    const clean = /^(?:verdict\W*)?(CLEAN|SECURE)\b/i.exec(l);
-    if (clean) return { verdict: clean[1].toUpperCase(), issues: 0, index };
+    const clean = /^(?:verdict\W*)?(CLEAN|SECURE)\b/.exec(l); // upper case only: "Clean up later" isn't one
+    if (clean) return { verdict: clean[1], issues: 0, index };
     const n = /^(?:verdict\W*)?(\d+)\s+(ISSUE|RISK)(?:\(S\)|S)?\b/i.exec(l);
     if (n) return { verdict: `${n[2].toUpperCase()}S`, issues: Number(n[1]), index };
   }
