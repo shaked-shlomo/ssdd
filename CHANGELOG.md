@@ -16,7 +16,9 @@ v3.5, findings have outcomes: the gate loop converges. A re-review is told
 which findings are still open and answers each by ID; a finding the change
 didn't introduce doesn't stay open; a loop that keeps going is told to stop
 and ask. Nothing new blocks a commit, and it runs the same on every harness.
-See `SPEC.md` → v3.5.
+No upgrade steps: the stamp file stays version 2 (new fields only, which
+older gates keep), `maxRounds` is optional, and the reviewers update as
+managed files. See `SPEC.md` → v3.5.
 
 ### Added
 - **`--stamp <reviewer> --report <file|->`** reads the reviewer's reply and
@@ -53,10 +55,6 @@ See `SPEC.md` → v3.5.
 - `SDD.md` §3/§4 and the ledger template use the outcome words (`fixed`,
   `wrong`, `intentional`, `minor`, `deferred`, `pre-existing`) and the
   `--report` step.
-
-### Upgrade
-None. The stamp file stays version 2 (new fields only, kept by older
-gates), `maxRounds` is optional, and the reviewers update as managed files.
 
 ## [3.4.0] — 2026-11-01
 
