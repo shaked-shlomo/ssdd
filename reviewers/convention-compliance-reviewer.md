@@ -47,3 +47,8 @@ against them. Dimensions that recur across projects:
 3. Report `❌ <rule> — file:line — <fix>`, `⚠️` for judgment calls, `✅ <dimension>`
    when clean. Do NOT edit. End with **`CLEAN`** or **`N ISSUE(S)`**; with an
    empty or unnamed input, answer `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.

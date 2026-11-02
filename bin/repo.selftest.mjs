@@ -233,4 +233,15 @@ describe('reviewer contracts', () => {
   it('docs-sync has the comment-only section', () => {
     assert.match(read('reviewers/docs-sync-reviewer.md'), /comment-only/i);
   });
+  it('every reviewer answers open findings by ID and tags pre-existing ones (v3.5)', () => {
+    for (const f of REVIEWERS) {
+      const t = read(f).replace(/\s+/g, ' ');
+      for (const want of ['`✅ [<id>] fixed`', '`❌ [<id>]', '`❌ [pre-existing]', 'N counts the `❌` lines', 'never report a listed one again']) {
+        assert.ok(t.includes(want), `${f} lacks ${want}`);
+      }
+    }
+  });
+  it("gate-reviewer's check 5 names the finding line --report parses", () => {
+    assert.match(read('reviewers/gate-reviewer.md').replace(/\s+/g, ' '), /the verdict line or the finding line changed \(`--stamp --report` parses/);
+  });
 });
