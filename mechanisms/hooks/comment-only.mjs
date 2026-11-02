@@ -57,15 +57,16 @@ function context(L) {
   // The last spot a JSX closer starts at: `<` then `/` past spaces, or `/` then
   // `>` past spaces and comments. sig[p] is the first spot from p on that is
   // neither; filled from the end so the scan stays linear (no regex backtracking).
+  // Spaces and line ends are TS's: it also skips U+0085 and U+200B.
   const n = text.length;
-  const nl = new Int32Array(n + 1).fill(n); // the next \n at or after p
+  const nl = new Int32Array(n + 1).fill(n); // the next line end at or after p
   const end = new Int32Array(n + 2).fill(-1); // the next `*/` at or after p
   const sig = new Int32Array(n + 2).fill(n);
   const space = new Int32Array(n + 2).fill(n); // the next non-space spot
   for (let p = n - 1; p >= 0; p--) {
-    nl[p] = text[p] === '\n' ? p : nl[p + 1];
+    nl[p] = /[\n\r\u2028\u2029]/.test(text[p]) ? p : nl[p + 1];
     end[p] = text[p] === '*' && text[p + 1] === '/' ? p : end[p + 1];
-    const ws = /\s/.test(text[p]);
+    const ws = /[\s\u0085\u200b]/.test(text[p]);
     space[p] = ws ? space[p + 1] : p;
     if (ws) sig[p] = sig[p + 1];
     else if (text[p] === '/' && text[p + 1] === '/') sig[p] = sig[nl[p]];
@@ -96,13 +97,14 @@ function unsafe(c, k, gap, jsx) {
   if (!gap) return /^\s*#!/.test(L[k]);
   // `ignore next 3` counts physical lines from above; a next-line directive
   // targets the line below it, so one above the gap (past blank and comment
-  // lines, through the first code line's comment) would see its target move.
+  // lines, through the first code line's comment, `<!--` and `-->` ones too)
+  // would see its target move.
   // A line that starts in a block comment may end a wrapped one.
   if (c.counted < k || c.pragma >= k) return true;
   for (let i = k - 1; i >= 0; i--) {
     if (c.open[i]) return true;
-    const at = L[i].search(/\/[/*]/);
-    if (at >= 0 && DIRECTIVE.test(L[i].slice(at + 2))) return true;
+    const m = /\/[/*]|<!--|-->/.exec(L[i]);
+    if (m && DIRECTIVE.test(L[i].slice(m.index + m[0].length))) return true;
     if (!ignorable(L[i])) break;
   }
   return false;

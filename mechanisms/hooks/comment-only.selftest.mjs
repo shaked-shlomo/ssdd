@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { COMMENT_EXTS, commentOnly } from './comment-only.mjs';
 
-const LS = String.fromCharCode(0x2028);
+const [LS, PS, ZWSP, NEL] = [0x2028, 0x2029, 0x200b, 0x85].map((c) => String.fromCharCode(c));
 const NEXT_LINE = /next|@ts-expect-error|@ts-ignore|(prettier|biome|lint|fmt|dprint)-ignore/i;
 // Every `//` run and block comment rewritten: the edit a false carry would hide.
 const edit = (t) => t.replace(/\/\/[^\n]*/g, '// edited').replace(/\/\*[\s\S]*?\*\//g, '/* edited */');
@@ -353,6 +353,15 @@ const LINES = [
   ['CRLF after a code line still carries', 'a.ts', 'a()\nb()\n', 'a()\r\nb()\n', true],
   ['U+2028 in a comment line', 'a.js', 'a()\n// old\n', `a()\n// new${LS}b()\n`, false],
   ['a lone CR in a comment line', 'a.js', 'a()\n// old\n', 'a()\n// new\rb()\n', false],
+  // Re-review of the line check (2026-11-01): each was a wrong true.
+  ...[LS, PS, '\r'].map((t) => [`a JSX attribute closed by / // c, U+${t.charCodeAt(0).toString(16)}, >`, 'a.tsx',
+    `x = <a b="1\n" / //c${t}>;\n`, `x = <a b="1\n// y\n" / //c${t}>;\n`, false]),
+  ...[ZWSP, NEL].map((w) => [`a JSX attribute closed by / U+${w.charCodeAt(0).toString(16)} >`, 'a.tsx',
+    `x = <a b="1\n" /${w}>;\n`, `x = <a b="1\n// y\n" /${w}>;\n`, false]),
+  ['a directive in <!-- above', 'f.cjs', '<!-- eslint-disable-next-line no-eval\n// note\neval(x)\n', '<!-- eslint-disable-next-line no-eval\neval(x)\n', false],
+  ['a directive in --> above', 'f.cjs', 'x = 1\n--> eslint-disable-next-line no-eval\n\neval(x)\n', 'x = 1\n--> eslint-disable-next-line no-eval\neval(x)\n', false],
+  ['a trailing <!-- directive above', 'f.cjs', 'f() <!-- eslint-disable-next-line no-eval\n\neval(x)\n', 'f() <!-- eslint-disable-next-line no-eval\neval(x)\n', false],
+  ['<!-- falls through', 'f.cjs', 'switch (a) {\n  case 1: f();\n  <!-- falls through\n  // note\n  case 2: g();\n}\n', 'switch (a) {\n  case 1: f();\n  <!-- falls through\n  case 2: g();\n}\n', false],
 ];
 
 describe('COMMENT_EXTS', () => {
