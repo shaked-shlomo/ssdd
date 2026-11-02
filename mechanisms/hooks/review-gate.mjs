@@ -45,6 +45,7 @@
 //
 // Modes (same script, no deps, Node >= 22):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
+//   --stamp <reviewer> --report <file|-> [--files …] [--repo …]
 //                                   attest reviewers ran on the CURRENT change
 //                                   of every routed file they cover, or of the
 //                                   named files only (a delta round). Keyed on
@@ -52,7 +53,11 @@
 //                                   so it can run before `git add`; a file whose
 //                                   staged copy differs stays owed until added.
 //                                   --repo for a commit in another work tree
-//                                   (default: cwd, as --check; never the env)
+//                                   (default: cwd, as --check; never the env).
+//                                   --report reads that reviewer's reply (a
+//                                   file, or - for stdin) and records its
+//                                   findings; a reply with no verdict line, or
+//                                   NO DIFF, is refused and nothing is stamped
 //   --check [--repo <path>]         what the index owes, on stdout, without
 //                                   committing: exit 1 when a commit would be
 //                                   blocked; writes nothing
@@ -68,7 +73,19 @@
 //
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
 //   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at",
-//     ["issues"] } } } }
+//     "round", ["review"] } } },
+//     "reviews": { "r<n>": { "reviewer", "at", "verdict", "issues",
+//       "files": { "<path>": "<key>" }, "findings": { "F<n>": { "kind",
+//       "path", "line", "text", ["outcome", "by"] } } } }, "next" }
+// Findings (spec v3.5) are work state, not a record: a review is current while
+// one of its files is still in the change with the HEAD side its key names,
+// so a commit or a rebase makes it stale. Only the gate sets an outcome:
+// `fixed` (a later review of the same reviewer said `✅ [F<n>] fixed`) or
+// `pre-existing` (tagged so, on no line the change adds); the author's triage
+// is the ledger's. An open finding is a ❌ with no outcome; a ⚠️ is noted, never
+// open. A round is a stamp of R on F, on the same HEAD side, while R had an
+// open ❌: at reviewGate.maxRounds (default 3) the block message warns.
+// New fields only, so the file stays version 2 and an older gate keeps them.
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
@@ -78,6 +95,8 @@ import { extname, join, isAbsolute, resolve } from 'node:path';
 import { hookPermissionBody, parseHookStdin } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
 import { COMMENT_EXTS, commentOnly } from './comment-only.mjs';
+import { parseReport, sameFinding } from './review-report.mjs';
+import { addedLines } from './added-lines.mjs';
 
 // Every mode judges git's cwd (or --repo), never CLAUDE_PROJECT_DIR /
 // SSDD_PROJECT_DIR: a stamp lands where the commit that reads it runs.
@@ -269,29 +288,86 @@ function updateStamp(mutate) {
   }
 }
 
-// Reviewers flagged issues on files that are about to be committed unchanged:
-// allowed (fix-or-triage), but worth a line so triage isn't silent. So is a
-// stamp that met the gate only by carrying over a comment-only change.
+// ── findings (spec v3.5) ────────────────────────────────────────────────────
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const headSide = (key) => { const m = KEY.exec(String(key)); return m ? `${m[1]}:${m[2]}` : null; };
+const fnum = (id) => Number(String(id).slice(1)) || 0;
+// The reviews still current against a change (Map<path, key>): one of their
+// files is in it with the HEAD side the review's key names.
+function currentReviews(stamp, change) {
+  const out = [];
+  for (const [id, r] of Object.entries(isObj(stamp.reviews) ? stamp.reviews : {})) {
+    if (!isObj(r) || !isObj(r.files)) continue;
+    if (Object.entries(r.files).some(([p, k]) => change.has(p) && headSide(k) && headSide(change.get(p)) === headSide(k))) out.push([id, r]);
+  }
+  return out;
+}
+// The findings of the current reviews: open (a ❌ with no outcome) and noted
+// (a ⚠️), each { id, reviewer, kind, path, line, text }, by ID. A hand-edited
+// entry that isn't one is skipped, never thrown on.
+function findingsOf(stamp, change) {
+  const open = [];
+  const noted = [];
+  for (const [, r] of currentReviews(stamp, change)) {
+    for (const [id, f] of Object.entries(isObj(r.findings) ? r.findings : {})) {
+      if (!isObj(f) || f.outcome || !/^F\d+$/.test(id)) continue;
+      const one = { id, reviewer: String(r.reviewer), kind: f.kind === '❌' ? '❌' : '⚠️', path: typeof f.path === 'string' ? f.path : null, line: Array.isArray(f.line) ? f.line : null, text: String(f.text ?? '') };
+      (one.kind === '❌' ? open : noted).push(one);
+    }
+  }
+  const byId = (a, b) => fnum(a.id) - fnum(b.id);
+  return { open: open.sort(byId), noted: noted.sort(byId) };
+}
+const placeOf = (f) => {
+  if (!f.path) return '(no place cited)';
+  const [a, b] = (f.line ?? []).map(Number);
+  return Number.isInteger(a) ? `${f.path}:${a}${Number.isInteger(b) && b !== a ? `-${b}` : ''}` : f.path;
+};
+const DEFAULT_MAX_ROUNDS = 3;
+const maxRounds = (cfg) => {
+  const n = cfg?.reviewGate?.maxRounds;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_MAX_ROUNDS;
+};
+// The lines a stamped change adds to a path: 'new' when the path is new in
+// it (every line added); a Set of new-side line numbers; or null when git
+// can't say. The key's blobs are in the store: the stamp's scratch `add`
+// wrote the work-tree one.
+function addedFor(key) {
+  const m = KEY.exec(String(key));
+  if (!m) return null;
+  if (zero(m[2])) return 'new';
+  if (zero(m[4])) return new Set();
+  try {
+    const diff = git('diff', '-U0', '--no-color', '--no-ext-diff', m[2], m[4]);
+    const [lines = []] = [...addedLines(diff).values()];
+    return new Set(lines.map(([n]) => n));
+  } catch { return null; }
+}
+// The same for a path outside the routed change (a finding may cite any
+// file): the work tree against HEAD. Unchanged → an empty Set; untracked → 'new'.
+function addedVsHead(path) {
+  try {
+    if (spawnSync('git', ['-C', repo, 'cat-file', '-e', `HEAD:${path}`], { stdio: 'ignore' }).status !== 0) {
+      return existsSync(join(repo, path)) ? 'new' : new Set();
+    }
+    const diff = git('-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', 'HEAD', '--', path);
+    const [lines = []] = [...addedLines(diff).values()];
+    return new Set(lines.map(([n]) => n));
+  } catch { return null; }
+}
+
+// Open findings, and stamps that carried, on what's about to be committed:
+// allowed (fix-or-triage), but worth a line so triage isn't silent.
 function triageNote(cfg, { carried }) {
   const byPath = new Map();
   for (const { name, path } of carried) byPath.set(path, [...(byPath.get(path) ?? []), name]);
   const carry = [...byPath].map(([path, names]) =>
     `[ssdd-review-gate] carried over a comment-only change: ${names.join(', ')} on ${path}\n`).join('');
   const { staged } = stagedOwed();
-  const stamp = readStamp();
-  const lines = [];
-  for (const [name, files] of reviewerFiles(cfg, staged)) {
-    const flagged = files.filter((f) => {
-      const e = stamp.reviewers[name]?.[f];
-      return e?.key === staged.get(f) && e.issues > 0;
-    });
-    if (flagged.length) {
-      const n = stamp.reviewers[name][flagged[0]].issues;
-      lines.push(`  • ${name} reported ${n} finding(s) on ${flagged.join(', ')} — unchanged since`);
-    }
-  }
+  const { open } = findingsOf(readStamp(), staged);
+  const lines = open.map((f) => `  • [${f.id}] ${f.reviewer} — ${placeOf(f)} — ${f.text}`);
   return carry + (lines.length
-    ? `[ssdd-review-gate] committing files reviewers flagged; make sure each finding was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
+    ? `[ssdd-review-gate] committing with open findings; make sure each was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
     : '');
 }
 
@@ -304,11 +380,14 @@ const reviewerFiles = (cfg, staged) =>
 // The staged diff, judged: per reviewer with an unmet stamp, the routed staged
 // files it still owes (with the key it last stamped, if any); the stamps that
 // carried over a comment-only change; the unrouted staged paths, for context;
-// and the oversize warning if one is due.
+// and the oversize warning if one is due. An owing reviewer also gets its open
+// and noted findings, and the round warning when one is due.
 function judge(cfg) {
   const { staged, merged } = stagedOwed();
   const stamp = readStamp();
-  const carries = carrier(cfg);
+  const { open, noted } = findingsOf(stamp, staged);
+  const carries = carrier(cfg, new Set(open.map((f) => `${f.reviewer}\0${f.path}`)));
+  const max = maxRounds(cfg);
   const owed = [];
   const carried = [];
   const routed = new Set();
@@ -321,7 +400,14 @@ function judge(cfg) {
       const prev = mine[f]?.key ?? null;
       missing.push({ path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) });
     }
-    if (missing.length) owed.push({ name, files, missing });
+    if (missing.length) {
+      const mineOpen = open.filter((f) => f.reviewer === name);
+      const round = Math.max(0, ...missing.map(({ path }) => (Number.isInteger(mine[path]?.round) ? mine[path].round : 0)));
+      owed.push({
+        name, files, missing, open: mineOpen, noted: noted.filter((f) => f.reviewer === name),
+        rounds: mineOpen.length && round >= max ? { round, max } : null,
+      });
+    }
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
   return {
@@ -348,18 +434,20 @@ function deltaFor(prev, now) {
   return { cmd: `git diff ${p[4]} ${n[4]}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
 }
 
-// Decision 3, for one judgment: → (name, path, entry, nowKey) → whether that
+// v3.4 Decision 3, for one judgment: → (name, path, entry, nowKey) → whether that
 // reviewer's stamp entry carries over a comment-only change to the staged key.
 // Only when the comment reviewer is routed to the path and isn't `name`; the
 // path is a COMMENT_EXTS file (checked first, so no other file reads a blob);
-// the entry's issues are none or 0 (a hand-edited "2" isn't); both keys parse,
+// the entry's issues are none or 0 (a hand-edited "2" isn't); `name` has no
+// open ❌ citing the path (`openOn`, "<name>\0<path>": the reviewer that flagged
+// something there re-reviews it, spec v3.5); both keys parse,
 // with HEAD's side (mode and blob) and the new mode unchanged, a regular file
 // on the new side (a symlink's blob is its target; a gitlink has none) and a
 // blob on both new sides (a deletion never carries); both blobs read (a pruned
 // one fails the read) and are UTF-8; and commentOnly says so. Each blob is
 // read once per judgment. Any doubt or git failure is false, never a throw:
 // the gate must not turn one into an allow.
-function carrier(cfg) {
+function carrier(cfg, openOn = new Set()) {
   const cr = cfg?.reviewGate?.commentReviewer;
   const crRoutes = routes(cfg).find(([n]) => n === cr)?.[1];
   const texts = new Map(); // blob id → its UTF-8 text | null
@@ -378,6 +466,7 @@ function carrier(cfg) {
     try {
       if (!crRoutes || name === cr || !crRoutes(path) || !COMMENT_EXTS.has(extname(path))) return false;
       if (entry?.issues !== undefined && entry.issues !== 0) return false;
+      if (openOn.has(`${name}\0${path}`)) return false;
       const p = KEY.exec(String(entry?.key));
       const n = KEY.exec(String(now));
       if (!p || !n || p[1] !== n[1] || p[2] !== n[2] || p[3] !== n[3] || !/^100(644|755)$/.test(n[3])) return false;
@@ -423,9 +512,10 @@ const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
 const mergeLine = (merged) =>
   `  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`;
+const findingLine = (f) => `      [${f.id}] ${f.kind} ${placeOf(f)} — ${f.text}`;
 function blockMessage({ owed, unrouted, warning, merged }, repoHint = '') {
   const lines = [];
-  for (const { name, files, missing } of owed) {
+  for (const { name, files, missing, open = [], noted = [], rounds } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
     lines.push(
       never
@@ -441,6 +531,20 @@ function blockMessage({ owed, unrouted, warning, merged }, repoHint = '') {
       if (delta === 'gone') lines.push('        its stamped blob is gone: review the whole change');
       else if (delta) lines.push(`        review the change: ${delta.cmd}${delta.baseMoved ? ' (its base moved too)' : ''}`);
     }
+    if (open.length) {
+      lines.push('    open findings from its last reviews — answer each ✅ [<id>] fixed or ❌ [<id>] <why it\'s still open>; don\'t report them again:');
+      lines.push(...open.map(findingLine));
+    }
+    if (noted.length) {
+      lines.push('    already noted (⚠️), don\'t report again:');
+      lines.push(...noted.map(findingLine));
+    }
+    if (rounds) {
+      lines.push(
+        `    ! round ${rounds.round} of reviewGate.maxRounds (${rounds.max}) with findings still open: don't dispatch another round.\n` +
+        '      List the open findings to the user and ask whether to rethink the approach or triage them.',
+      );
+    }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
   if (merged) lines.push(mergeLine(merged));
@@ -450,12 +554,13 @@ function blockMessage({ owed, unrouted, warning, merged }, repoHint = '') {
     lines.join('\n') +
     `\nRun each reviewer checklist (.ssdd/reviewers/<name>.md) against the files it owes —\n` +
     `for a file with a \`git diff\` line, that diff is its input; dispatch them in\n` +
-    `parallel if your harness supports subagents — fix/triage findings,\n` +
-    `re-stage, then attest:\n` +
-    `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}${repoHint}\n` +
-    `(add --files <path,…> when a reviewer re-read only those files) and retry the\n` +
-    `commit. Stamp only AFTER the reviewers actually ran on those files — stamping\n` +
-    `blind defeats the gate.\n` +
+    `parallel if your harness supports subagents, handing each its open findings —\n` +
+    `fix/triage findings, save each reviewer's reply to a file outside the work tree\n` +
+    `(or pipe it with --report -), then attest each:\n` +
+    owed.map(({ name }) => `  node .ssdd/hooks/review-gate.mjs --stamp ${name} --report <its reply>${repoHint}\n`).join('') +
+    `(without --report a stamp records no findings; add --files <path,…> when a\n` +
+    `reviewer re-read only those files) and retry the commit. Stamp only AFTER the\n` +
+    `reviewers actually ran on those files — stamping blind defeats the gate.\n` +
     CHECK_LINE
   );
 }
@@ -468,8 +573,15 @@ if (process.argv[2] === '--stamp') {
   const only = filesAt > -1 ? csv(process.argv[filesAt + 1]) : null;
   const repoAt = process.argv.indexOf('--repo');
   if (repoAt > -1) repo = resolve(process.argv[repoAt + 1] ?? '.');
-  if (!names.length || (only && !only.length) || (repoAt > -1 && !process.argv[repoAt + 1])) {
-    console.error('usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]');
+  // --report goes with one reviewer: each reply is one reviewer's (Clarify 10).
+  const reportAt = process.argv.indexOf('--report');
+  const reportArg = reportAt > -1 ? process.argv[reportAt + 1] : null;
+  const badReport = reportAt > -1 && (!reportArg || (reportArg !== '-' && reportArg.startsWith('--')) || names.length !== 1);
+  if (!names.length || (only && !only.length) || (repoAt > -1 && !process.argv[repoAt + 1]) || badReport) {
+    console.error(
+      'usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]\n' +
+      '       review-gate.mjs --stamp <reviewer> --report <file|-> [--files …] [--repo …]   (one reviewer per report)',
+    );
     process.exit(1);
   }
   const loaded = loadConfig();
@@ -520,14 +632,84 @@ if (process.argv[2] === '--stamp') {
     }
     plan.push([n, files]);
   }
+  // The reviewer's reply, read and parsed before anything is written: a reply
+  // with no verdict, NO DIFF, or no text stamps nothing.
+  let parsed = null;
+  const notes = [];
+  if (reportAt > -1) {
+    let text;
+    try { text = readFileSync(reportArg === '-' ? 0 : resolve(process.cwd(), reportArg), 'utf8'); } catch (e) {
+      console.error(`[ssdd-review-gate] refused: can't read the report ${reportArg} (${e.code ?? e.message}) — nothing stamped`);
+      process.exit(1);
+    }
+    parsed = parseReport(text, { root: cfg.root });
+    if (parsed.error) {
+      console.error(`[ssdd-review-gate] refused: ${names[0]}'s report — ${parsed.error}; nothing stamped. Re-ask the reviewer for its verdict.`);
+      process.exit(1);
+    }
+    // [pre-existing] holds only off the lines the change adds (Decision 4).
+    for (const f of parsed.findings) {
+      if (f.tag !== 'pre-existing' || f.kind !== '❌' || !f.path || f.path.startsWith('/')) continue;
+      const added = changes.has(f.path) ? addedFor(changes.get(f.path)) : addedVsHead(f.path);
+      const [a, b] = f.line ?? [];
+      const hit = added === null || added === 'new' || (f.line && [...added].some((n) => n >= a && n <= b));
+      if (hit) {
+        f.tag = null;
+        notes.push(`[pre-existing] dropped: ${placeOf(f)} ${added === 'new' ? 'is in a new file' : added === null ? "couldn't be checked" : 'is a line this change adds'} — ${f.text}`);
+      }
+    }
+    const xs = parsed.findings.filter((f) => f.kind === '❌').length + parsed.answers.filter((x) => !x.fixed).length;
+    if (xs !== parsed.issues) {
+      notes.push(`the verdict says ${parsed.issues}; the report has ${xs} ❌ line(s) the gate could read — the re-review lists only those`);
+    }
+  }
   const warning = oversizeWarning(cfg, new Set([...table.values()].flat()).size);
   if (warning) process.stderr.write(warning);
   const at = new Date().toISOString();
+  const recorded = [];
   updateStamp((stamp) => {
+    // Stale reviews go; R's open ❌ when this stamp began decides its rounds.
+    const current = new Set(currentReviews(stamp, changes).map(([id]) => id));
+    if (isObj(stamp.reviews)) for (const id of Object.keys(stamp.reviews)) if (!current.has(id)) delete stamp.reviews[id];
+    const { open, noted } = findingsOf(stamp, changes);
+    let next = Number.isInteger(stamp.next) && stamp.next > 0 ? stamp.next : 1;
     for (const [n, files] of plan) {
       stamp.reviewers[n] ??= {};
-      for (const f of files) stamp.reviewers[n][f] = { key: changes.get(f), at };
+      const hadOpen = open.some((f) => f.reviewer === n);
+      let review;
+      if (parsed) {
+        review = `r${next++}`;
+        stamp.reviews = isObj(stamp.reviews) ? stamp.reviews : {};
+        const findings = {};
+        const where = (id) => currentReviews(stamp, changes).find(([, r]) => isObj(r.findings) && isObj(r.findings[id]));
+        for (const { id, fixed } of parsed.answers) {
+          const hit = where(id);
+          const f = hit?.[1].findings[id];
+          if (!f) { notes.push(`${id}: no current finding has that ID — ignored`); continue; }
+          if (hit[1].reviewer !== n) { notes.push(`${id} is ${hit[1].reviewer}'s finding, not ${n}'s — ignored`); continue; }
+          if (fixed && !f.outcome) { f.outcome = 'fixed'; f.by = review; recorded.push(`${id} fixed`); }
+          else if (!fixed && !f.outcome) recorded.push(`${id} ❌ still open`);
+        }
+        for (const f of parsed.findings) {
+          const same = [...open, ...noted].find((o) => o.reviewer === n && o.kind === f.kind && sameFinding(o.text, f.text));
+          if (same && !f.tag) { notes.push(`${same.id} repeated — kept open under its ID`); continue; }
+          const id = `F${next++}`;
+          findings[id] = { kind: f.kind, path: f.path, line: f.line, text: f.text, ...(f.tag ? { outcome: 'pre-existing' } : {}) };
+          recorded.push(`${id} ${f.kind} ${f.tag ? 'pre-existing' : f.kind === '❌' ? 'open' : 'noted'}`);
+        }
+        stamp.reviews[review] = {
+          reviewer: n, at, verdict: parsed.verdict, issues: parsed.issues,
+          files: Object.fromEntries(files.map((f) => [f, changes.get(f)])), findings,
+        };
+      }
+      for (const f of files) {
+        const prev = stamp.reviewers[n][f];
+        const same = isObj(prev) && headSide(prev.key) && headSide(prev.key) === headSide(changes.get(f));
+        const round = same && hadOpen ? (Number.isInteger(prev.round) && prev.round > 0 ? prev.round : 1) + 1 : 1;
+        stamp.reviewers[n][f] = { key: changes.get(f), at, round, ...(review ? { review } : {}) };
+      }
     }
+    stamp.next = next;
   });
   // The stamp names the work-tree copy (what the reviewer read). A commit
   // judges the index, so a path whose staged key differs stays owed until added.
@@ -539,6 +721,12 @@ if (process.argv[2] === '--stamp') {
   }
   for (const [n, files] of plan) {
     console.log(`[ssdd-review-gate] stamped ${n} on ${files.length} file(s): ${files.join(', ')}`);
+  }
+  if (parsed) {
+    console.log(`  findings: ${recorded.length ? recorded.join(', ') : 'none'}`);
+    for (const n of notes) console.log(`  note: ${n}`);
+  } else {
+    console.log('  no findings recorded (no --report): the next re-review of these files gets the delta only, not the open findings');
   }
   process.exit(0);
 }

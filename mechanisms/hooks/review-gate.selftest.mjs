@@ -673,17 +673,18 @@ describe('parallel --stamp', () => {
   });
 });
 
+// v3.5: the triage note names open findings by ID (review-findings.selftest.mjs);
+// a per-file count is no longer copied onto every file a review covered.
 describe('the triage note', () => {
-  it('names a flagged file', () => {
+  it("doesn't copy an entry's issue count onto its files", () => {
     write(dir, 'src/a.ts', 'a\n');
     stamp(dir, 'alpha,beta');
-    // Nothing in v3.4 writes `issues`: the test plays the writer.
     const s = readStamp(dir);
-    s.reviewers.alpha['src/a.ts'].issues = 1;
+    s.reviewers.alpha['src/a.ts'].issues = 1; // an older gate's field
     writeFileSync(stampFile(dir), JSON.stringify(s));
     const pc = preCommit(dir);
     assert.strictEqual(pc.status, 0, pc.stderr);
-    assert.match(pc.stderr, /alpha reported 1 finding/);
+    assert.doesNotMatch(pc.stderr, /finding/);
   });
 });
 
@@ -894,7 +895,7 @@ describe('the block message names the delta', () => {
       cpSync(dir, r, { recursive: true });
       write(r, 'src/a.ts', 'a\n');
       for (const out of [preCommit(r).stderr, run(r, ['--check', '--repo', r]).stdout]) {
-        const hint = /--stamp alpha,beta --repo (.+)$/m.exec(out)?.[1];
+        const hint = /--stamp alpha --report <its reply> --repo (.+)$/m.exec(out)?.[1];
         assert.ok(hint, out);
         const word = spawnSync('sh', ['-c', `printf %s ${hint}`], { encoding: 'utf8' }).stdout;
         assert.strictEqual(word, realpathSync(r));
