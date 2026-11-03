@@ -42,7 +42,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ARM_HOOK, DEFAULT_PATHS, dormantHook, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
+import { ARM_HOOK, DEFAULT_PATHS, dormantHookDetail, foreignHook, loadSsddConfig } from '../mechanisms/hooks/ssdd-config.mjs';
 import { collect, ledgerIgnoreRule } from '../mechanisms/hooks/work-state.mjs';
 
 const LOCK = '.ssdd/ssdd.lock.json';
@@ -581,6 +581,8 @@ function update(target) {
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, newTree, carried));
   armHook(target, log);
+  const dormant = dormantLine(target, { rerun: false }); // what armHook left unarmed
+  if (dormant) console.log(dormant);
   log(`packs     ${packs.join(', ') || 'none'}`);
   log(`with      ${parts.join(', ') || 'none'}`);
 
@@ -599,6 +601,8 @@ function update(target) {
   if (steps.length) console.log(`\n── Upgrade steps (manual), from the CHANGELOG:\n${steps.join('\n\n')}`);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
+  const wiring = [...obsoleteLines(target), ...wiringLines(target, newTree, adapters)];
+  if (wiring.length) console.log(`\n${wiring.join('\n')}`);
   console.log(`\nlocked ${LOCK} @ v${version}. Review with: git -C '${target}' diff`);
   if (rows.conflict.length || rows.sidecar.length) process.exit(1);
 }
@@ -694,15 +698,95 @@ function skillsDrift(target) {
   }
 }
 
+// ── hook wiring: what a project's .claude/settings.json lacks or no longer needs ─
+// Report only: the file is project-owned, so nothing here rewrites it.
+// An entry is { event, matcher, script }; `script` is the file name of an
+// .ssdd/hooks/*.mjs a hook command runs.
+const SCRIPT_IN = /\.ssdd\/hooks\/([\w.-]+\.mjs)(?![\w.-])/g;
+function hookEntries(json) {
+  const out = [];
+  const hooks = json && typeof json === 'object' && json.hooks && typeof json.hooks === 'object' ? json.hooks : {};
+  for (const [event, groups] of Object.entries(hooks)) {
+    for (const g of Array.isArray(groups) ? groups : []) {
+      const matcher = typeof g?.matcher === 'string' ? g.matcher : '';
+      for (const h of Array.isArray(g?.hooks) ? g.hooks : []) {
+        if (typeof h?.command !== 'string') continue;
+        out.push({ event, matcher, command: h.command });
+      }
+    }
+  }
+  return out;
+}
+const alternatives = (m) => m.split('|').map((a) => a.trim()).filter(Boolean);
+const wild = (m) => m.trim() === '' || m.trim() === '*';
+// `wide` covers `narrow`: it is empty or `*`, or every `|` alternative of
+// `narrow` is among its own.
+const covers = (wide, narrow) => wild(wide) || (!wild(narrow) && alternatives(narrow).every((a) => alternatives(wide).includes(a)));
+const names = (command, script) => new RegExp(`(?:^|[\\s/"'=])${script.replace(/\./g, '\\.')}(?![\\w.-])`).test(command);
+
+function wiringReport(projectJson, templateJson) {
+  const project = hookEntries(projectJson);
+  const template = [];
+  for (const e of hookEntries(templateJson)) {
+    for (const m of e.command.matchAll(SCRIPT_IN)) template.push({ event: e.event, matcher: e.matcher, script: m[1] });
+  }
+  const missing = template.filter((t) => !project.some((p) => p.event === t.event && covers(p.matcher, t.matcher) && names(p.command, t.script)));
+  const stale = [];
+  for (const p of project) {
+    for (const m of p.command.matchAll(SCRIPT_IN)) {
+      const entry = { event: p.event, matcher: p.matcher, script: m[1] };
+      const wanted = template.some((t) => t.event === p.event && t.script === m[1] && (covers(p.matcher, t.matcher) || covers(t.matcher, p.matcher)));
+      if (!wanted && !stale.some((s) => s.event === entry.event && s.matcher === entry.matcher && s.script === entry.script)) stale.push(entry);
+    }
+  }
+  return { missing, stale };
+}
+
+// The wiring lines for `status` (the template at the lock's commit) and
+// `update` (the new tree's): only for an adapter whose wiring is seeded
+// (Claude Code's .claude/settings.json), and nothing when both lists are empty.
+function wiringLines(target, tree, adapters) {
+  if (!adapters.includes('claude-code')) return [];
+  const read1 = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } };
+  const template = read1(join(tree, 'adapters/claude-code/settings-hooks.json'));
+  const project = read1(join(target, '.claude/settings.json'));
+  if (!template || !project) return [];
+  const { missing, stale } = wiringReport(project, template);
+  const row = (e) => `  ${e.event}${e.matcher ? ` ${e.matcher}` : ''} ${e.script}`;
+  const lines = [];
+  if (missing.length) lines.push(`hook entries missing from .claude/settings.json (${missing.length}):`, ...missing.map(row));
+  if (stale.length) lines.push(`hook entries the template dropped (safe to remove) (${stale.length}):`, ...stale.map(row));
+  return lines;
+}
+
+// Config keys the loader now ignores. Nothing rewrites the project's config.
+function obsoleteLines(target) {
+  const obsolete = loadSsddConfig(target)?.obsolete ?? [];
+  return obsolete.length ? [`obsolete config keys (ignored): ${obsolete.join(', ')}`] : [];
+}
+
+// The dormant pre-commit's WARNING line with its fix, '' when it runs the
+// gate. `status` and `update` both print it; `update` passes rerun: false, as
+// pointing at itself would be no fix (it has just run, and left it dormant).
+function dormantLine(target, { rerun }) {
+  const dormant = dormantHookDetail(target);
+  if (!dormant) return '';
+  const head = `WARNING: the pre-commit hook is dormant (${dormant.reason}) — `;
+  // An edit is the only fix: `update` keeps a local edit to SSDD's copy.
+  if (dormant.edit) return `${head}add ${dormant.edit.line} to ${dormant.edit.file}`;
+  const orUpdate = rerun && hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
+  return `${head}run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`;
+}
+
 // ── status: is the gate armed? ───────────────────────────────────────────────
 // A broken config blocks every commit, and a dormant pre-commit hook never
 // runs. Informational only.
 function gateWarnings(target) {
   const loaded = loadSsddConfig(target);
   if (loaded?.error) console.log(`WARNING: ${loaded.error} — the gate blocks every commit until it's fixed`);
-  const dormant = dormantHook(target);
+  const dormant = dormantLine(target, { rerun: true });
+  if (dormant) console.log(dormant);
   const orUpdate = hookSetting(target)?.state === 'armable' ? ` (or rerun: update '${target}')` : '';
-  if (dormant) console.log(`WARNING: the pre-commit hook is dormant (${dormant}) — run: git -C '${target}' ${ARM_HOOK.replace(/^git /, '')}${orUpdate}`);
   const ledgerRule = ledgerIgnoreRule(target, '.superpowers/sdd/_/progress.md');
   if (ledgerRule) console.log(`WARNING: git ignores Superpowers ledgers here (${ledgerRule}) — remove that rule so .superpowers/sdd/*/progress.md is tracked`);
   const foreign = foreignHook(target);
@@ -750,6 +834,15 @@ async function status(target) {
     }
   }
   gateWarnings(target);
+  for (const l of obsoleteLines(target)) console.log(l);
+  if (lock.adapters.includes('claude-code')) {
+    // The template at the lock's commit; a commit this source lacks can't be compared.
+    if (tryGit(SRC, 'rev-parse', '--verify', `${lock.commit}^{commit}`)) {
+      for (const l of wiringLines(target, exportTree(lock.commit), lock.adapters)) console.log(l);
+    } else {
+      console.log(`NOTE: locked commit ${lock.commit.slice(0, 7)} is not in ${SRC}, so the hook wiring wasn't compared — git -C ${SRC} fetch --tags`);
+    }
+  }
   for (const l of onboarding(target)) console.log(l);
   if (opt.skills) skillsDrift(target);
   if (conflicted.length || sidecars.length) process.exit(1);

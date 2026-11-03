@@ -1,18 +1,25 @@
 # Known limitations
 
-**The gate is not a sandbox.** The harness hooks catch what a cooperating
-agent does by mistake or habit: bulk staging, `-n`, amend, force push,
-re-pointing `core.hooksPath`, committing content the gate can't see,
-committing to the wrong repo, a broken config. They don't try to catch an
-agent that hides a command from them; the git pre-commit layer is the
-backstop for what they can't see. A new evasion shape is out of scope unless
-an agent was seen using it in a real project.
+**The gate is not a sandbox.** The review gate is git's pre-commit, which
+every harness and every human meets at `git commit`; the harness hooks don't
+judge commits. git-guard catches what a cooperating agent does by mistake or
+habit: `-n`, re-pointing `core.hooksPath`, force push (the example
+`extraRules`), with a warning on bulk staging and amend. Neither tries to
+catch an agent that hides a command or turns the pre-commit off on purpose.
+A new evasion shape is out of scope unless an agent was seen using it in a
+real project.
 
-- A config that isn't valid JSON blocks in both layers; convention-lint
-  reports it too. Absent still means "not an SSDD repo". The working-tree
-  config is the one that applies, so a broken one is fixed in place.
-- A dormant pre-commit hook (`core.hooksPath` not `.githooks`, the fresh-clone
-  state) is named by `status` and by the harness gate on every commit.
+- A config that isn't valid JSON blocks every commit; convention-lint
+  reports it at edit time too. Absent still means "not an SSDD repo". The
+  working-tree config is the one that applies, so a broken one is fixed in
+  place. A removed key doesn't break it: it's ignored, and `status` names it.
+- A dormant pre-commit hook means no gate. It's dormant when the pre-commit
+  git resolves doesn't run `review-gate.mjs … --pre-commit` on a line that
+  isn't a comment: `core.hooksPath` unset (the fresh-clone state) or
+  pointing where there's no such hook, or a project hook that never calls
+  the gate. `status`, `update` and the session view name it, with the fix.
+  A wrapper (a husky hook that calls `.githooks/pre-commit`) reads as
+  dormant: a false warning, never a block.
   `install` / `update` arm it when it's unset; otherwise the user runs
   `git config core.hooksPath .githooks`. git-guard still denies the agent
   any direct write to it. Once set, git ignores `.git/hooks` entirely. The
@@ -20,35 +27,49 @@ an agent was seen using it in a real project.
   path to the main checkout's `.githooks` makes each worktree run that copy
   of the shim (the gate still runs, on the worktree's own `.ssdd/hooks`);
   `status` notes it and `update` rewrites it.
-- In Claude Code the review gate runs only on commands that start with `git`
-  (`"if": "Bash(git *)"`). `/usr/bin/git`, `env …` / `sudo …` runners and
-  shell wrappers (`bash -c`, `eval`, `… | sh`, a heredoc fed to a shell)
-  reach only the pre-commit layer. git-guard doesn't unwrap shell wrappers
-  either. Cursor's hook has no such filter.
-- The pre-commit layer judges git's own cwd, not `SSDD_PROJECT_DIR`; the
-  harness layer starts from the tool call's cwd.
+- git-guard blocks `git -c core.hooksPath=… commit` and `git config …
+  core.hooksPath …` on the command line. The env forms pass it:
+  `GIT_CONFIG_PARAMETERS="'core.hooksPath=…'" git commit` (or
+  `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>`) points git at another hooks
+  dir for one commit, and the gate doesn't run. Nor does git-guard see git
+  run from a script *file*, a variable, an alias, `xargs` / `find -exec`,
+  another language's subprocess, a shell wrapper (`bash -c`, `eval`,
+  `… | sh`, a heredoc fed to a shell), or a `GIT_CONFIG_GLOBAL` /
+  `GIT_CONFIG_SYSTEM` file. The pre-commit layer guards a cooperating
+  agent and is not a sandbox.
+- The gate judges the repo and index git commits (git's own cwd), not
+  `SSDD_PROJECT_DIR`; `--stamp` and `--check` key git's cwd too, unless
+  `--repo` names another.
+- `--stamp` is an attestation the gate can't verify: not whether the
+  reviewers ran, nor on which model. `--stamp --report` takes the
+  orchestrator's word for the reviewer's reply too.
+- The finding parse reads the reviewer's own format. A finding it can't
+  read isn't recorded or listed to the re-review; `--stamp` says when the
+  `❌` lines it read don't add up to the verdict's N.
 - A re-stage that changes nothing keeps its stamps, by design.
+- The comment-only carry judges source text. It can't see code that reads
+  its own comments at run time (`Function.prototype.toString`, source maps,
+  a test that greps the file), so editing a comment such code depends on
+  carries the stamp.
+- The carry covers the JS/TS family only, and only blank lines, whole-line
+  `//` comments and trailing whitespace. A trailing comment on a code line,
+  a block or JSDoc comment, a comment naming a tool (`@`, `#`, `eslint`,
+  `ignore`, …), or a line that a template, JSX element, block comment or
+  `\` continuation may hold costs a normal review. Those guards read raw
+  characters, so a backtick, `<` or `/*` in a string elsewhere in the file
+  can cost a review too.
+- The tools whose comments count as code are a list (lint, type, coverage,
+  bundler and scanner names, `@`, `#`, `$`): a suppression comment for a
+  tool it doesn't name carries. A tool that reads a comment's presence
+  rather than its words isn't seen either: a comment put into an empty block silences ESLint's `no-empty`,
+  and that carries.
 - The merge rule needs git 2.38 (`merge-tree --write-tree`); older git
   judges every file of a merge. Only a merge of the default branch counts:
   another branch's commits weren't necessarily reviewed.
-- Untracked files are a warning at commit; `preCommit.blockUntracked: true`
-  makes them a block.
-- The harness gate judges the repo a commit targets (`cd`, `git -C`,
-  worktrees), failing closed on `$VAR` / `$(…)` / `pushd`. In an SSDD repo it
-  refuses commits whose content it can't see (`git add … && git commit`,
-  `commit -a/-i/-o`, `commit <pathspec>`). A chained `git add` of existing
-  files no reviewer is routed to is allowed, unless another git command
-  that can change the index runs before the commit. A repo without
-  `.ssdd/config.json` isn't gated at all. It can't see git run from a script *file*, a
-  variable, an alias, `xargs` / `find -exec`, another language's subprocess,
-  or a `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` file that sets
-  `core.hooksPath`. For those the pre-commit layer is the backstop, while
-  `-n` isn't used.
-- In Claude Code, `reviewGate.stamping: "hooks"` makes attestation
-  mechanical: a reviewer subagent's completion stamps its files, and the
-  agent can't run `--stamp` or write stamp files. In `manual` mode (the
-  default, and the only mode in Cursor) `--stamp` is an attestation the gate
-  can't verify, including which model ran the review.
+- Untracked files are a warning at commit.
+- Cursor's warnings are best effort. It may not surface `agent_message` on
+  an allowed call, so git-guard's bulk-add and amend warnings may not reach
+  the agent there.
 - **The production guard asks; it isn't a sandbox.** It judges the command
   line, as the git guard does, and in Claude Code runs on every MCP call (the
   settings can't follow which packs are installed); see [the pack's known

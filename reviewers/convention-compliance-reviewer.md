@@ -39,10 +39,16 @@ against them. Dimensions that recur across projects:
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Open the actual files, not just
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Open the actual files, not just
    hunks — conventions often concern what's *around* the change.
 2. For each dimension above that the project declares, check every touched
    file. Cite the rule you're enforcing (doc + section) in each finding.
 3. Report `❌ <rule> — file:line — <fix>`, `⚠️` for judgment calls, `✅ <dimension>`
    when clean. Do NOT edit. End with **`CLEAN`** or **`N ISSUE(S)`**; with an
    empty or unnamed input, answer `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.

@@ -13,8 +13,9 @@ timeouts, fire-and-forget and tests are resilience's lane.
 
 ## How to run
 
-1. Read the project's perf rules index (if any), then `git diff --staged` (or
-   the named range).
+1. Read the project's perf rules index (if any), then
+   `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names.
    If the project uses a best-practices skill for its stack (a vendored one
    under `.agents/skills/`, or a plugin; `.ssdd/skills.json` lists what
    `/skills-audit` adopted), that skill IS the rules index for those files:
@@ -26,6 +27,11 @@ timeouts, fire-and-forget and tests are resilience's lane.
 3. Report `❌ <rule> — file:line — <fix>`, `⚠️` for judgment calls, `✅ <domain>`
    when clean. Do NOT edit. End with **`CLEAN`** or **`N ISSUE(S)`**; with an
    empty or unnamed input, answer `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.
 
 ## Default classes (when the project has no written rule yet)
 

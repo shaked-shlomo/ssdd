@@ -5,9 +5,9 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
 
 ## Wiring (after `bin/ssdd.mjs install <repo> cursor`)
 
-1. `.cursor/hooks.json` — seeded from [hooks.json](hooks.json): git-guard,
-   review-gate and prod-guard on `beforeShellExecution`, prod-guard on
-   `beforeMCPExecution` (all `failClosed`), convention-lint on
+1. `.cursor/hooks.json` — managed from [hooks.json](hooks.json) (`update`
+   merges it): git-guard and prod-guard on `beforeShellExecution`,
+   prod-guard on `beforeMCPExecution` (all `failClosed`), convention-lint on
    `afterFileEdit`, and the work-state view on `sessionStart` (as
    `additional_context`). Forum reports say Cursor often drops that context
    before it reaches the agent, so `ssdd.mdc` (always applied) also tells the
@@ -32,6 +32,10 @@ Wires the same `.ssdd/hooks/` scripts into Cursor's hook system. Cursor reads
   where Claude Code would ask, prod-guard returns `deny` with the same
   reason, and the owner runs the command in their own terminal. Recheck
   when Cursor's changelog says `ask` works, and switch it back.
+- **Warnings are best effort.** git-guard's warnings (bulk add, amend) go
+  out as `agent_message` on an allow, which Cursor documents only for a
+  deny; it may not show them. The review gate is the git pre-commit, so a
+  commit meets it whatever Cursor shows.
 - `beforeMCPExecution` sends `tool_input` as a JSON string and names the
   server in `mcp_server_name` / `url`; `stdin-payload.mjs` reads both.
 - Don't add `.cursor/skills/`: Cursor already reads `.agents/skills/`, and a

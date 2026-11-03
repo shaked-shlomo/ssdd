@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // SSDD review gate — makes the pre-commit reviewer pass DETERMINISTIC instead
-// of memory-dependent. On `git commit`, routes the STAGED diff to the reviewer
-// lenses it requires (routing table in .ssdd/config.json) and blocks until a
-// stamp attests that those reviewers ran against this exact diff.
+// of memory-dependent. Git's pre-commit runs `--pre-commit`, which routes the
+// STAGED diff to the reviewer lenses it requires (routing table in
+// .ssdd/config.json) and blocks until a stamp attests that those reviewers ran
+// against this exact diff. Git is the only gate: it runs on every `git commit`
+// whatever the harness, and judges the index it is committing.
 //
 // A stamp is per REVIEWER × per ROUTED FILE × that file's exact staged change.
 // The key is `srcMode:srcBlob→dstMode:dstBlob` from
-// `git diff --staged --raw`, so it names both sides of the diff: a re-stage
-// that changes nothing keeps the stamp, an edit, a deletion, a mode change or
-// a different base voids it — for THAT file, for every reviewer routed to it.
+// `git diff --staged --raw` (`--stamp` reads a scratch copy of the index after
+// `git add` of the changed routed paths), so it names both sides of the diff:
+// a re-stage that changes nothing keeps the stamp, an edit, a deletion, a mode
+// change or a different base voids it — for THAT file, for every reviewer routed to it.
 // Files that did not change keep their stamps, and a file no reviewer is
 // routed to (a ledger, a doc) never enters a key at all. (v1 keyed one hash to
 // the whole staged diff, so any edit anywhere voided every stamp; in the source
@@ -17,6 +20,15 @@
 // A stamp names the blob its reviewer saw, so when a file changes after its
 // stamp, the block message gives `git diff <stamped blob> <staged blob>`: the
 // re-review reads that change, and the new stamp lands on the new blob.
+//
+// A change that is only comments (comment-only.mjs: blank lines, whole-line
+// `//` comments and trailing whitespace in the JS/TS family) carries a clean
+// stamp over: reviewer R's stamp on F still counts when its blob and the staged
+// one differ only so, HEAD's side and both modes are unchanged, the stamped blob
+// can still be read, and R's entry records no issues. The comment reviewer
+// (reviewGate.commentReviewer) never carries: it owes F with the delta, and
+// when it isn't routed to F nothing carries.
+// Computed per judgment, never written: the stamp keeps its old key.
 //
 // A merge of the default branch that stopped (a conflict, or --no-commit)
 // owes only what differs from git's own merge of the two sides: conflict
@@ -33,60 +45,67 @@
 //
 // Modes (same script, no deps, Node >= 22):
 //   --stamp <reviewer,…> [--files <path,…>] [--repo <path>]
-//                                   attest reviewers ran on the CURRENT staged
-//                                   change of every routed file they cover, or
-//                                   of the named files only (a delta round);
+//   --stamp <reviewer> --report <file|-> [--files …] [--repo …]
+//                                   attest reviewers ran on the CURRENT change
+//                                   of every routed file they cover, or of the
+//                                   named files only (a delta round). Keyed on
+//                                   the work tree, as `git add` would stage it,
+//                                   so it can run before `git add`; a file whose
+//                                   staged copy differs stays owed until added.
 //                                   --repo for a commit in another work tree
+//                                   (default: cwd, as --check; never the env).
+//                                   --report reads that reviewer's reply (a
+//                                   file, or - for stdin) and records its
+//                                   findings; a reply with no verdict line, or
+//                                   NO DIFF, is refused and nothing is stamped
 //   --check [--repo <path>]         what the index owes, on stdout, without
 //                                   committing: exit 1 when a commit would be
 //                                   blocked; writes nothing
-//   --pre-commit                    portable git pre-commit mode (any harness):
+//   --pre-commit                    the gate, run by git's pre-commit hook:
 //                                   judges the index git is committing (git's
 //                                   cwd, never the env); exit 1 if reviews owed
-//   (default: JSON on stdin)        harness hook mode (Claude PreToolUse or
-//                                   Cursor beforeShellExecution): intercepts
-//                                   `git commit`, exit 2 to block
-//
-// Harness mode runs BEFORE the command, so it reads the index as it is now.
-// It judges the repo the commit really targets — starting from the payload's
-// cwd, `cd <dir>` moves, `git -C <dir>` composes, `~` expands; `$VAR` / `$(…)`
-// or an unopenable repo fail CLOSED — and, when that repo has a config, refuses
-// the shapes whose committed content it can't see: staging chained before the
-// commit in one call (except a `git add` naming only unrouted files),
-// `commit -a/-i/-o`, and `commit <pathspec>`. Scripts
-// handed to a shell (`bash -c '…'`, `eval "…"`, `bash <<EOF`, `… | sh`) are
-// not unwrapped: the pre-commit layer is the backstop for them.
-//
-//   (stdin, SubagentStart / SubagentStop — Claude Code)
-//                                   completion stamps: a routed reviewer's start
-//                                   snapshots the staged keys of its files; its
-//                                   stop stamps the ones still unchanged, if its
-//                                   last lines carry a verdict (CLEAN / SECURE /
-//                                   N ISSUE(S) / N RISK(S)) and it ran on an
-//                                   allowed model (reviewGate.reviewerModels,
-//                                   e.g. ["opus>=5.5", "sonnet>=5.5"])
+//   (no mode)                       inert. A harness entry left in a project's
+//                                   settings by an older release still calls
+//                                   the script: exit 0, nothing printed — except
+//                                   {"permission":"allow"} for Cursor's
+//                                   beforeShellExecution, whose failClosed entry
+//                                   would otherwise block every shell call
 //
 // Stamp file: .git/ssdd-review-stamp.json (inside .git — never an untracked file).
 //   { "version": 2, "reviewers": { "<name>": { "<path>": { "key", "at",
-//     ["by": "hook", "verdict", "issues", "model"] } } } }
-// reviewGate.stamping: "manual" (default) | "hooks" — in hooks mode only
-// completion stamps count for the agent: git-guard denies `--stamp` and writes
-// to .git/ssdd-review-*, and the block message says to dispatch reviewers.
+//     "round", ["review"] } } },
+//     "reviews": { "r<n>": { "reviewer", "at", "verdict", "issues",
+//       "files": { "<path>": "<key>" }, "findings": { "F<n>": { "kind",
+//       "path", "line", "text", ["outcome", "by"] } } } }, "next" }
+// Findings (spec v3.5) are work state, not a record: a review is current while
+// one of its files is still in the change with the HEAD side its key names,
+// so a commit or a rebase makes it stale. Only the gate sets an outcome:
+// `fixed` (a later review of the same reviewer said `✅ [F<n>] fixed`) or
+// `pre-existing` (tagged so, on no line the change adds); the author's triage
+// is the ledger's. An open finding is a ❌ with no outcome; a ⚠️ is noted, never
+// open. A round is a stamp of R on F, on the same HEAD side, while R had an
+// open ❌: at reviewGate.maxRounds (default 3) the block message warns.
+// New fields only, so the file stays version 2 and an older gate keeps them.
 // Bypass: SSDD_REVIEW_SKIP=1 — emergencies only, requires the USER's explicit
 // go-ahead in chat (never self-authorized).
-import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { basename, dirname, join, isAbsolute, relative, sep } from 'node:path';
-import { homedir } from 'node:os';
-import { parseModel } from './model-id.mjs';
-import { resolve } from 'node:path';
-import { hookCommand, hookHarness, hookPermissionBody, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
-import { commandStart, gitInvocation, isCommit, skeleton, splitCommands } from './git-cmd.mjs';
+import { isUtf8 } from 'node:buffer';
+import { extname, join, isAbsolute, resolve } from 'node:path';
+import { hookPermissionBody, parseHookStdin } from './stdin-payload.mjs';
 import { loadSsddConfig } from './ssdd-config.mjs';
+import { COMMENT_EXTS, commentOnly } from './comment-only.mjs';
+import { parseReport, sameFinding } from './review-report.mjs';
+import { addedLines } from './added-lines.mjs';
 
-let repo = resolveHookRepo(null);
-const git = (...args) =>
-  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// Every mode judges git's cwd (or --repo), never CLAUDE_PROJECT_DIR /
+// SSDD_PROJECT_DIR: a stamp lands where the commit that reads it runs.
+let repo = process.cwd();
+const gitIn = (opts, ...args) =>
+  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
+const git = (...args) => gitIn({}, ...args);
+// Run against another index file (the --stamp scratch index) when one is given.
+const onIndex = (indexFile) => (indexFile ? { env: { ...process.env, GIT_INDEX_FILE: indexFile } } : {});
 
 // The config the commit is judged by: the working-tree one (ssdd-config.mjs).
 // null → not an SSDD repo, gate disarmed. A broken config comes back with
@@ -96,16 +115,14 @@ const brokenMessage = (error) =>
   `[ssdd-review-gate] ${error}\n` +
   "The gate fails closed on a config it can't use. Fix .ssdd/config.json and retry.\n";
 // [[reviewer, matches(path)]]. A path routes to a reviewer when it matches one
-// of the route's `paths` and neither the route's `exclude` nor the global
-// `reviewGate.exclude` (e.g. a test-file filter no new route can forget).
-// Routes naming the same reviewer merge.
+// of the route's `paths` and not the route's `exclude`. Routes naming the same
+// reviewer merge.
 const rx = (list) => (list ?? []).map((p) => new RegExp(p));
 const routes = (cfg) => {
-  const global = rx(cfg?.reviewGate?.exclude);
   const byName = new Map();
   for (const { reviewer, paths, exclude } of cfg?.routing ?? []) {
     const inc = rx(paths);
-    const exc = [...global, ...rx(exclude)];
+    const exc = rx(exclude);
     const one = (f) => inc.some((re) => re.test(f)) && !exc.some((re) => re.test(f));
     const prev = byName.get(reviewer);
     byName.set(reviewer, prev ? (f) => prev(f) || one(f) : one);
@@ -118,11 +135,12 @@ const stampPath = () => {
   return join(isAbsolute(dir) ? dir : join(repo, dir), 'ssdd-review-stamp.json');
 };
 
-// Map<path, key> over the staged diff, one git call. `--raw -z` emits
+// Map<path, key> over the staged diff of an index (the real one, or the
+// --stamp scratch copy), one git call. `--raw -z` emits
 // `:srcMode dstMode srcBlob dstBlob status\0path\0` per file; NUL-delimited so
 // a path with a space round-trips. `--no-renames` so a rename is D + A.
-const stagedChanges = () => {
-  const parts = git('diff', '--staged', '--raw', '--no-renames', '--abbrev=40', '-z').split('\0');
+const indexChanges = (indexFile) => {
+  const parts = gitIn(onIndex(indexFile), 'diff', '--staged', '--raw', '--no-renames', '--abbrev=40', '-z').split('\0');
   const out = new Map();
   for (let i = 0; i + 1 < parts.length; i += 2) {
     const m = /^:(\S+) (\S+) (\S+) (\S+) \S+$/.exec(parts[i]);
@@ -150,7 +168,7 @@ function onDefaultBranch(oid) {
     : ['refs/heads/main', 'refs/heads/master'];
   return refs.some((ref) => quiet('merge-base', '--is-ancestor', oid, ref).status === 0);
 }
-function mergeClean(staged) {
+function mergeClean(changes, indexFile) {
   let heads;
   try {
     const file = git('rev-parse', '--git-path', 'MERGE_HEAD').trim();
@@ -162,16 +180,84 @@ function mergeClean(staged) {
   const tree = String(r.stdout ?? '').split('\n')[0].trim();
   if ((r.status !== 0 && r.status !== 1) || !OID.test(tree)) return null; // 1 = conflicts, still a tree
   let differ;
-  try { differ = new Set(git('diff', '--cached', '--name-only', '--no-renames', '-z', tree).split('\0')); } catch { return null; }
-  return { head: heads[0], paths: new Set([...staged.keys()].filter((p) => !differ.has(p))) };
+  try { differ = new Set(gitIn(onIndex(indexFile), 'diff', '--cached', '--name-only', '--no-renames', '-z', tree).split('\0')); } catch { return null; }
+  return { head: heads[0], paths: new Set([...changes.keys()].filter((p) => !differ.has(p))) };
 }
 // The staged changes that can owe a review: the staged diff minus a stopped
 // merge's clean paths. Everything that decides what's owed reads this.
 function stagedOwed() {
-  const staged = stagedChanges();
+  const staged = indexChanges();
   const merged = mergeClean(staged);
   if (merged) for (const p of merged.paths) staged.delete(p);
   return { staged, merged };
+}
+// What `git add` would stage, for the routed paths that changed: the keys
+// --stamp attests, so a reviewer can stamp before `git add` and the commit
+// finds the same keys. git computes them (eol and clean filters, the exec bit
+// and core.fileMode, symlinks, deletions) in a scratch copy of the index, which
+// is removed whatever happens; the real index is never touched. The scratch
+// `add` writes the blobs too, so deltaFor can find them later. A git failure
+// there prints git's own message and one line of ours, and exits 1: no stack.
+// → { changes: Map<path, key>, merged }, merge-clean paths already out.
+function workTreeChanges(cfg) {
+  const matches = routes(cfg).map(([, m]) => m);
+  // Reads only. `git diff HEAD` refreshes (rewrites and locks) the real index
+  // when tracked files are merely stat-dirty, even with --no-optional-locks;
+  // `diff-index` never does. Unrefreshed, it also lists stat-dirty files whose
+  // content is unchanged: harmless extras, the scratch add finds nothing in them.
+  const list = (...args) => git('--no-optional-locks', ...args).split('\0').filter(Boolean);
+  const unborn = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'], { stdio: 'ignore' }).status !== 0;
+  // The staged paths always join the list: a staged change whose work tree was
+  // put back (or deleted) is absent from `git diff HEAD`, and its staged blob
+  // must not reach the keys. The scratch `add -A` replaces it with the work tree's.
+  const changed = [
+    ...list('diff', '--cached', '--name-only', '--no-renames', '-z'),
+    ...(unborn ? list('ls-files', '-z') : list('diff-index', '--name-only', '--no-renames', '-z', 'HEAD')),
+  ];
+  const untracked = list('ls-files', '--others', '--exclude-standard', '-z');
+  const paths = [...new Set([...changed, ...untracked])].filter((p) => matches.some((m) => m(p)));
+  const gitDir = git('rev-parse', '--absolute-git-dir').trim();
+  const tmp = join(gitDir, `ssdd-stamp-index-${process.pid}`);
+  let failed = false;
+  try {
+    rmSync(tmp, { force: true }); // a copy left by a dead run under a reused pid is never read
+    const real = git('rev-parse', '--git-path', 'index').trim();
+    const realIndex = isAbsolute(real) ? real : join(repo, real);
+    if (existsSync(realIndex)) {
+      copyFileSync(realIndex, tmp);
+      // The copy keeps the real index's own times. A newer copy would make git
+      // trust a stat-matching entry, so an edit made in the same instant as the
+      // stage (same size, same mtime) would keep its stale blob; with the real
+      // index's mtime, git's racy-entry check decides exactly as it does there.
+      const st = statSync(realIndex);
+      utimesSync(tmp, st.atime, st.mtime);
+    }
+    // `add` of a path in neither the index nor the non-ignored work tree is
+    // fatal: a staged `git rm`, `git mv`'s old name, `rm --cached` of a file
+    // now ignored, a case-only rename's old spelling. The copied index already
+    // records each one's deletion, so only the rest go to `add`.
+    const known = new Set([...gitIn(onIndex(tmp), 'ls-files', '-z').split('\0'), ...untracked]);
+    const adds = paths.filter((p) => known.has(p));
+    if (adds.length) {
+      // Literal pathspecs: the paths on stdin are names, not globs or `:` magic.
+      const env = { ...onIndex(tmp).env, GIT_LITERAL_PATHSPECS: '1' };
+      gitIn({ env, input: adds.join('\0') + '\0' }, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul');
+    }
+    const changes = indexChanges(tmp);
+    const merged = mergeClean(changes, tmp);
+    if (merged) for (const p of merged.paths) changes.delete(p);
+    return { changes, merged };
+  } catch (e) {
+    // git's stderr already passed through (the message repeats it after its
+    // first line); name the step, not the stack.
+    const what = e?.status === undefined ? String(e?.message ?? e)
+      : `${String(e.message).split('\n')[0].replace(/^Command failed: /, '').replace(`git -C ${repo} `, 'git ')} failed`;
+    process.stderr.write(`[ssdd-review-gate] --stamp: ${what} on a scratch copy of the index — nothing stamped, the index untouched\n`);
+    failed = true;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+  if (failed) process.exit(1); // after `finally`: exit inside `try` would skip it
 }
 
 const readStamp = () => {
@@ -182,12 +268,8 @@ const readStamp = () => {
   return { version: 2, reviewers: {} }; // a version-1 (whole-diff hash) file reads as no stamps
 };
 
-const gitDir = () => {
-  const dir = git('rev-parse', '--git-dir').trim();
-  return isAbsolute(dir) ? dir : join(repo, dir);
-};
-// Read-modify-write of the stamp file under a short lock: parallel reviewers
-// finishing together must not drop each other's stamps.
+// Read-modify-write of the stamp file under a short lock: parallel `--stamp`
+// runs must not drop each other's stamps.
 function updateStamp(mutate) {
   const lock = `${stampPath()}.lock`;
   const deadline = Date.now() + 5000;
@@ -205,27 +287,88 @@ function updateStamp(mutate) {
     try { rmdirSync(lock); } catch { /* already gone */ }
   }
 }
-const stampingMode = (cfg) => (cfg?.reviewGate?.stamping === 'hooks' ? 'hooks' : 'manual');
 
-// Reviewers flagged issues on files that are about to be committed unchanged:
-// allowed (fix-or-triage), but worth a line so triage isn't silent.
-function triageNote(cfg) {
-  const { staged } = stagedOwed();
-  const stamp = readStamp();
-  const lines = [];
-  for (const [name, files] of reviewerFiles(cfg, staged)) {
-    const flagged = files.filter((f) => {
-      const e = stamp.reviewers[name]?.[f];
-      return e?.key === staged.get(f) && e.issues > 0;
-    });
-    if (flagged.length) {
-      const n = stamp.reviewers[name][flagged[0]].issues;
-      lines.push(`  • ${name} reported ${n} finding(s) on ${flagged.join(', ')} — unchanged since`);
+// ── findings (spec v3.5) ────────────────────────────────────────────────────
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const headSide = (key) => { const m = KEY.exec(String(key)); return m ? `${m[1]}:${m[2]}` : null; };
+const fnum = (id) => Number(String(id).slice(1)) || 0;
+// The reviews still current against a change (Map<path, key>): one of their
+// files is in it with the HEAD side the review's key names.
+function currentReviews(stamp, change) {
+  const out = [];
+  for (const [id, r] of Object.entries(isObj(stamp.reviews) ? stamp.reviews : {})) {
+    if (!isObj(r) || !isObj(r.files)) continue;
+    if (Object.entries(r.files).some(([p, k]) => change.has(p) && headSide(k) && headSide(change.get(p)) === headSide(k))) out.push([id, r]);
+  }
+  return out;
+}
+// The findings of the current reviews: open (a ❌ with no outcome) and noted
+// (a ⚠️), each { id, reviewer, kind, path, line, text }, by ID. A hand-edited
+// entry that isn't one is skipped, never thrown on.
+function findingsOf(stamp, change) {
+  const open = [];
+  const noted = [];
+  for (const [, r] of currentReviews(stamp, change)) {
+    for (const [id, f] of Object.entries(isObj(r.findings) ? r.findings : {})) {
+      if (!isObj(f) || f.outcome || !/^F\d+$/.test(id)) continue;
+      const one = { id, reviewer: String(r.reviewer), kind: f.kind === '❌' ? '❌' : '⚠️', path: typeof f.path === 'string' ? f.path : null, line: Array.isArray(f.line) ? f.line : null, text: String(f.text ?? '') };
+      (one.kind === '❌' ? open : noted).push(one);
     }
   }
-  return lines.length
-    ? `[ssdd-review-gate] committing files reviewers flagged; make sure each finding was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
-    : '';
+  const byId = (a, b) => fnum(a.id) - fnum(b.id);
+  return { open: open.sort(byId), noted: noted.sort(byId) };
+}
+const placeOf = (f) => {
+  if (!f.path) return '(no place cited)';
+  const [a, b] = (f.line ?? []).map(Number);
+  return Number.isInteger(a) ? `${f.path}:${a}${Number.isInteger(b) && b !== a ? `-${b}` : ''}` : f.path;
+};
+const DEFAULT_MAX_ROUNDS = 3;
+const maxRounds = (cfg) => {
+  const n = cfg?.reviewGate?.maxRounds;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_MAX_ROUNDS;
+};
+// The lines a stamped change adds to a path: 'new' when the path is new in
+// it (every line added); a Set of new-side line numbers; or null when git
+// can't say. The key's blobs are in the store: the stamp's scratch `add`
+// wrote the work-tree one.
+function addedFor(key) {
+  const m = KEY.exec(String(key));
+  if (!m) return null;
+  if (zero(m[2])) return 'new';
+  if (zero(m[4])) return new Set();
+  try {
+    const diff = git('diff', '-U0', '--no-color', '--no-ext-diff', m[2], m[4]);
+    const [lines = []] = [...addedLines(diff).values()];
+    return new Set(lines.map(([n]) => n));
+  } catch { return null; }
+}
+// The same for a path outside the routed change (a finding may cite any
+// file): the work tree against HEAD. Unchanged → an empty Set; untracked → 'new'.
+function addedVsHead(path) {
+  try {
+    if (spawnSync('git', ['-C', repo, 'cat-file', '-e', `HEAD:${path}`], { stdio: 'ignore' }).status !== 0) {
+      return existsSync(join(repo, path)) ? 'new' : new Set();
+    }
+    const diff = git('-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', 'HEAD', '--', path);
+    const [lines = []] = [...addedLines(diff).values()];
+    return new Set(lines.map(([n]) => n));
+  } catch { return null; }
+}
+
+// Open findings, and stamps that carried, on what's about to be committed:
+// allowed (fix-or-triage), but worth a line so triage isn't silent.
+function triageNote(cfg, { carried }) {
+  const byPath = new Map();
+  for (const { name, path } of carried) byPath.set(path, [...(byPath.get(path) ?? []), name]);
+  const carry = [...byPath].map(([path, names]) =>
+    `[ssdd-review-gate] carried over a comment-only change: ${names.join(', ')} on ${path}\n`).join('');
+  const { staged } = stagedOwed();
+  const { open } = findingsOf(readStamp(), staged);
+  const lines = open.map((f) => `  • [${f.id}] ${f.reviewer} — ${placeOf(f)} — ${f.text}`);
+  return carry + (lines.length
+    ? `[ssdd-review-gate] committing with open findings; make sure each was fixed elsewhere or triaged in the ledger:\n${lines.join('\n')}\n`
+    : '');
 }
 
 // [[reviewer, routedStagedPaths]] for every reviewer with at least one staged file.
@@ -235,27 +378,40 @@ const reviewerFiles = (cfg, staged) =>
     .filter(([, files]) => files.length);
 
 // The staged diff, judged: per reviewer with an unmet stamp, the routed staged
-// files it still owes (with the key it last stamped, if any); the unrouted
-// staged paths, for context; and the oversize warning if one is due.
+// files it still owes (with the key it last stamped, if any); the stamps that
+// carried over a comment-only change; the unrouted staged paths, for context;
+// and the oversize warning if one is due. An owing reviewer also gets its open
+// and noted findings, and the round warning when one is due.
 function judge(cfg) {
   const { staged, merged } = stagedOwed();
   const stamp = readStamp();
+  const { open, noted } = findingsOf(stamp, staged);
+  const carries = carrier(cfg, new Set(open.map((f) => `${f.reviewer}\0${f.path}`)));
+  const max = maxRounds(cfg);
   const owed = [];
+  const carried = [];
   const routed = new Set();
   for (const [name, files] of reviewerFiles(cfg, staged)) {
     files.forEach((f) => routed.add(f));
     const mine = stamp.reviewers[name] ?? {};
-    const missing = files
-      .filter((f) => mine[f]?.key !== staged.get(f))
-      .map((f) => {
-        const prev = mine[f]?.key ?? null;
-        return { path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) };
+    const missing = [];
+    for (const f of files.filter((f) => mine[f]?.key !== staged.get(f))) {
+      if (carries(name, f, mine[f], staged.get(f))) { carried.push({ name, path: f }); continue; }
+      const prev = mine[f]?.key ?? null;
+      missing.push({ path: f, prev, now: staged.get(f), delta: prev === null ? null : deltaFor(prev, staged.get(f)) });
+    }
+    if (missing.length) {
+      const mineOpen = open.filter((f) => f.reviewer === name);
+      const round = Math.max(0, ...missing.map(({ path }) => (Number.isInteger(mine[path]?.round) ? mine[path].round : 0)));
+      owed.push({
+        name, files, missing, open: mineOpen, noted: noted.filter((f) => f.reviewer === name),
+        rounds: mineOpen.length && round >= max ? { round, max } : null,
       });
-    if (missing.length) owed.push({ name, files, missing, refused: stamp.refused?.[name]?.reason });
+    }
   }
   const unrouted = [...staged.keys()].filter((f) => !routed.has(f)).sort();
   return {
-    owed, unrouted, warning: oversizeWarning(cfg, routed.size),
+    owed, carried, unrouted, warning: oversizeWarning(cfg, routed.size),
     merged: merged?.paths.size ? { head: merged.head, count: merged.paths.size } : null,
   };
 }
@@ -267,15 +423,59 @@ function judge(cfg) {
 // the block message. The base moved when HEAD's side changed to something
 // other than the reviewed content (a rebase, not a commit of the stamped change).
 const KEY = /^(\d+):([0-9a-f]+)→(\d+):([0-9a-f]+)$/;
+const zero = (b) => /^0+$/.test(b); // no blob: an added file's old side, a deletion's new one
 function deltaFor(prev, now) {
   const p = KEY.exec(String(prev));
   const n = KEY.exec(String(now));
-  const zero = (b) => /^0+$/.test(b);
   if (!p || !n || zero(p[4]) || zero(n[4]) || p[4] === n[4]) return null;
   try {
     execFileSync('git', ['-C', repo, 'cat-file', '-e', p[4]], { stdio: 'ignore' });
   } catch { return 'gone'; }
   return { cmd: `git diff ${p[4]} ${n[4]}`, baseMoved: p[2] !== n[2] && n[2] !== p[4] };
+}
+
+// v3.4 Decision 3, for one judgment: → (name, path, entry, nowKey) → whether that
+// reviewer's stamp entry carries over a comment-only change to the staged key.
+// Only when the comment reviewer is routed to the path and isn't `name`; the
+// path is a COMMENT_EXTS file (checked first, so no other file reads a blob);
+// the entry's issues are none or 0 (a hand-edited "2" isn't); `name` has no
+// open ❌ citing the path (`openOn`, "<name>\0<path>": the reviewer that flagged
+// something there re-reviews it, spec v3.5); both keys parse,
+// with HEAD's side (mode and blob) and the new mode unchanged, a regular file
+// on the new side (a symlink's blob is its target; a gitlink has none) and a
+// blob on both new sides (a deletion never carries); both blobs read (a pruned
+// one fails the read) and are UTF-8; and commentOnly says so. Each blob is
+// read once per judgment. Any doubt or git failure is false, never a throw:
+// the gate must not turn one into an allow.
+function carrier(cfg, openOn = new Set()) {
+  const cr = cfg?.reviewGate?.commentReviewer;
+  const crRoutes = routes(cfg).find(([n]) => n === cr)?.[1];
+  const texts = new Map(); // blob id → its UTF-8 text | null
+  const text = (id) => {
+    if (!texts.has(id)) {
+      let t = null;
+      try {
+        const buf = execFileSync('git', ['-C', repo, 'cat-file', 'blob', id], { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+        if (isUtf8(buf)) t = buf.toString('utf8');
+      } catch { /* pruned, or not a blob */ }
+      texts.set(id, t);
+    }
+    return texts.get(id);
+  };
+  return (name, path, entry, now) => {
+    try {
+      if (!crRoutes || name === cr || !crRoutes(path) || !COMMENT_EXTS.has(extname(path))) return false;
+      if (entry?.issues !== undefined && entry.issues !== 0) return false;
+      if (openOn.has(`${name}\0${path}`)) return false;
+      const p = KEY.exec(String(entry?.key));
+      const n = KEY.exec(String(now));
+      if (!p || !n || p[1] !== n[1] || p[2] !== n[2] || p[3] !== n[3] || !/^100(644|755)$/.test(n[3])) return false;
+      if (zero(p[4]) || zero(n[4])) return false;
+      const was = text(p[4]);
+      const is = text(n[4]);
+      return was !== null && is !== null && commentOnly(was, is, path);
+    } catch { return false; }
+  };
 }
 
 // Not a block: SDD.md §4 is per task — implement → review gate → commit — and a
@@ -297,22 +497,26 @@ function oversizeWarning(cfg, routedCount) {
 
 // `abc1234→def5678`; the modes are shown only when they are the whole change.
 // Total: a key this gate did not write (a hand-edited stamp file) is echoed as
-// is, so the block message can never throw — a throw here would exit 1, which
-// the PreToolUse harness reads as non-blocking, i.e. the gate would fail open.
+// is, so the block message can never throw. A throw would still block the
+// commit (the pre-commit exits non-zero), but as a Node stack in place of the
+// list of what's owed and the --stamp line that clears it.
 const short = (key) => {
   const m = /^(\d+):([0-9a-f]+)→(\d+):([0-9a-f]+)$/.exec(String(key));
   if (!m) return String(key);
   const [, sm, sb, dm, db] = m;
   return sb === db ? `${sm}:${sb.slice(0, 7)}→${dm}:${db.slice(0, 7)}` : `${sb.slice(0, 7)}→${db.slice(0, 7)}`;
 };
+// One shell word, for a path pasted from the block message: single quotes, a
+// `'` inside as `'\''`, so a space or a quote in the repo path survives.
+const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 const CHECK_LINE = 'To see what\'s owed without committing: node .ssdd/hooks/review-gate.mjs --check\n';
 const mergeLine = (merged) =>
   `  merge: ${merged.count} staged path(s) match git's own merge with ${merged.head.slice(0, 7)} — owed by no one`;
-function blockMessage({ owed, unrouted, warning, merged }, repoHint = '', mode = 'manual') {
+const findingLine = (f) => `      [${f.id}] ${f.kind} ${placeOf(f)} — ${f.text}`;
+function blockMessage({ owed, unrouted, warning, merged }, repoHint = '') {
   const lines = [];
-  for (const { name, files, missing, refused } of owed) {
+  for (const { name, files, missing, open = [], noted = [], rounds } of owed) {
     const never = missing.length === files.length && missing.every((m) => m.prev === null);
-    if (refused) lines.push(`  ! ${name}: ${refused}`);
     lines.push(
       never
         ? `  • ${name} — never stamped on this diff (${files.length} routed file(s)):`
@@ -327,35 +531,36 @@ function blockMessage({ owed, unrouted, warning, merged }, repoHint = '', mode =
       if (delta === 'gone') lines.push('        its stamped blob is gone: review the whole change');
       else if (delta) lines.push(`        review the change: ${delta.cmd}${delta.baseMoved ? ' (its base moved too)' : ''}`);
     }
+    if (open.length) {
+      lines.push('    open findings from its last reviews — answer each ✅ [<id>] fixed or ❌ [<id>] <why it\'s still open>; don\'t report them again:');
+      lines.push(...open.map(findingLine));
+    }
+    if (noted.length) {
+      lines.push('    already noted (⚠️), don\'t report again:');
+      lines.push(...noted.map(findingLine));
+    }
+    if (rounds) {
+      lines.push(
+        `    ! round ${rounds.round} of reviewGate.maxRounds (${rounds.max}) with findings still open: don't dispatch another round.\n` +
+        '      List the open findings to the user and ask whether to rethink the approach or triage them.',
+      );
+    }
   }
   if (unrouted.length) lines.push(`  also staged, routed to no reviewer: ${unrouted.join(', ')}`);
   if (merged) lines.push(mergeLine(merged));
-  if (mode === 'hooks') {
-    return (
-      warning +
-      `[ssdd-review-gate] the staged diff owes reviews:\n` +
-      lines.join('\n') +
-      `\nDispatch each owing reviewer with the Agent tool (subagent_type = its name), telling\n` +
-      `it the files it owes; for a file with a \`git diff\` line, that diff is its input.\n` +
-      `When it finishes with its verdict line, its completion stamps\n` +
-      `those files — a file edited during its review stays owed. Fix or triage findings,\n` +
-      `re-stage, and retry the commit. (reviewGate.stamping is "hooks": the agent can't run\n` +
-      `--stamp; a person in a terminal can.)\n` +
-      CHECK_LINE
-    );
-  }
   return (
     warning +
     `[ssdd-review-gate] the staged diff owes reviews:\n` +
     lines.join('\n') +
     `\nRun each reviewer checklist (.ssdd/reviewers/<name>.md) against the files it owes —\n` +
     `for a file with a \`git diff\` line, that diff is its input; dispatch them in\n` +
-    `parallel if your harness supports subagents — fix/triage findings,\n` +
-    `re-stage, then attest:\n` +
-    `  node .ssdd/hooks/review-gate.mjs --stamp ${owed.map(({ name }) => name).join(',')}${repoHint}\n` +
-    `(add --files <path,…> when a reviewer re-read only those files) and retry the\n` +
-    `commit. Stamp only AFTER the reviewers actually ran on those files — stamping\n` +
-    `blind defeats the gate.\n` +
+    `parallel if your harness supports subagents, handing each its open findings —\n` +
+    `fix/triage findings, save each reviewer's reply to a file outside the work tree\n` +
+    `(or pipe it with --report -), then attest each:\n` +
+    owed.map(({ name }) => `  node .ssdd/hooks/review-gate.mjs --stamp ${name} --report <its reply>${repoHint}\n`).join('') +
+    `(without --report a stamp records no findings; add --files <path,…> when a\n` +
+    `reviewer re-read only those files) and retry the commit. Stamp only AFTER the\n` +
+    `reviewers actually ran on those files — stamping blind defeats the gate.\n` +
     CHECK_LINE
   );
 }
@@ -368,16 +573,24 @@ if (process.argv[2] === '--stamp') {
   const only = filesAt > -1 ? csv(process.argv[filesAt + 1]) : null;
   const repoAt = process.argv.indexOf('--repo');
   if (repoAt > -1) repo = resolve(process.argv[repoAt + 1] ?? '.');
-  if (!names.length || (only && !only.length) || (repoAt > -1 && !process.argv[repoAt + 1])) {
-    console.error('usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]');
+  // --report goes with one reviewer: each reply is one reviewer's (Clarify 10).
+  const reportAt = process.argv.indexOf('--report');
+  const reportArg = reportAt > -1 ? process.argv[reportAt + 1] : null;
+  const badReport = reportAt > -1 && (!reportArg || (reportArg !== '-' && reportArg.startsWith('--')) || names.length !== 1);
+  if (!names.length || (only && !only.length) || (repoAt > -1 && !process.argv[repoAt + 1]) || badReport) {
+    console.error(
+      'usage: review-gate.mjs --stamp <reviewer,reviewer,…> [--files <path,path,…>] [--repo <path>]\n' +
+      '       review-gate.mjs --stamp <reviewer> --report <file|-> [--files …] [--repo …]   (one reviewer per report)',
+    );
     process.exit(1);
   }
   const loaded = loadConfig();
   if (!loaded) { console.error('[ssdd-review-gate] no .ssdd/config.json — nothing to stamp'); process.exit(1); }
   if (loaded.error) { process.stderr.write(brokenMessage(loaded.error)); process.exit(1); }
   const { cfg } = loaded;
-  const { staged, merged } = stagedOwed();
-  const table = new Map(reviewerFiles(cfg, staged));
+  repo = cfg.root; // paths below are top-level relative, whatever --repo named
+  const { changes, merged } = workTreeChanges(cfg);
+  const table = new Map(reviewerFiles(cfg, changes));
   const known = new Set(routes(cfg).map(([name]) => name));
   // Validate everything before writing anything: a refused name or file leaves
   // the stamp file untouched, so a typo can never half-attest a round.
@@ -392,7 +605,7 @@ if (process.argv[2] === '--stamp') {
     if (only) {
       const bad = only.filter((f) => !routed.includes(f));
       if (bad.length) {
-        // A merge-clean path is staged, but stagedOwed() took it out of the diff.
+        // A merge-clean path changed, but workTreeChanges() took it out of the diff.
         const clean = bad.filter((f) => merged?.paths.has(f));
         const rest = bad.filter((f) => !clean.includes(f));
         if (clean.length) {
@@ -404,9 +617,9 @@ if (process.argv[2] === '--stamp') {
         }
         if (rest.length) {
           console.error(
-            `[ssdd-review-gate] refused for ${n}: ${rest.join(', ')} — not staged, or not routed to ${n}.\n` +
-            `A reviewer can be stamped only on files in its part of the staged diff; paths are\n` +
-            `repo-relative, as \`git diff --staged --name-only\` prints them.`,
+            `[ssdd-review-gate] refused for ${n}: ${rest.join(', ')} — not changed, or not routed to ${n}.\n` +
+            `A reviewer can be stamped only on files in its part of the change (an ignored file\n` +
+            `is not one); paths are repo-relative, as \`git diff HEAD --name-only\` prints them.`,
           );
         }
         process.exit(1);
@@ -414,22 +627,106 @@ if (process.argv[2] === '--stamp') {
       files = only;
     }
     if (!files.length) {
-      console.error(`[ssdd-review-gate] refused: no staged file routes to ${n} — nothing to stamp (wrong reviewer?)`);
+      console.error(`[ssdd-review-gate] refused: no changed file routes to ${n} — nothing to stamp (wrong reviewer?)`);
       process.exit(1);
     }
     plan.push([n, files]);
   }
+  // The reviewer's reply, read and parsed before anything is written: a reply
+  // with no verdict, NO DIFF, or no text stamps nothing.
+  let parsed = null;
+  const notes = [];
+  if (reportAt > -1) {
+    let text;
+    try { text = readFileSync(reportArg === '-' ? 0 : resolve(process.cwd(), reportArg), 'utf8'); } catch (e) {
+      console.error(`[ssdd-review-gate] refused: can't read the report ${reportArg} (${e.code ?? e.message}) — nothing stamped`);
+      process.exit(1);
+    }
+    parsed = parseReport(text, { root: cfg.root });
+    if (parsed.error) {
+      console.error(`[ssdd-review-gate] refused: ${names[0]}'s report — ${parsed.error}; nothing stamped. Re-ask the reviewer for its verdict.`);
+      process.exit(1);
+    }
+    // [pre-existing] holds only off the lines the change adds (Decision 4).
+    for (const f of parsed.findings) {
+      if (f.tag !== 'pre-existing' || f.kind !== '❌' || !f.path || f.path.startsWith('/')) continue;
+      const added = changes.has(f.path) ? addedFor(changes.get(f.path)) : addedVsHead(f.path);
+      const [a, b] = f.line ?? [];
+      const hit = added === null || added === 'new' || (f.line && [...added].some((n) => n >= a && n <= b));
+      if (hit) {
+        f.tag = null;
+        notes.push(`[pre-existing] dropped: ${placeOf(f)} ${added === 'new' ? 'is in a new file' : added === null ? "couldn't be checked" : 'is a line this change adds'} — ${f.text}`);
+      }
+    }
+    const xs = parsed.findings.filter((f) => f.kind === '❌').length + parsed.answers.filter((x) => !x.fixed).length;
+    if (xs !== parsed.issues) {
+      notes.push(`the verdict says ${parsed.issues}; the report has ${xs} ❌ line(s) the gate could read — the re-review lists only those`);
+    }
+  }
   const warning = oversizeWarning(cfg, new Set([...table.values()].flat()).size);
   if (warning) process.stderr.write(warning);
   const at = new Date().toISOString();
+  const recorded = [];
   updateStamp((stamp) => {
+    // Stale reviews go; R's open ❌ when this stamp began decides its rounds.
+    const current = new Set(currentReviews(stamp, changes).map(([id]) => id));
+    if (isObj(stamp.reviews)) for (const id of Object.keys(stamp.reviews)) if (!current.has(id)) delete stamp.reviews[id];
+    const { open, noted } = findingsOf(stamp, changes);
+    let next = Number.isInteger(stamp.next) && stamp.next > 0 ? stamp.next : 1;
     for (const [n, files] of plan) {
       stamp.reviewers[n] ??= {};
-      for (const f of files) stamp.reviewers[n][f] = { key: staged.get(f), at };
+      const hadOpen = open.some((f) => f.reviewer === n);
+      let review;
+      if (parsed) {
+        review = `r${next++}`;
+        stamp.reviews = isObj(stamp.reviews) ? stamp.reviews : {};
+        const findings = {};
+        const where = (id) => currentReviews(stamp, changes).find(([, r]) => isObj(r.findings) && isObj(r.findings[id]));
+        for (const { id, fixed } of parsed.answers) {
+          const hit = where(id);
+          const f = hit?.[1].findings[id];
+          if (!f) { notes.push(`${id}: no current finding has that ID — ignored`); continue; }
+          if (hit[1].reviewer !== n) { notes.push(`${id} is ${hit[1].reviewer}'s finding, not ${n}'s — ignored`); continue; }
+          if (fixed && !f.outcome) { f.outcome = 'fixed'; f.by = review; recorded.push(`${id} fixed`); }
+          else if (!fixed && !f.outcome) recorded.push(`${id} ❌ still open`);
+        }
+        for (const f of parsed.findings) {
+          const same = [...open, ...noted].find((o) => o.reviewer === n && o.kind === f.kind && sameFinding(o.text, f.text));
+          if (same && !f.tag) { notes.push(`${same.id} repeated — kept open under its ID`); continue; }
+          const id = `F${next++}`;
+          findings[id] = { kind: f.kind, path: f.path, line: f.line, text: f.text, ...(f.tag ? { outcome: 'pre-existing' } : {}) };
+          recorded.push(`${id} ${f.kind} ${f.tag ? 'pre-existing' : f.kind === '❌' ? 'open' : 'noted'}`);
+        }
+        stamp.reviews[review] = {
+          reviewer: n, at, verdict: parsed.verdict, issues: parsed.issues,
+          files: Object.fromEntries(files.map((f) => [f, changes.get(f)])), findings,
+        };
+      }
+      for (const f of files) {
+        const prev = stamp.reviewers[n][f];
+        const same = isObj(prev) && headSide(prev.key) && headSide(prev.key) === headSide(changes.get(f));
+        const round = same && hadOpen ? (Number.isInteger(prev.round) && prev.round > 0 ? prev.round : 1) + 1 : 1;
+        stamp.reviewers[n][f] = { key: changes.get(f), at, round, ...(review ? { review } : {}) };
+      }
     }
+    stamp.next = next;
   });
+  // The stamp names the work-tree copy (what the reviewer read). A commit
+  // judges the index, so a path whose staged key differs stays owed until added.
+  const staged = indexChanges();
+  for (const f of new Set(plan.flatMap(([, files]) => files))) {
+    if (staged.get(f) !== changes.get(f)) {
+      console.error(`[ssdd-review-gate] ${f}: stamped the work-tree copy; the staged copy differs — git add it before committing`);
+    }
+  }
   for (const [n, files] of plan) {
     console.log(`[ssdd-review-gate] stamped ${n} on ${files.length} file(s): ${files.join(', ')}`);
+  }
+  if (parsed) {
+    console.log(`  findings: ${recorded.length ? recorded.join(', ') : 'none'}`);
+    for (const n of notes) console.log(`  note: ${n}`);
+  } else {
+    console.log('  no findings recorded (no --report): the next re-review of these files gets the delta only, not the open findings');
   }
   process.exit(0);
 }
@@ -453,12 +750,12 @@ if (process.argv[2] === '--check') {
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     process.stdout.write(
-      verdict.warning + triageNote(cfg) + '[ssdd-review-gate] nothing owed\n' +
+      verdict.warning + triageNote(cfg, verdict) + '[ssdd-review-gate] nothing owed\n' +
       (verdict.merged ? `${mergeLine(verdict.merged)}\n` : ''),
     );
     process.exit(0);
   }
-  process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${repo}` : '', stampingMode(cfg)));
+  process.stdout.write(blockMessage(verdict, repoAt > -1 ? ` --repo ${shq(repo)}` : ''));
   process.exit(1);
 }
 
@@ -479,391 +776,22 @@ if (process.argv[2] === '--pre-commit') {
   const verdict = judge(cfg);
   if (!verdict.owed.length) {
     if (verdict.warning) process.stderr.write(verdict.warning);
-    process.stderr.write(triageNote(cfg));
+    process.stderr.write(triageNote(cfg, verdict));
     process.exit(0);
   }
-  process.stderr.write(blockMessage(verdict, '', stampingMode(cfg)));
+  process.stderr.write(blockMessage(verdict, ` --repo ${shq(repo)}`));
   process.exit(1);
 }
 
-// ── default: harness stdin hook (Claude PreToolUse / Cursor beforeShell) ─────
-const payload = parseHookStdin(readFileSync(0, 'utf8'));
-if (payload?.hook_event_name === 'SubagentStart' || payload?.hook_event_name === 'SubagentStop') {
-  try { subagentHook(payload); } catch (e) {
-    process.stderr.write(`[ssdd-review-gate] completion stamp skipped: ${String(e?.message ?? e).split('\n')[0]}\n`);
-  }
-  process.exit(0); // observational: never blocks a subagent
+// ── no mode: inert (stale harness wiring) ────────────────────────────────────
+// Releases before 3.6 wired this script into the harness. A project that hasn't
+// edited its settings still calls it: allow, silently. Cursor's failClosed entry
+// needs a permission body on beforeShellExecution; SubagentStart (which
+// hookHarness also calls "cursor") and Claude Code's events print nothing.
+let raw = '';
+try { raw = readFileSync(0, 'utf8'); } catch { /* no stdin */ }
+const payload = parseHookStdin(raw);
+if (payload?.hook_event_name === 'beforeShellExecution') {
+  process.stdout.write(JSON.stringify(hookPermissionBody('allow')) + '\n');
 }
-const cmd = hookCommand(payload);
-
-// Cursor's failClosed needs a permission body every time. Claude Code acts on
-// the exit code, so a plain allow prints nothing, and an allow with a note
-// prints only the note (hookSpecificOutput).
-function finish(code, permission, extra = {}) {
-  if (hookHarness(payload) === 'cursor' || permission !== 'allow') {
-    process.stdout.write(JSON.stringify(hookPermissionBody(permission, extra)) + '\n');
-  } else if (extra.hookSpecificOutput) {
-    process.stdout.write(JSON.stringify({ hookSpecificOutput: extra.hookSpecificOutput }) + '\n');
-  }
-  process.exit(code);
-}
-function deny(msg, user = 'SSDD review gate: blocked — see the message.') {
-  process.stderr.write(msg);
-  finish(2, 'deny', { agentMessage: msg, userMessage: user });
-}
-
-// Quoted strings and heredoc bodies are blanked first, so a commit MESSAGE
-// that mentions "git commit" (or the bypass token) never triggers or
-// authorizes anything.
-const probe = skeleton(cmd);
-if (!isCommit(probe)) finish(0, 'allow');
-if (/\bSSDD_REVIEW_SKIP=1\b/.test(probe)) {
-  process.stderr.write('[ssdd-review-gate] bypassed via SSDD_REVIEW_SKIP=1 — allowed ONLY with the user\'s explicit go-ahead in chat.\n');
-  finish(0, 'allow');
-}
-
-// ── which repo does the commit target? ───────────────────────────────────────
-// Starting from the payload's cwd, `cd <dir>` moves, `git -C <dir>` composes,
-// `~` expands; `$VAR` / `$(…)` / `cd -` can't be read before the command runs.
-const commands = splitCommands(cmd); // in execution order
-const start = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.SSDD_PROJECT_DIR ||
-  payload?.workspace_roots?.[0] || process.cwd();
-const toplevel = (dir) => {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return null; }
-};
-const home = homedir();
-const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
-const unresolvable = (p) => /[$`]/.test(p) || p === '-';
-// Every git invocation with the directory it runs in. `bad` is the first `cd`,
-// or a commit's `-C`, that can't be read; a staging command's is its own reason.
-// Only a plain `cd <dir>` is followed (its redirections aside): `pushd`,
-// `popd`, and a `cd` with an option, more than one word, or a runner in front
-// (`builtin cd`) can't be. That matters only if a commit comes after it.
-// Every command is a step, in order; a git one carries its invocation.
-const unquotedRedirect = (words, i) => /^\d*[<>]/.test(words[i]) && !words.quoted?.[i];
-function withoutRedirects(words) {
-  const out = [];
-  for (let i = 0; i < words.length; i++) {
-    if (unquotedRedirect(words, i)) { if (/^\d*[<>]+&?$/.test(words[i])) i++; continue; }
-    out.push(words[i]);
-  }
-  return out;
-}
-function walk(from) {
-  let cwd = from;
-  let bad = null;
-  let lost = null; // a directory change that can't be followed, until a commit makes it matter
-  const steps = [];
-  for (const all of commands) {
-    const words = withoutRedirects(all);
-    const at = commandStart(words);
-    const head = (words[at] ?? '').split('/').pop();
-    if (head === 'pushd' || head === 'popd' ||
-      (head === 'cd' && (at > 0 || words.length > 2 || /^-./.test(words[1] ?? '')))) {
-      lost ??= words.join(' ');
-      steps.push({ name: head });
-      continue;
-    }
-    if (head === 'cd') {
-      const to = words[1] ?? '~';
-      if (unresolvable(to)) bad ??= `cd ${to}`;
-      cwd = resolve(cwd, expand(to));
-      steps.push({ name: 'cd' });
-      continue;
-    }
-    const inv = gitInvocation(all);
-    if (!inv) { steps.push({ name: head }); continue; }
-    const badC = inv.dashC.find(unresolvable);
-    if (inv.sub === 'commit') {
-      if (badC !== undefined) bad ??= `git -C ${badC}`;
-      if (lost) bad ??= lost;
-    }
-    steps.push({ name: `git ${inv.sub}`, inv, words: all, dir: inv.dashC.reduce((dir, p) => resolve(dir, expand(p)), cwd), badC: badC ?? (lost ? lost : undefined) });
-  }
-  return { steps, bad, cwd };
-}
-const { steps, bad, cwd } = walk(start);
-{
-  const targets = steps.filter((s) => s.inv?.sub === 'commit').map((s) => s.dir);
-  const roots = [...new Set((targets.length ? targets : [cwd]).map(toplevel))];
-  if (!bad && roots.length > 1 && !roots.includes(null)) {
-    deny(`[ssdd-review-gate] one call commits to ${roots.length} repos (${roots.join(', ')}) — commit to one repo per call.\n`);
-  }
-  const root = bad || roots.includes(null) ? null : roots[0];
-  if (!root) {
-    deny(
-      `[ssdd-review-gate] cannot resolve the repo this commit targets (${bad ?? targets[0] ?? cwd}) — use a literal\n` +
-      'path in `cd …` / `git -C …` (no `$VAR`, no `$(…)`, no `cd -`), then retry.\n',
-    );
-  }
-  repo = root;
-}
-// `--stamp` defaults to the env's project dir or its own cwd; name the repo
-// whenever the commit targets anything else (a worktree, a `cd` elsewhere).
-const defaults = [start, process.env.CLAUDE_PROJECT_DIR, process.env.SSDD_PROJECT_DIR].filter(Boolean).map(toplevel);
-const repoHint = defaults.every((r) => r === repo) ? '' : ` --repo ${repo}`;
-
-// Shapes are judged only in an SSDD repo: a scratch repo passes them all.
-const loaded = loadConfig();
-if (!loaded) finish(0, 'allow'); // no .ssdd/config.json in that repo → not an SSDD repo
-if (loaded.error) deny(brokenMessage(loaded.error), "SSDD review gate: .ssdd/config.json can't be used.");
-const { cfg } = loaded;
-
-// ── commits whose content this hook can't see are refused ────────────────────
-// Harness mode runs BEFORE the command, so it reads the index as it is now.
-// Staging chained before a commit is refused, except a visible `git add`: it
-// names files (no option but -f / -v, no directory, glob, pathspec magic or
-// expansion), inside this repo, and none is routed. Those can't change what
-// the commit owes, so the index judged now owes what the commit will. Each
-// file exists now, or is a tracked file being deleted. No other git command
-// may run before the commit but git reads (status, diff, log, show,
-// rev-parse, ls-files), since one could change the index, and none of it in
-// a subshell, whose `cd` can't be followed. (Other programs are free to run:
-// git called from a program is the accepted limit the pre-commit layer
-// backs.) A word is a redirection only where the command has it unquoted.
-const BESIDE_ADD = new Set(['git add', 'git status', 'git diff', 'git log', 'git show', 'git rev-parse', 'git ls-files']);
-const STAGING = new Set(['add', 'rm', 'mv', 'restore', 'update-index']);
-function chainedAddReason({ inv: { args }, words, dir, badC }) {
-  if (badC !== undefined) return `where it runs (\`${badC}\`) can't be read before it runs`;
-  let rootReal;
-  try { rootReal = realpathSync.native(repo); } catch { rootReal = repo; }
-  const routeOf = (rel) => routes(cfg).find(([, matches]) => matches(rel))?.[0];
-  const offset = words.length - args.length;
-  const redirect = (i) => /^\d*[<>]/.test(args[i]) && !words.quoted?.[offset + i]; // `'2>'` is a file name
-  let options = true;
-  for (let i = 0; i < args.length; i++) {
-    const w = args[i];
-    if (redirect(i) && /^\d*[<>]+&?$/.test(w)) { i++; continue; } // bare redirection: skip its target
-    if (redirect(i)) continue;                                     // attached redirection
-    if (options && w === '--') { options = false; continue; }
-    if (options && w.startsWith('-')) {
-      if (!/^(?:-f|--force|-v|--verbose)$/.test(w)) return `\`${w}\``;
-      continue;
-    }
-    if (/[$`]/.test(w)) return `\`${w}\` can't be read before it runs`;
-    if (/[*?[]/.test(w)) return `a glob \`${w}\``;
-    if (w.startsWith(':')) return `pathspec magic \`${w}\``;
-    const abs = resolve(dir, expand(w));
-    let real; // its spelling on disk: on a case-insensitive disk SRC/a.ts is src/a.ts
-    try { real = realpathSync.native(abs); } catch {
-      try { real = join(realpathSync.native(dirname(abs)), basename(abs)); } catch { real = abs; }
-    }
-    const rel = relative(rootReal, real);
-    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return `\`${w}\` is outside the repo`;
-    const posixRel = rel.split(sep).join('/');
-    const reviewer = routeOf(posixRel);
-    if (reviewer) return `\`${w}\`, routed to ${reviewer}`;
-    let exists = true;
-    try { lstatSync(abs); } catch { exists = false; }
-    if (!exists) {
-      let tracked = '';
-      try { tracked = git('ls-files', '-z', '--', `:(literal)${posixRel}`); } catch { /* none */ }
-      if (tracked !== `${posixRel}\0`) return `\`${w}\` doesn't exist yet`;
-    }
-    let isDir = rel === '';
-    try { isDir ||= statSync(real).isDirectory(); } catch { /* a deletion */ }
-    if (isDir) return `a directory \`${w}\``;
-  }
-  return '';
-}
-{
-  let lastCommit = -1;
-  steps.forEach((s, i) => { if (s.inv?.sub === 'commit') lastCommit = i; });
-  const before = steps.slice(0, lastCommit);
-  for (const { inv } of before) {
-    if (inv && STAGING.has(inv.sub) && inv.sub !== 'add') {
-      deny(
-        `[ssdd-review-gate] \`git ${inv.sub}\` chained before \`git commit\` in ONE call — the gate reads\n` +
-        'the index BEFORE the command runs, so it cannot see what that stages. Stage first,\n' +
-        'then stamp and commit in SEPARATE calls.\n',
-      );
-    }
-  }
-  const adds = before.filter((s) => s.inv?.sub === 'add');
-  const other = before.find((s) => s.inv && !BESIDE_ADD.has(s.name));
-  for (const add of adds) {
-    const why = /[()]/.test(probe) ? 'a subshell can\'t be followed'
-      : other ? `\`${other.name}\` runs in the same call, and may change what it stages`
-      : chainedAddReason(add);
-    if (why) {
-      deny(
-        `[ssdd-review-gate] \`git add\` chained before \`git commit\` in ONE call: ${why}. The gate\n` +
-        'reads the index BEFORE the command runs, so it cannot see what that stages. A chained\n' +
-        'add passes only when it names files no reviewer is routed to; otherwise stage first,\n' +
-        'then stamp and commit in SEPARATE calls.\n',
-      );
-    }
-  }
-}
-for (const { inv } of steps.filter((s) => s.inv?.sub === 'commit')) {
-  const toks = inv.args;
-  // Words after `commit` (quotes already removed). Value-taking options skip
-  // their value; redirections are not pathspecs.
-  const valueOpts = new Set(['-m', '--message', '-F', '--file', '-C', '--reuse-message', '-c',
-    '--reedit-message', '-t', '--template', '--author', '--date', '--cleanup',
-    '--pathspec-from-file', '--fixup', '--squash', '-S', '--gpg-sign', '--trailer']);
-  let reason = '';
-  for (let i = 0; i < toks.length && !reason; i++) {
-    const t = toks[i];
-    if (/^\d*[<>]+&?$/.test(t)) { i++; continue; } // bare redirection: skip its target
-    if (/^\d*[<>]/.test(t)) continue;               // attached redirection / <<heredoc>
-    if (t === '--') { if (toks.length > i + 1) reason = 'a pathspec after --'; break; }
-    if (valueOpts.has(t)) { i++; continue; }
-    if (/^--(all|include|only)(=|$)/.test(t)) { reason = `\`${t}\``; continue; }
-    if (/^-[a-zA-Z]+$/.test(t)) {
-      // A short cluster: -a/-i/-o commit outside the index. A value-taking flag
-      // ends the cluster — the rest (or the next word) is its value: `-sm wip`.
-      for (let j = 1; j < t.length; j++) {
-        const ch = t[j];
-        if ('aio'.includes(ch)) { reason = `\`${t}\``; break; }
-        if ('mFCct'.includes(ch)) { if (j === t.length - 1) i++; break; }
-        if ('Su'.includes(ch)) break; // optional value, attached only
-      }
-      continue;
-    }
-    if (t.startsWith('-')) continue;
-    reason = `pathspec \`${t}\``;
-  }
-  if (reason) {
-    deny(
-      `[ssdd-review-gate] \`git commit\` with ${reason} commits content OUTSIDE the staged snapshot\n` +
-      'this gate judges — stage with `git add <path>` (separate call), then a bare `git commit`.\n',
-    );
-  }
-}
-
-let verdict;
-try {
-  verdict = judge(cfg);
-} catch (e) {
-  deny(`[ssdd-review-gate] could not evaluate the staged diff (${String(e?.message ?? e).split('\n')[0]}) — fix .ssdd/config.json or the repo, then retry.\n`);
-}
-// A dormant pre-commit hook is said once, at session start (work-state.mjs).
-if (!verdict.owed.length) {
-  if (verdict.warning) process.stderr.write(verdict.warning);
-  const note = triageNote(cfg);
-  if (note) {
-    process.stderr.write(note);
-    finish(0, 'allow', { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: note } });
-  }
-  finish(0, 'allow');
-}
-deny(blockMessage(verdict, stampingMode(cfg) === 'hooks' ? '' : repoHint, stampingMode(cfg)), 'SSDD review gate: stamps owed before commit.');
-
-// ── completion stamps (SubagentStart / SubagentStop) ─────────────────────────
-// The verdict is the reviewer contract's last line: CLEAN / SECURE /
-// N ISSUE(S) / N RISK(S). NO DIFF, or no verdict, stamps nothing.
-function parseVerdict(text) {
-  const tail = String(text ?? '').split('\n').map((l) => l.replace(/[*`_>#]/g, '').trim()).filter(Boolean).slice(-3).reverse();
-  for (const l of tail) {
-    if (/\bNO DIFF\b/.test(l)) return null;
-    const clean = /^(?:verdict\W*)?(CLEAN|SECURE)\b/.exec(l);
-    if (clean) return { verdict: clean[1], issues: 0 };
-    const n = /^(?:verdict\W*)?(\d+)\s+(ISSUE|RISK)(?:\(S\)|S)?\b/i.exec(l);
-    if (n) return { verdict: `${n[2].toUpperCase()}S`, issues: Number(n[1]) };
-  }
-  return null;
-}
-
-// An allow-list entry is `<family>` (any version), `<family>>=<major>.<minor>`
-// (that family at or above that version), or else a substring of the model id.
-function modelAllowed(id, entry) {
-  const e = String(entry).trim().toLowerCase();
-  const floor = /^(opus|sonnet|haiku|fable|mythos)\s*>=\s*(\d+)(?:\.(\d+))?$/.exec(e);
-  const fam = /^(opus|sonnet|haiku|fable|mythos)$/.exec(e);
-  if (!floor && !fam) return String(id).toLowerCase().includes(e);
-  const m = parseModel(id);
-  if (!m || m.family !== (floor ?? fam)[1]) return false;
-  if (!floor) return true;
-  const [maj, min] = [Number(floor[2]), Number(floor[3] ?? 0)];
-  return m.version[0] > maj || (m.version[0] === maj && m.version[1] >= min);
-}
-
-// One pass over the reviewer's transcript → { models, handback }.
-// models: what its turns actually ran on.
-// handback: the report of a final SubagentHandback call (the desktop app ends
-// subagents with one; last_assistant_message is then empty). It counts only
-// as the last content block written: a later user prompt (a resumed agent)
-// clears it. A user line carrying a tool_result, and meta lines (system
-// reminders), don't.
-function readTranscript(path) {
-  const models = new Set();
-  let last;
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let j;
-    try { j = JSON.parse(line); } catch { continue; }
-    const m = j?.message?.model;
-    if (m && m !== '<synthetic>') models.add(m);
-    const content = j?.message?.content;
-    if (j?.type === 'assistant' && Array.isArray(content) && content.length) last = content[content.length - 1];
-    else if (j?.type === 'user' && !j.isMeta && !(Array.isArray(content) && content.some((b) => b?.type === 'tool_result'))) last = undefined;
-  }
-  const handback = last?.type === 'tool_use' && last.name === 'SubagentHandback' && typeof last.input?.message === 'string'
-    ? last.input.message : undefined;
-  return { models: [...models], handback };
-}
-
-function subagentHook(p) {
-  const agentId = String(p.agent_id ?? '').replace(/[^\w-]/g, '_');
-  const type = String(p.agent_type ?? '').replace(/^.*:/, ''); // plugin-scoped name → bare
-  if (!agentId || !type) return;
-  repo = p.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const loaded = loadConfig();
-  if (loaded?.error) throw new Error(loaded.error);
-  const cfg = loaded?.cfg;
-  if (!cfg || !routes(cfg).some(([n]) => n === type)) return; // not a routed reviewer
-  repo = cfg.root;
-  const dir = join(gitDir(), 'ssdd-review-dispatch');
-  const file = join(dir, `${agentId}.json`);
-
-  if (p.hook_event_name === 'SubagentStart') {
-    const { staged } = stagedOwed();
-    const mine = new Map(reviewerFiles(cfg, staged)).get(type) ?? [];
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, JSON.stringify({ reviewer: type, files: Object.fromEntries(mine.map((f) => [f, staged.get(f)])), at: new Date().toISOString() }));
-    return;
-  }
-
-  let d;
-  try { d = JSON.parse(readFileSync(file, 'utf8')); } catch { return; } // no matching start
-  rmSync(file, { force: true });
-  // A refusal is recorded so the gate's block message can say why — the
-  // orchestrating agent never sees this hook's stderr.
-  const refuse = (m) => {
-    process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
-    updateStamp((stamp) => { (stamp.refused ??= {})[type] = { at: new Date().toISOString(), reason: m }; });
-  };
-  const say = (m) => process.stderr.write(`[ssdd-review-gate] ${type}: ${m}\n`);
-  // Which model(s) ran the review is always recorded (best effort); it is
-  // enforced only when the project sets a floor. A handback is the
-  // reviewer's final word, so it takes precedence.
-  let models = [];
-  let handback;
-  try { ({ models, handback } = readTranscript(p.agent_transcript_path)); } catch { /* unreadable */ }
-  const v = parseVerdict(handback ?? p.last_assistant_message);
-  if (!v) return refuse('its last review ended without a verdict line (or with NO DIFF) — nothing stamped');
-  // The configured list, if any: a model must pass it.
-  for (const allowed of cfg.reviewGate?.reviewerModelSets ?? []) {
-    const ok = models.length && models.every((m) => allowed.some((a) => modelAllowed(m, a)));
-    if (!ok) return refuse(`its last review ran on ${models.join(', ') || 'an unknown model'}; reviewGate.reviewerModels allows ${allowed.join(', ')} — nothing stamped (run the session on an allowed model, and don't override the model when dispatching)`);
-  }
-  const staged = stagedChanges();
-  const keep = Object.keys(d.files).filter((f) => staged.get(f) === d.files[f]);
-  const moved = Object.keys(d.files).filter((f) => !keep.includes(f));
-  if (keep.length) {
-    const at = new Date().toISOString();
-    updateStamp((stamp) => {
-      if (stamp.refused) delete stamp.refused[type];
-      stamp.reviewers[type] ??= {};
-      for (const f of keep) {
-        stamp.reviewers[type][f] = { key: staged.get(f), at, by: 'hook', verdict: v.verdict, issues: v.issues, ...(models.length ? { model: models.join(',') } : {}) };
-      }
-    });
-  }
-  say(`stamped ${keep.length} file(s) (${v.verdict}${v.issues ? ` ${v.issues}` : ''})` +
-    (moved.length ? `; still owed, changed during review: ${moved.join(', ')}` : ''));
-}
+process.exit(0);

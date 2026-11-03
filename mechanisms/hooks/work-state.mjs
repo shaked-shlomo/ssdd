@@ -23,11 +23,10 @@
 // cat-file --batch for every blob and every file a ledger names, one
 // check-ignore per worktree; only the stale rule adds a log per busy copy.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ARM_HOOK, DEFAULT_PATHS, DEFAULT_REVIEWED_GENERATION, dormantHook, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
-import { generationOf } from './model-id.mjs';
+import { DEFAULT_PATHS, dormantHookDetail, loadSsddConfig, skillsAudited } from './ssdd-config.mjs';
 import { OPEN_WORDS, countPlanTasks, parsePlan, parseProgress, parseSsddLedger } from './plan-parse.mjs';
 import { idRange, lostText, migratePlan, needsMigration, todoFor } from './plan-migrate.mjs';
 
@@ -275,8 +274,7 @@ function working(root, def, notRefs, src, plan, paths) {
   return Boolean(r && r.trim());
 }
 
-// model: the session's model id (from a session-start payload), if known.
-export function collect(repo, { model } = {}) {
+export function collect(repo) {
   const loaded = loadSsddConfig(repo);
   if (!loaded) return null;
   const { root } = loaded;
@@ -351,19 +349,17 @@ export function collect(repo, { model } = {}) {
   if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate-plans`);
   if (!skillsAudited(root)) onboarding.push("/skills-audit hasn't run here");
   warnings.splice(loaded.error ? 1 : 0, 0, ...onboarding.map((l) => `! ${l}`));
-  // A session on a newer model generation than the instructions were reviewed
-  // for (modelReview.generation) gets one line, after the onboarding steps.
-  const reviewed = loaded.cfg.modelReview?.generation ?? DEFAULT_REVIEWED_GENERATION;
-  let at = (loaded.error ? 1 : 0) + onboarding.length;
-  if (model && generationOf(model) > reviewed) {
-    warnings.splice(at++, 0, `! this session runs ${model}, newer than the generation the ` +
-      `instructions were reviewed for (${reviewed}): see SSDD's README → "When a new model generation ships", then set modelReview.generation`);
-  }
   // A dormant pre-commit hook: commits made outside the agent aren't gated.
   // Said here, once a session, not on every commit. git-guard denies the
   // fix, so it's the user's to run.
-  const dormant = dormantHook(root);
-  if (dormant) warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant}): ask the user to run ${ARM_HOOK}`);
+  const dormant = dormantHookDetail(root);
+  const at = (loaded.error ? 1 : 0) + onboarding.length;
+  if (dormant) {
+    const fix = dormant.edit
+      ? `add ${dormant.edit.line} to ${dormant.edit.file}`
+      : `run ${dormant.command}`;
+    warnings.splice(at, 0, `! the pre-commit hook is dormant (${dormant.reason}): ask the user to ${fix}`);
+  }
   return { root, defaultRef: defInfo.name, plans: rows, unknown, warnings, onboarding };
 }
 
@@ -426,43 +422,11 @@ export function render(state, { cap = null } = {}) {
 // ── CLI ──────────────────────────────────────────────────────────────────────
 export const SESSION_CAP = Object.freeze({ lines: 12, bytes: 1536 });
 
-// The session's model from a session-start payload: Claude Code's `model`
-// (absent after /clear), or Cursor's `model` or `model_id`, whichever is a
-// Claude model id. '' when there's none.
-function payloadModel() {
-  const payload = readPayload();
-  return [payload?.model, payload?.model_id].find((m) => typeof m === 'string' && generationOf(m) !== null) ?? '';
-}
-
-// The hook's JSON payload, or null. Touching process.stdin makes a pipe
-// non-blocking on purpose: fd 0 is then read in a loop for at most `ms`, so a
-// payload written late, or on a pipe the harness keeps open, still counts, and
-// an open pipe with nothing on it never hangs the session.
-function readPayload(ms = 500) {
-  if (process.stdin.isTTY) return null;
-  const parse = (bufs) => { try { return JSON.parse(Buffer.concat(bufs).toString('utf8').replace(/^\uFEFF/, '')); } catch { return null; } };
-  const bufs = []; const buf = Buffer.alloc(64 * 1024); const until = Date.now() + ms;
-  const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) {
-    let n;
-    try { n = readSync(0, buf, 0, buf.length, null); } catch (e) {
-      if (e?.code !== 'EAGAIN' || Date.now() > until) break;
-      Atomics.wait(nap, 0, 0, 10);
-      continue;
-    }
-    if (n === 0) break;
-    bufs.push(Buffer.from(buf.subarray(0, n)));
-    const payload = parse(bufs);
-    if (payload) return payload;
-  }
-  return parse(bufs);
-}
-
 // A session-start hook must never fail or flood the session: capped output,
 // and exit 0 whatever happens.
 function sessionStart(repo, cursor) {
   let text;
-  try { text = render(collect(repo, { model: payloadModel() }), { cap: SESSION_CAP }); } catch (e) {
+  try { text = render(collect(repo), { cap: SESSION_CAP }); } catch (e) {
     text = `SSDD · work state unavailable (${String(e?.message ?? e).split('\n')[0].slice(0, 120)})\n`;
   }
   if (text) process.stdout.write(cursor ? JSON.stringify({ additional_context: text }) + '\n' : text);
@@ -494,19 +458,15 @@ function needsAdd(root, pathspecs) {
 }
 
 // Untracked files the commit leaves behind, Superpowers ledgers excepted
-// (they get the reminder below). A warning that lists them, or, with
-// preCommit.blockUntracked, a block. → true when it blocks.
+// (they get the reminder below). A warning that lists them; never a block.
 const UNTRACKED_SHOWN = 10;
-function untrackedCheck(root, block) {
+function untrackedCheck(root) {
   const files = (gitOut(root, 'ls-files', '--others', '--exclude-standard', '-z') ?? '')
     .split('\0').filter((p) => p && !/^\.superpowers\/sdd\/[^/]*\/progress\.md$/.test(p));
-  if (!files.length) return false;
+  if (!files.length) return;
   const list = files.slice(0, UNTRACKED_SHOWN).map((p) => `  • ${p}\n`).join('') +
     (files.length > UNTRACKED_SHOWN ? `  +${files.length - UNTRACKED_SHOWN} more\n` : '');
-  process.stderr.write(block
-    ? `[ssdd-pre-commit] untracked files exist — stage them or clean up before committing (preCommit.blockUntracked):\n${list}`
-    : `[ssdd-pre-commit] note: ${files.length === 1 ? "1 untracked file isn't" : `${files.length} untracked files aren't`} in this commit (preCommit.blockUntracked: true refuses this):\n${list}`);
-  return block;
+  process.stderr.write(`[ssdd-pre-commit] note: ${files.length === 1 ? "1 untracked file isn't" : `${files.length} untracked files aren't`} in this commit:\n${list}`);
 }
 
 function stagedCheck(repo) {
@@ -514,7 +474,8 @@ function stagedCheck(repo) {
   if (!loaded) return 0;
   const { root } = loaded;
   const paths = loaded.cfg.paths ?? DEFAULT_PATHS;
-  let blocked = untrackedCheck(root, loaded.cfg.preCommit?.blockUntracked === true);
+  untrackedCheck(root);
+  let blocked = false;
   const z = gitOut(root, 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--', paths.plans) ?? '';
   let staged = z.split('\0').filter((p) => p && posix.dirname(p) === paths.plans && isPlanName(posix.basename(p)));
   const mergeFile = (gitOut(root, 'rev-parse', '--git-path', 'MERGE_HEAD') ?? '').trim();

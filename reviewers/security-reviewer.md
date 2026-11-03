@@ -14,7 +14,8 @@ agent was seen using in a real project is `⚠️` at most (SSDD's threat model,
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Open actual files; trace data
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Open actual files; trace data
    flows end to end — the leak is usually one hop away from the diff.
 2. Rate findings Critical / Important / Minor, each with a concrete exploit
    path ("attacker does X → sees Y").
@@ -22,6 +23,11 @@ agent was seen using in a real project is `⚠️` at most (SSDD's threat model,
    `✅ <lens>` when clean. Do NOT edit. End with **`SECURE`** or
    **`N RISK(S)`**; with an empty or unnamed input, answer
    `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.
 
 ## Lenses
 

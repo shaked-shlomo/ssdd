@@ -12,7 +12,9 @@
 // Modes (no deps, Node >= 22):
 //   <file> [<file> …]     lint the given files whole (CI / manual); exit 1
 //   --staged              lint the lines the staged change adds (git
-//                         pre-commit); exit 1 blocks the commit
+//                         pre-commit); findings print to stderr, exit 0:
+//                         they warn, never block (a config that can't be
+//                         used still exits 1)
 //   (default: JSON stdin) Claude PostToolUse(Edit|Write) or Cursor
 //                         afterFileEdit: lint the lines THIS edit added
 // Only added lines: an old violation isn't flagged again on every edit (in
@@ -27,11 +29,13 @@
 // against HEAD. Under Claude Code findings are a warning: exit 0 with
 // hookSpecificOutput.additionalContext, which reaches the agent beside the
 // tool result (plain output at exit 0 doesn't; exit 2 reads as a tool
-// error). Under Cursor: stderr, exit 2. The pre-commit is where they block.
+// error). Under Cursor: stderr, exit 2. At commit they print and the commit
+// goes on; only a file-list run (CI) exits 1 on a finding.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
 import { hookFilePath, hookHarness, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { addedLines } from './added-lines.mjs';
 
 const stdinMode = process.argv.length <= 2;
 const payload = stdinMode ? parseHookStdin(readFileSync(0, 'utf8')) : null;
@@ -41,8 +45,9 @@ const git = (...args) =>
 
 const PREFIX = '[ssdd-convention-lint] ';
 const claude = stdinMode && hookHarness(payload) === 'claude';
-// Findings, or a config that can't be used: a warning at edit time, a block
-// on the command line and in the pre-commit.
+// Findings, or a config that can't be used: a warning at edit time. On the
+// command line a finding exits 1, except under `--staged` (commit time), where
+// it exits 0; a config that can't be used exits 1 under `--staged` too.
 function fail(message, exitCode) {
   if (claude) {
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } }) + '\n');
@@ -53,8 +58,9 @@ function fail(message, exitCode) {
 }
 
 // No repo or no config → nothing to lint (exit 0). A config that isn't valid
-// JSON, or a rule whose regex doesn't compile, is reported as a finding: an
-// agent that just wrote it hears at once, and `--staged` fails the commit.
+// JSON, or a rule whose regex doesn't compile, is reported (not a finding): an
+// agent that just wrote it hears at once; exit 1 under `--staged`, failCode
+// otherwise.
 const failCode = stdinMode ? 2 : 1;
 let root, text, rules;
 try { root = git('rev-parse', '--show-toplevel').trim(); } catch { process.exit(0); }
@@ -96,61 +102,6 @@ function lintFile(relPath) {
   let src;
   try { src = readFileSync(join(root, relPath), 'utf8'); } catch { return []; }
   return lintLines(relPath, src.split('\n').map((line, i) => [i + 1, line]));
-}
-
-// A `+++ b/<path>` name: C-quoted ("…") when it holds a quote, a backslash or a
-// control character (core.quotePath=false keeps other bytes literal).
-function diffPath(raw) {
-  let p = raw;
-  if (p.startsWith('"')) {
-    const bytes = [];
-    for (let i = 1; i < p.length - 1; i++) {
-      if (p[i] !== '\\') { bytes.push(...Buffer.from(p[i])); continue; }
-      const c = p[++i];
-      if (/[0-7]/.test(c)) { bytes.push(parseInt(p.slice(i, i + 3), 8)); i += 2; continue; }
-      bytes.push(({ n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11 })[c] ?? c.charCodeAt(0));
-    }
-    p = Buffer.from(bytes).toString('utf8');
-  }
-  return p.replace(/^b\//, '');
-}
-// `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds. A hunk
-// runs while its lines start with `+`, `-` or `\`, so inside one, `+++ x` is
-// an added line `++ x`, not the next file's header. An added line that only
-// gains or drops the file's final newline (`\ No newline at end of file`
-// follows the side without one) is the removed line it replaces, not a new one.
-function addedLines(diff) {
-  const out = new Map();
-  let file = null;
-  let hunk = null; // { n, removed, added: [{ n, text, eof }], last }
-  const flush = () => {
-    if (!file || !hunk) return;
-    for (const a of hunk.added) {
-      const same = hunk.removed.find((r) => !r.used && r.text === a.text && r.eof !== a.eof);
-      if (same) same.used = true;
-      else out.get(file).push([a.n, a.text]);
-    }
-  };
-  for (const line of diff.split('\n')) {
-    if (hunk && /^[-+\\]/.test(line)) {
-      if (line[0] === '\\') { if (hunk.last) hunk.last.eof = true; continue; }
-      hunk.last = { n: line[0] === '+' ? hunk.n++ : 0, text: line.slice(1), eof: false };
-      (line[0] === '+' ? hunk.added : hunk.removed).push(hunk.last);
-      continue;
-    }
-    flush();
-    hunk = null;
-    if (line.startsWith('+++ ')) {
-      // git ends a name that holds a space with a tab
-      file = line === '+++ /dev/null' ? null : diffPath(line.slice(4).replace(/\t$/, ''));
-      if (file) out.set(file, out.get(file) ?? []);
-      continue;
-    }
-    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (h) hunk = { n: Number(h[1]), removed: [], added: [], last: null };
-  }
-  flush();
-  return out;
 }
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
 const lintAdded = (diff) => [...addedLines(diff)].flatMap(([path, lines]) => lintLines(path, lines));
@@ -214,7 +165,7 @@ function before(rel, now) {
 }
 
 if (process.argv[2] === '--staged') {
-  report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 1);
+  report(lintAdded(git(...DIFF, '--staged', '-M', '--diff-filter=d')), 0);
 } else if (process.argv.length > 2) {
   report(process.argv.slice(2).map(toRel).flatMap(lintFile), 1);
 } else {

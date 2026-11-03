@@ -13,12 +13,14 @@ the operator runs at deploy.>
 ## Tasks
 
 <One line per task: commits, review verdicts, test count, fixes with their
-commit. Detail goes in the commit message. Tick a row when its task is done:
+commit, and each finding not fixed by its ID, its outcome (`fixed`, `wrong`,
+`intentional`, `minor`, `deferred`, `pre-existing`) and a one-line reason.
+Detail goes in the commit message. Tick a row when its task is done:
 the work-state view reads the first unticked `Task` row as what's next. Work
 run by Superpowers keeps its ledger in `.superpowers/sdd/<plan>/progress.md`
 instead, and git tracks it.>
 
-- [x] Task 1 — <name> (`<hash>`; spec ✅ quality ✅; <N/N> tests; fixed <finding> `<fix-hash>`)
+- [x] Task 1 — <name> (`<hash>`; spec ✅ quality ✅; <N/N> tests; fixed <finding> `<fix-hash>`; F3 `wrong`: <reason>)
 - [ ] Task 2 — …
 - [ ] — PR 1 ships; <operator-gated criterion, e.g. a ≥24 h production measurement> —
 - [ ] Task 3 — … *(a milestone row like the one above splits a plan into releases)*
@@ -35,7 +37,7 @@ commits, and the refute-by-default re-check of each fix.>
 
 ## Follow-ups
 
-<One line per deferred Minor with its home: fixed this session / its own task /
+<One line per `deferred` finding with its home: fixed this session / its own task /
 the requirements checklist. Nothing is silently dropped.>
 
 ## Operator-gated deploy steps

@@ -15,7 +15,8 @@ same teardown machinery for recovery, not leakage. You own the tests.
 
 ## How to run
 
-1. `git diff --staged` (or the named range). Scope to files with async state:
+1. `git diff HEAD` for your routed files (staged and not), or the range the
+   orchestrator names. Scope to files with async state:
    stores, services, hooks/effects with intervals, screens with loading/error
    branches, teardown paths (sign-out, reset actions).
 2. Verify against the actual files (open them), not hunks — a failure path's
@@ -24,6 +25,11 @@ same teardown machinery for recovery, not leakage. You own the tests.
 3. Report `❌ <rule> — file:line — <fix>`, `⚠️` for judgment calls, `✅ <dimension>`
    when clean. Do NOT edit. End with **`CLEAN`** or **`N ISSUE(S)`**; with an
    empty or unnamed input, answer `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.
 
 ## The checks (each one shipped as a real bug somewhere)
 

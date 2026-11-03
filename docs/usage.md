@@ -45,7 +45,7 @@ onboarding steps still open.
 | **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
 | **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate-plans`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
-| **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). Each runs as a git hook/CLI anywhere, or from Claude Code / Cursor hook payloads for earlier interception. |
+| **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
 | **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`). |
 | **Adapters** | [`adapters/`](../adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
 | **Installer** | [`bin/ssdd.mjs`](../bin/ssdd.mjs) | Installs a tagged release, writes a lock, and later three-way merges updates. |
@@ -67,8 +67,8 @@ drift-audit` adds the drift-audit runbook and `/docs-drift-audit`. It seeds the 
 left. Then fill in the per-project half:
 
 1. **`.ssdd/config.json`**: reviewer routing (which staged paths need which
-   reviewers; a route may carry a `$comment` saying why), lint rules,
-   git-guard toggles, `reviewGate.maxRoutedFiles`, and `productionGuard`
+   reviewers; a route may carry a `$comment` and an `exclude`), lint rules,
+   git-guard's `extraRules`, `reviewGate.maxRoutedFiles`, and `productionGuard`
    (the sanctioned `writePath`, the project's own `extraRules`, a pack's
    options). The mechanism is the framework, the regexes are the project. `gate-reviewer` is opt-in; its
    route snippet is in [reviewers/gate-reviewer.md](../reviewers/gate-reviewer.md).
@@ -107,7 +107,7 @@ came from, its adapters, and every framework file's source and hash. **A repo
 runs fully without the SSDD checkout**; only these commands need it:
 
 ```bash
-node ~/ssdd/bin/ssdd.mjs status <repo>                 # version, local edits, update available, gate armed?
+node ~/ssdd/bin/ssdd.mjs status <repo>                 # version, local edits, update available, gate armed, hook wiring
 node ~/ssdd/bin/ssdd.mjs status <repo> --skills        # also: upstream skill sources that moved
 node ~/ssdd/bin/ssdd.mjs update <repo>                 # to the newest tag (--to <ref> to choose)
 node ~/ssdd/bin/ssdd.mjs adopt  <repo> --base v1.0.1   # give a pre-lock install a lock
@@ -155,13 +155,6 @@ each injected repo:
 3. Re-check effort levels: reviewers' `effort:` frontmatter and the session
    default.
 4. Upstream what generalizes as a MINOR release.
-5. Set `modelReview.generation` in `.ssdd/config.json` to the new
-   generation.
-
-Until step 5, the session view says so whenever a session starts on a newer
-generation than `modelReview.generation` (default 5). Claude Code sends no
-model after `/clear` or a recovered session, so the next fresh session shows
-it.
 
 ## Releasing
 

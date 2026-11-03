@@ -2,7 +2,8 @@
 // git repo with its own .ssdd/config.json lint rule, writes a file, and feeds a
 // Claude PostToolUse or Cursor afterFileEdit payload on stdin, or runs
 // --staged. Claude: findings are a warning (exit 0, additionalContext on
-// stdout). Cursor: exit 2, stderr. --staged and named files: exit 1.
+// stdout). Cursor: exit 2, stderr. --staged: findings on stderr, exit 0 (the commit goes on).
+// Named files: exit 1.
 //
 // Zero-dependency: Node's built-in test runner (`node --test`), Node >= 22.
 import { spawnSync } from 'node:child_process';
@@ -134,7 +135,9 @@ describe('convention-lint config', () => {
 
   it('no config is still a no-op', () => {
     rmSync(join(dir, '.ssdd', 'config.json'));
-    assert.strictEqual(staged(dir).status, 0);
+    const r = staged(dir);
+    assert.strictEqual(r.status, 0);
+    assert.strictEqual(r.stderr, '');
     assert.strictEqual(lint(dir, JSON.stringify({ tool_input: { file_path: 'README' } })), 0);
   });
 });
@@ -144,6 +147,12 @@ describe('convention-lint config', () => {
 describe('only added lines', () => {
   const OLD = 'const old = "#fff";\nconst ok = 1;\n';
   const run = (d, args, input = '') => spawnSync(NODE, [HOOK, ...args], { input, cwd: d, env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: 'utf8' });
+  // --staged exits 0 with or without findings, so "no finding" is an empty stderr.
+  const assertStagedClean = (d) => {
+    const r = run(d, ['--staged']);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(r.stderr, '');
+  };
   const edit = (d, rel) => run(d, [], JSON.stringify({ tool_input: { file_path: rel } }));
   const put = (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); };
   const commitOld = () => { put('src/a.ts', OLD); git(dir, 'add', 'src/a.ts'); git(dir, 'commit', '-qm', 'old'); };
@@ -162,15 +171,15 @@ describe('only added lines', () => {
     assert.doesNotMatch(w, /src\/a\.ts:1 /);
   });
 
-  it('--staged: only staged added lines', () => {
+  it('--staged: only staged added lines, reported on stderr with exit 0', () => {
     commitOld();
     put('src/a.ts', `${OLD}const clean = 2;\n`);
     git(dir, 'add', 'src/a.ts');
-    assert.strictEqual(run(dir, ['--staged']).status, 0);
+    assertStagedClean(dir);
     put('src/a.ts', `${OLD}const c = '#abcdef';\n`);
     git(dir, 'add', 'src/a.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:3 /);
     assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
   });
@@ -179,7 +188,9 @@ describe('only added lines', () => {
     put('src/b.ts', 'const b = "#fff";\n');
     assert.match(warning(edit(dir, 'src/b.ts')), /src\/b\.ts:1 /);
     git(dir, 'add', 'src/b.ts');
-    assert.strictEqual(run(dir, ['--staged']).status, 1);
+    const r = run(dir, ['--staged']);
+    assert.strictEqual(r.status, 0);
+    assert.match(r.stderr, /src\/b\.ts:1 /);
   });
 
   it('files named on the command line are linted whole', () => {
@@ -192,7 +203,7 @@ describe('only added lines', () => {
   it('a renamed file with an old violation passes --staged', () => {
     commitOld();
     git(dir, 'mv', 'src/a.ts', 'src/c.ts');
-    assert.strictEqual(run(dir, ['--staged']).status, 0);
+    assertStagedClean(dir);
   });
 
   it('--staged judges the staged content, not the disk', () => {
@@ -201,7 +212,7 @@ describe('only added lines', () => {
     git(dir, 'add', 'src/a.ts');
     put('src/a.ts', OLD);
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:3 /);
   });
 
@@ -209,7 +220,7 @@ describe('only added lines', () => {
     put('src/צבע file.ts', 'const c = "#fff";\n');
     git(dir, 'add', 'src/צבע file.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/צבע file\.ts:1 /);
   });
 
@@ -218,7 +229,7 @@ describe('only added lines', () => {
     put(rel, 'const c = "#fff";\n');
     git(dir, 'add', rel);
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.ok(r.stderr.includes(`${rel}:1 `), r.stderr);
   });
 
@@ -229,7 +240,7 @@ describe('only added lines', () => {
     put('src/a.ts', 'line1\n++ counter;\nconst c = "#abcdef";\n');
     git(dir, 'add', 'src/a.ts');
     const r = run(dir, ['--staged']);
-    assert.strictEqual(r.status, 1, r.stderr);
+    assert.strictEqual(r.status, 0, r.stderr);
     assert.match(r.stderr, /src\/a\.ts:3 /);
   });
 
@@ -242,14 +253,14 @@ describe('only added lines', () => {
       put('src/a.ts', LAST);
       assert.strictEqual(warning(edit(dir, 'src/a.ts')), '');
       git(dir, 'add', 'src/a.ts');
-      assert.strictEqual(run(dir, ['--staged']).status, 0);
+      assertStagedClean(dir);
     });
     it('adding it does not re-lint the last line', () => {
       commit(LAST);
       put('src/a.ts', `${LAST}\n`);
       assert.strictEqual(warning(edit(dir, 'src/a.ts')), '');
       git(dir, 'add', 'src/a.ts');
-      assert.strictEqual(run(dir, ['--staged']).status, 0);
+      assertStagedClean(dir);
     });
     it('a real edit to the last line is still linted', () => {
       commit(LAST);
@@ -359,16 +370,18 @@ describe('the lines this edit added', () => {
 });
 
 describe('ssdd-lint-ignore', () => {
-  it('a marked line passes --staged; an unmarked one in the same change still blocks', () => {
+  it('a marked line passes --staged; an unmarked one in the same change is still reported', () => {
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\n');
     git(dir, 'add', 'src/a.ts');
     const staged = () => spawnSync(NODE, [HOOK, '--staged'], { cwd: dir, env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, encoding: 'utf8' });
-    assert.strictEqual(staged().status, 0, staged().stderr);
+    const marked = staged();
+    assert.strictEqual(marked.status, 0, marked.stderr);
+    assert.strictEqual(marked.stderr, '');
     writeFileSync(join(dir, 'src', 'a.ts'), 'const brand = "#ff0000"; // ssdd-lint-ignore: the logo colour\nconst c = "#abc";\n');
     git(dir, 'add', 'src/a.ts');
     const r = staged();
-    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /src\/a\.ts:2 /);
     assert.doesNotMatch(r.stderr, /src\/a\.ts:1 /);
     assert.match(r.stderr, /ssdd-lint-ignore/);
