@@ -29,8 +29,8 @@
 // the locked commit's copy, ours = the project's file, theirs = the new
 // version. Project edits survive, upstream fixes land, real conflicts get
 // standard conflict markers. "Seeded" files (config.json, skills.json, AGENTS.md,
-// CLAUDE.md, .claude/settings.json) are project-owned: update never touches
-// them and prints how their templates changed instead.
+// BACKLOG.md, CLAUDE.md, .claude/settings.json) are project-owned: update never
+// touches them and prints how their templates changed instead.
 //
 // A repo runs fully without this checkout; only update/adopt/status need it.
 import { createHash } from 'node:crypto';
@@ -232,6 +232,7 @@ function plan(tree, adapters, packs = [], parts = []) {
   add(seeded, '.ssdd/config.json', 'mechanisms/config.example.json');
   add(seeded, '.ssdd/skills.json', 'mechanisms/skills.example.json');
   add(seeded, 'AGENTS.md', 'adapters/generic/AGENTS.md');
+  add(seeded, 'BACKLOG.md', 'process/templates/backlog-template.md');
   if (adapters.includes('claude-code')) {
     add(seeded, '.claude/settings.json', 'adapters/claude-code/settings-hooks.json');
     add(seeded, 'CLAUDE.md', 'adapters/claude-code/CLAUDE.md');
@@ -292,7 +293,26 @@ function pruneEmpty(target, t) {
   }
 }
 
+// A repo whose backlog has another name: .md files at the root or directly in
+// docs/ named like one. None when BACKLOG.md exists. A name with a control or
+// bidi character is never printed. → sorted relative paths.
+const BACKLOG_NAME = /^(?:(?:backlog|todo|roadmap)|requirements.*|.*(?:requirements|checklist))\.md$/i;
+function backlogCandidates(target) {
+  if (existsSync(join(target, 'BACKLOG.md'))) return [];
+  const found = [];
+  for (const dir of ['', 'docs']) {
+    let entries = [];
+    try { entries = readdirSync(join(target, dir), { withFileTypes: true }); } catch { /* absent */ }
+    for (const e of entries) if (e.isFile() && BACKLOG_NAME.test(e.name) && !/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/.test(e.name)) found.push(dir ? `${dir}/${e.name}` : e.name);
+  }
+  return found.sort();
+}
+
 function seedOne(target, t, tree, s, log) {
+  if (t === 'BACKLOG.md') {
+    const found = backlogCandidates(target);
+    if (found.length) { log(`not seeded BACKLOG.md: ${found.join(', ')} looks like this repo's backlog — run /migrate-backlog`); return; }
+  }
   let dst = t;
   if (t === 'AGENTS.md' && existsSync(join(target, 'AGENTS.md'))) dst = 'AGENTS.ssdd.md';
   if (existsSync(join(target, dst))) return;

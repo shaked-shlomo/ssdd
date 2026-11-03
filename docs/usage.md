@@ -42,7 +42,7 @@ onboarding steps still open.
 
 | Layer | Path | What it is |
 |---|---|---|
-| **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover templates. Pure markdown. |
+| **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover / backlog templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
 | **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate-plans`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
 | **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
@@ -63,8 +63,11 @@ wiring, and each pack the repo matches (`--packs a,b` or `--packs none`
 overrides that). Optional parts install only when named: `--with
 drift-audit` adds the drift-audit runbook and `/docs-drift-audit`. It seeds the project-owned files (`.ssdd/config.json`,
 `.ssdd/skills.json`, `AGENTS.md`, or `AGENTS.ssdd.md` to merge if one exists,
-`CLAUDE.md`, `.claude/settings.json`), writes the lock, and prints what's
-left. Then fill in the per-project half:
+`BACKLOG.md`, `CLAUDE.md`, `.claude/settings.json`), writes the lock, and
+prints what's left. A repo whose backlog has another name (a `.md` at the
+root or in `docs/` named like `TODO`, `ROADMAP` or `…requirements`) gets no
+`BACKLOG.md`: install and update name that file and point to
+`/migrate-backlog`. Then fill in the per-project half:
 
 1. **`.ssdd/config.json`**: reviewer routing (which staged paths need which
    reviewers; a route may carry a `$comment` and an `exclude`), lint rules,

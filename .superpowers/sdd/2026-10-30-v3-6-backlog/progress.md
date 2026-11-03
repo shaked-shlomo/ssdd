@@ -9,3 +9,5 @@ What 3.4.0/3.5.0 changed for this plan:
 - SSDD's own checkout has no installed gate; reviewers run by hand per commit (plan, Global Constraints).
 
 ## Tasks
+- [x] Task 1 — template, seeding, candidates (AC1–AC3). Tests first: 11 new fail, then pass; one failure was the test's own (`docs/requirements-notes.md` starts with "requirements", so it is a candidate by Clarify 3; dropped from "not candidates"). Suite 1628/1628.
+      Reviews: gate-reviewer CLEAN (⚠️ the plan's two-candidate order was wrong; fixed in the plan). security-reviewer SECURE, then on the fix SECURE: ⚠️ escape characters in a printed file name → fixed (control, C1 and bidi characters skip the name, as the reviewer proposed, with tests); ⚠️ `seedOne` follows a dangling symlink → `deferred`: pre-existing for every seeded file, the content is a fixed template; it gets a row in BACKLOG.md (Task 4). docs-sync 2 ISSUE(S): `docs/usage.md` Setup didn't list `BACKLOG.md` or the candidate line, and its Process row didn't name the backlog template → both fixed in this commit.

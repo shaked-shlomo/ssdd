@@ -181,6 +181,17 @@ describe('text budgets', () => {
   });
 });
 
+describe('the backlog template', () => {
+  it('has the five sections and the row form', () => {
+    const text = read('process/templates/backlog-template.md');
+    assert.match(text, /^# Backlog\n/);
+    assert.deepEqual(text.replace(/<!--[\s\S]*?-->/g, '').match(/^## .+$/gm),
+      ['## Now', '## Next', '## Later', '## Deferred review findings', '## Done']);
+    const deferred = text.split(/^## /m).find((s) => s.startsWith('Deferred review findings'));
+    for (const s of ['- [F12]', '[plan NN]', "doesn't exist", 'never how to exploit it']) assert.ok(deferred.includes(s), s);
+  });
+});
+
 describe('README', () => {
   it('one page', () => {
     const n = read('README.md').split('\n').length - 1;
