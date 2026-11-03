@@ -39,6 +39,11 @@ message cites the owner's explicit go-ahead.
    it needs`, `⚠️` for judgment calls, `✅ <check>` when clean. Do NOT edit.
    End with **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input,
    answer `NO DIFF — scope not provided`.
+4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
+   (repo-relative) on that line. A finding that holds against HEAD's code too
+   is `❌ [pre-existing] …`. Given open findings, answer each on its own line,
+   `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never report a
+   listed one again. N counts the `❌` lines.
 
 ## The checks
 
@@ -68,8 +73,9 @@ caught. A behavior change ships with a selftest change; a loosened test is
 the same finding as a loosened script.
 
 **5. Reviewers and process (`.ssdd/reviewers/`, `.ssdd/process/`,
-`.claude/agents/`).** A check deleted or made optional, the verdict line
-changed, a reviewer's `tools` widened to editing tools, an agent
+`.claude/agents/`).** A check deleted or made optional, the verdict line or
+the finding line changed (`--stamp --report` parses `CLEAN` / `SECURE` /
+`N ISSUE(S)` / `N RISK(S)` and the `❌` / `⚠️` / `✅ [<id>]` lines), a reviewer's `tools` widened to editing tools, an agent
 symlink replaced with a diverging copy, a process step that requires review
 made optional.
 

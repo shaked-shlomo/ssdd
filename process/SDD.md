@@ -62,7 +62,10 @@ Template: [templates/plan-template.md](templates/plan-template.md).
 
 For multi-task plans, the ledger is the cross-session execution record: one
 line per task (commits, review verdicts, test count, fixes with their commit)
-and one line per deferred Minor, which gets a home before the plan closes.
+and one line per deferred finding, which gets a home before the plan closes.
+A finding not fixed gets an outcome and a one-line reason: `wrong`,
+`intentional`, `minor`, `deferred` or `pre-existing`; the gate records
+`fixed` and `pre-existing` itself.
 Detail goes in the commit message. Owner decisions made mid-execution go in
 the ledger's **Rulings** section.
 
@@ -86,14 +89,17 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   be blocked); never a probe commit. The procedure:
   1. Read the block message: per reviewer, the files it owes and why.
   2. Dispatch those reviewers in parallel. Name each one's input (`git diff
-     HEAD` for its files, a range, or a file list). For a file a reviewer
+     HEAD` for its files, a range, or a file list), with the open findings
+     the message lists for it. For a file a reviewer
      stamped before, the message gives `git diff <stamped blob> <staged
      blob>`: that change is its input, not the whole file. A reviewer
      given nothing answers `NO DIFF — scope not provided`, and that is
      never stamped. Dispatched reviewers are read-only: no edits, commits,
      stamps, or `git stash`.
-  3. Fix or triage the findings, then stamp:
-     `node .ssdd/hooks/review-gate.mjs --stamp <reviewer,…>`, adding
+  3. Fix or triage the findings, then stamp each reviewer with its reply,
+     saved outside the work tree:
+     `node .ssdd/hooks/review-gate.mjs --stamp <reviewer> --report <file>`
+     (`-` reads stdin; without `--report` no findings are recorded), adding
      `--files <path,…>` when a reviewer re-read only those files and
      `--repo <path>` for another work tree (the message prints it). A stamp
      keys the work tree as `git add` would, so stage, stamp and commit in
@@ -114,10 +120,10 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   Stamping without running the reviewers is forbidden; `SSDD_REVIEW_SKIP=1`
   is for emergencies, with the user's explicit go-ahead. Over
   `reviewGate.maxRoutedFiles` routed files the gate warns: split the commit
-  rather than run another round.
-- **Findings are records.** Each review round's findings are collected as
-  structured records (finding, reviewer(s), severity, file) and fixes are
-  applied from that list. A ledger row that claims a fix ("fixed by X", "test
+  rather than run another round. At `reviewGate.maxRounds` rounds with a
+  finding open it warns too: stop and ask the user.
+- **Findings are records.** The gate records each review's findings by ID
+  (`F<n>`), and fixes are applied from that list. A ledger row that claims a fix ("fixed by X", "test
   added") is checked against the staged blob (`git show :path`) by an agent
   other than the one that wrote the fix, refute-by-default: it stands only
   when the staged file demonstrably contains what it claims. Other rows

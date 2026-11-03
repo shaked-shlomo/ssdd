@@ -23,9 +23,10 @@
   },
 
   "reviewGate": {
-    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. commentReviewer: the reviewer that still re-reviews a comment-only change to a file it is routed to (every other reviewer's clean stamp carries over it). Default \"docs-sync-reviewer\". A route's \"exclude\" drops files from that route, e.g. test files, which is why every route above carries one.",
+    "$comment": "maxRoutedFiles: WARN (not block) when a staged diff touches more routed files than this — the per-task commit rule is being skipped. Docs/ledgers don't count. Default 10. commentReviewer: the reviewer that still re-reviews a comment-only change to a file it is routed to (every other reviewer's clean stamp carries over it). Default \"docs-sync-reviewer\". maxRounds: WARN (not block) when a reviewer has re-reviewed a file this many times with a finding still open — stop and ask the user whether to rethink or triage. Default 3. A route's \"exclude\" drops files from that route, e.g. test files, which is why every route above carries one.",
     "maxRoutedFiles": 10,
-    "commentReviewer": "docs-sync-reviewer"
+    "commentReviewer": "docs-sync-reviewer",
+    "maxRounds": 3
   },
 
   "productionGuard": {

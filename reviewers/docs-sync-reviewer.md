@@ -45,6 +45,11 @@ the same change** — a stale canonical doc actively misleads the next session.
    judgment calls, `✅ <coupling>` when satisfied. Do NOT edit. End with
    **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input, answer
    `NO DIFF — scope not provided`.
+5. One finding per line, starting with `❌` or `⚠️` and citing the doc as
+   `path` or `path:line` on that line. A finding that holds against HEAD's
+   code too is `❌ [pre-existing] …`. Given open findings, answer each on its
+   own line, `✅ [<id>] fixed` or `❌ [<id>] <why it's still open>`, and never
+   report a listed one again. N counts the `❌` lines.
 
 **A comment-only delta.** When the gate hands you a change that only
 edits comments, check each changed comment's claim against the code it

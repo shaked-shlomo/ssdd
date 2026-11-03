@@ -41,7 +41,11 @@ real project.
   `SSDD_PROJECT_DIR`; `--stamp` and `--check` key git's cwd too, unless
   `--repo` names another.
 - `--stamp` is an attestation the gate can't verify: not whether the
-  reviewers ran, nor on which model.
+  reviewers ran, nor on which model. `--stamp --report` takes the
+  orchestrator's word for the reviewer's reply too.
+- The finding parse reads the reviewer's own format. A finding it can't
+  read isn't recorded or listed to the re-review; `--stamp` says when the
+  `❌` lines it read don't add up to the verdict's N.
 - A re-stage that changes nothing keeps its stamps, by design.
 - The comment-only carry judges source text. It can't see code that reads
   its own comments at run time (`Function.prototype.toString`, source maps,

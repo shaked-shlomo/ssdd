@@ -35,6 +35,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, isAbsolute } from 'node:path';
 import { hookFilePath, hookHarness, parseHookStdin, resolveHookRepo } from './stdin-payload.mjs';
+import { addedLines } from './added-lines.mjs';
 
 const stdinMode = process.argv.length <= 2;
 const payload = stdinMode ? parseHookStdin(readFileSync(0, 'utf8')) : null;
@@ -101,61 +102,6 @@ function lintFile(relPath) {
   let src;
   try { src = readFileSync(join(root, relPath), 'utf8'); } catch { return []; }
   return lintLines(relPath, src.split('\n').map((line, i) => [i + 1, line]));
-}
-
-// A `+++ b/<path>` name: C-quoted ("…") when it holds a quote, a backslash or a
-// control character (core.quotePath=false keeps other bytes literal).
-function diffPath(raw) {
-  let p = raw;
-  if (p.startsWith('"')) {
-    const bytes = [];
-    for (let i = 1; i < p.length - 1; i++) {
-      if (p[i] !== '\\') { bytes.push(...Buffer.from(p[i])); continue; }
-      const c = p[++i];
-      if (/[0-7]/.test(c)) { bytes.push(parseInt(p.slice(i, i + 3), 8)); i += 2; continue; }
-      bytes.push(({ n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11 })[c] ?? c.charCodeAt(0));
-    }
-    p = Buffer.from(bytes).toString('utf8');
-  }
-  return p.replace(/^b\//, '');
-}
-// `git diff -U0` → Map<path, [[lineNo, text]]> of the lines it adds. A hunk
-// runs while its lines start with `+`, `-` or `\`, so inside one, `+++ x` is
-// an added line `++ x`, not the next file's header. An added line that only
-// gains or drops the file's final newline (`\ No newline at end of file`
-// follows the side without one) is the removed line it replaces, not a new one.
-function addedLines(diff) {
-  const out = new Map();
-  let file = null;
-  let hunk = null; // { n, removed, added: [{ n, text, eof }], last }
-  const flush = () => {
-    if (!file || !hunk) return;
-    for (const a of hunk.added) {
-      const same = hunk.removed.find((r) => !r.used && r.text === a.text && r.eof !== a.eof);
-      if (same) same.used = true;
-      else out.get(file).push([a.n, a.text]);
-    }
-  };
-  for (const line of diff.split('\n')) {
-    if (hunk && /^[-+\\]/.test(line)) {
-      if (line[0] === '\\') { if (hunk.last) hunk.last.eof = true; continue; }
-      hunk.last = { n: line[0] === '+' ? hunk.n++ : 0, text: line.slice(1), eof: false };
-      (line[0] === '+' ? hunk.added : hunk.removed).push(hunk.last);
-      continue;
-    }
-    flush();
-    hunk = null;
-    if (line.startsWith('+++ ')) {
-      // git ends a name that holds a space with a tab
-      file = line === '+++ /dev/null' ? null : diffPath(line.slice(4).replace(/\t$/, ''));
-      if (file) out.set(file, out.get(file) ?? []);
-      continue;
-    }
-    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (h) hunk = { n: Number(h[1]), removed: [], added: [], last: null };
-  }
-  flush();
-  return out;
 }
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
 const lintAdded = (diff) => [...addedLines(diff)].flatMap(([path, lines]) => lintLines(path, lines));

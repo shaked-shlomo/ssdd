@@ -221,6 +221,19 @@ describe('shipped text matches the defaults', () => {
   });
 });
 
+describe('the outcome words (v3.5)', () => {
+  it('SDD.md and the ledger template use them; SDD.md names --report', () => {
+    for (const f of ['process/SDD.md', 'process/templates/task-ledger-template.md']) {
+      const t = read(f);
+      for (const w of ['fixed', 'wrong', 'intentional', 'minor', 'deferred', 'pre-existing']) {
+        assert.match(t, new RegExp(`\`${w}\``), `${f} lacks \`${w}\``);
+      }
+    }
+    assert.match(read('process/SDD.md'), /--report/);
+    assert.match(read('process/SDD.md'), /maxRounds/);
+  });
+});
+
 describe('reviewer contracts', () => {
   const REVIEWERS = ['convention-compliance', 'performance', 'resilience', 'security', 'docs-sync', 'gate'].map((n) => `reviewers/${n}-reviewer.md`)
     .concat('reviewers/domain-reviewer-template.md');
@@ -232,5 +245,16 @@ describe('reviewer contracts', () => {
   });
   it('docs-sync has the comment-only section', () => {
     assert.match(read('reviewers/docs-sync-reviewer.md'), /comment-only/i);
+  });
+  it('every reviewer answers open findings by ID and tags pre-existing ones (v3.5)', () => {
+    for (const f of REVIEWERS) {
+      const t = read(f).replace(/\s+/g, ' ');
+      for (const want of ['`✅ [<id>] fixed`', '`❌ [<id>]', '`❌ [pre-existing]', 'N counts the `❌` lines', 'never report a listed one again']) {
+        assert.ok(t.includes(want), `${f} lacks ${want}`);
+      }
+    }
+  });
+  it("gate-reviewer's check 5 names the finding line --report parses", () => {
+    assert.match(read('reviewers/gate-reviewer.md').replace(/\s+/g, ' '), /the verdict line or the finding line changed \(`--stamp --report` parses/);
   });
 });

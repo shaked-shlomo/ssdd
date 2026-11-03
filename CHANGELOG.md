@@ -10,6 +10,52 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.5.0] — 2026-11-02
+
+v3.5, findings have outcomes: the gate loop converges. A re-review is told
+which findings are still open and answers each by ID; a finding the change
+didn't introduce doesn't stay open; a loop that keeps going is told to stop
+and ask. Nothing new blocks a commit, and it runs the same on every harness.
+No upgrade steps: the stamp file stays version 2 (new fields only, which
+older gates keep), `maxRounds` is optional, and the reviewers update as
+managed files. See `SPEC.md` → v3.5.
+
+### Added
+- **`--stamp <reviewer> --report <file|->`** reads the reviewer's reply and
+  records its findings in the stamp file, each with an ID (`F<n>`) that
+  `--stamp` prints. A reply with no verdict line, or `NO DIFF`, is refused
+  and nothing is stamped. `--report` is optional: without it a stamp
+  records no findings and says so. A count of `❌` lines that doesn't match
+  the verdict's N stamps anyway, with a note.
+- **The re-review list.** The block message hands each owing reviewer its
+  open findings by ID, place and text (and its `⚠️` as already noted). A
+  reply's `✅ [F<n>] fixed` closes one; `❌ [F<n>]` keeps it open; a finding
+  reported again under a new line keeps its ID.
+- **`[pre-existing]`.** A finding that holds against HEAD's code too is
+  `❌ [pre-existing] …`; it isn't listed as open and doesn't make a round,
+  unless it cites a line the change adds or a new file.
+- **`reviewGate.maxRounds`** (default 3): when a reviewer has re-reviewed a
+  file that many times with a finding still open, the block message says
+  not to dispatch another round, but to ask the user. A warning, like
+  `maxRoutedFiles`.
+- `review-report.mjs` (the parse) and `added-lines.mjs` (moved out of
+  `convention-lint.mjs`), with their selftests and `review-findings.selftest.mjs`.
+
+### Changed
+- The block message prints one stamp line per owing reviewer, each with
+  `--report <its reply>`.
+- The triage note names each open `❌` by ID, reviewer and place, instead
+  of copying a review's count onto every file it covered.
+- A stamp whose reviewer has an open `❌` on a file doesn't carry over a
+  comment-only change to it: that reviewer re-reviews the file.
+- Every framework reviewer and the domain template gain one report step:
+  one finding per line with its `path:line`, `[pre-existing]`, answers by
+  ID, and N counts the `❌` lines. gate-reviewer's check 5 covers the
+  finding line.
+- `SDD.md` §3/§4 and the ledger template use the outcome words (`fixed`,
+  `wrong`, `intentional`, `minor`, `deferred`, `pre-existing`) and the
+  `--report` step.
+
 ## [3.4.0] — 2026-11-01
 
 v3.4, the gate lives in git: the review gate is the pre-commit, which every
