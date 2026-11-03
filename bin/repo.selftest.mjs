@@ -192,6 +192,34 @@ describe('the backlog template', () => {
   });
 });
 
+describe('one name for the backlog', () => {
+  it('the process names BACKLOG.md', () => {
+    const sdd = read('process/SDD.md');
+    const section = (n) => sdd.split(/^(?=## )/m).find((x) => x.startsWith(`## ${n}. `)).replace(/\s+/g, ' ');
+    assert.ok(section(3).includes('a row in `BACKLOG.md` before the plan closes'), '§3');
+    assert.ok(section(7).includes('Update `BACKLOG.md` if the work affects readiness'), '§7');
+    const followUps = read('process/templates/task-ledger-template.md').split(/^## /m).find((x) => x.startsWith('Follow-ups'));
+    assert.ok(followUps.includes('BACKLOG.md'), 'ledger Follow-ups');
+    for (const f of ['skills/new-reviewer/SKILL.md', 'reviewers/docs-sync-reviewer.md']) assert.ok(read(f).includes('BACKLOG.md'), f);
+  });
+
+  it('no shipped file uses the old names', () => {
+    const shipped = tracked().filter((p) => /^(process|skills|reviewers|adapters|mechanisms)\//.test(p));
+    const bad = shipped.filter((p) => /requirements[ /](production )?checklist|production-readiness checklist/i.test(read(p).replace(/\s+/g, ' ')));
+    assert.deepEqual(bad, []);
+  });
+
+  it('the AGENTS template has the BACKLOG.md row', () => {
+    assert.match(read('adapters/generic/AGENTS.md'), /^\| `BACKLOG\.md` \|/m);
+  });
+
+  it('the security reviewer on deferred rows', () => {
+    const text = read('reviewers/security-reviewer.md').replace(/\s+/g, ' ');
+    for (const s of ['BACKLOG.md', 'never the exploit path', 'docs/limitations.md']) assert.ok(text.includes(s), s);
+    assert.ok(!text.includes('docs/BACKLOG.md'), 'cites SSDD\'s own backlog path');
+  });
+});
+
 describe('README', () => {
   it('one page', () => {
     const n = read('README.md').split('\n').length - 1;

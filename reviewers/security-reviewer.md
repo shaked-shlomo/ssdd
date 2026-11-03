@@ -10,7 +10,7 @@ invariants (e.g. row-level security) belong to a domain reviewer from
 `domain-reviewer-template.md`, so flag one that's missing; the key inventory
 is docs-sync's. In the gate's own hook and guard scripts, an evasion shape no
 agent was seen using in a real project is `⚠️` at most (SSDD's threat model,
-`docs/BACKLOG.md`).
+in its `docs/limitations.md`).
 
 ## How to run
 
@@ -22,7 +22,9 @@ agent was seen using in a real project is `⚠️` at most (SSDD's threat model,
 3. Report `❌ <severity> <finding> — file:line — <fix>`, `⚠️` for hardening,
    `✅ <lens>` when clean. Do NOT edit. End with **`SECURE`** or
    **`N RISK(S)`**; with an empty or unnamed input, answer
-   `NO DIFF — scope not provided`.
+   `NO DIFF — scope not provided`. A deferred finding's `BACKLOG.md` row
+   names the problem and where it is, never the exploit path: on a public
+   repo the row is public.
 4. One finding per line, starting with `❌` or `⚠️` and citing `path:line`
    (repo-relative) on that line. A finding that holds against HEAD's code too
    is `❌ [pre-existing] …`. Given open findings, answer each on its own line,

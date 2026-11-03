@@ -19,8 +19,8 @@ the same change** — a stale canonical doc actively misleads the next session.
 2. Common standing couplings to check even if phrased differently per project:
    - **Version ledger** (e.g. `VERSIONS.md`): any dependency/tool/CI-action
      added or bumped in the diff appears there.
-   - **Requirements / production-readiness checklist**: work affecting
-     readiness moved items or added new ones, with a dated changelog bullet.
+   - **`BACKLOG.md`**: work affecting readiness moved items or added new
+     ones, and a deferred finding has its row.
    - **Architecture maps** (UI, data, flows): component/screen/schema/service
      changes reflected in the matching map — and where two maps describe the
      same system at different altitudes, they must stay consistent with each

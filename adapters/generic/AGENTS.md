@@ -40,4 +40,5 @@ live in `.agents/skills/` (`.claude/skills/` holds symlinks).
 
 | Doc | Purpose | When to update |
 |---|---|---|
+| `BACKLOG.md` | Remaining work, deferred review findings included | Work is planned, deferred or ships |
 | `<docs/architecture-map.md>` | <…> | <…> |
