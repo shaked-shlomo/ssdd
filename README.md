@@ -67,7 +67,8 @@ flowchart TB
 - **Production changes go one way.** `prod-guard.mjs` asks a person before
   anything else that would change production; stacks come as packs.
 - **Onboarding.** `/migrate-plans` brings older plans to the format the view
-  reads.
+  reads; `/migrate-backlog` moves a backlog kept under another name to
+  `BACKLOG.md`.
 
 What's in the box, and how each part works: [docs/usage.md](docs/usage.md#how-it-works).
 Full lifecycle: [process/SDD.md](process/SDD.md).

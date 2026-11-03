@@ -899,6 +899,27 @@ describe('migrate-plans skill', () => {
   });
 });
 
+describe('migrate-backlog skill', () => {
+  const REPO = join(dirname(SCRIPT), '..');
+  const SKILL = join(REPO, 'skills', 'migrate-backlog', 'SKILL.md');
+  it('frontmatter', () => {
+    const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
+    assert.match(fm, /^name: migrate-backlog$/m);
+    assert.match(fm, /^disable-model-invocation: true$/m);
+    const desc = fm.match(/^description: (.+)$/m)[1];
+    assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
+    assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
+    assert.match(desc, /once/);
+  });
+
+  it('names the procedure', () => {
+    const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
+    for (const s of ['/migrate-plans', 'ssdd.lock.json', 'managed', '3.6.0', 'nothing is written', 'one heading level down',
+      'word for word', 'Deferred review findings', 'short name', 'git grep', "sed -E 's/^#+ //'", 'git show --stat -M',
+      'one commit', 'relative path']) assert.ok(text.includes(s), s);
+  });
+});
+
 describe('packs', () => {
   // v2.1.0 adds a Supabase pack: a stub guard and a detect.mjs that reads
   // supabase/config.toml and package.json.

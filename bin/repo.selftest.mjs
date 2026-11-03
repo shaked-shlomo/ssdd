@@ -162,7 +162,7 @@ describe('text budgets', () => {
 
   it('the skills the user calls by name are kept out of model invocation', () => {
     assert.deepEqual(skills().filter((f) => frontmatter(f).manual).sort(),
-      ['skills/migrate-plans/SKILL.md', 'skills/new-reviewer/SKILL.md', 'skills/skills-audit/SKILL.md']);
+      ['skills/migrate-backlog/SKILL.md', 'skills/migrate-plans/SKILL.md', 'skills/new-reviewer/SKILL.md', 'skills/skills-audit/SKILL.md']);
   });
 
   it('a default Claude Code install loads at most 5,000 bytes', () => {

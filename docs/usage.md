@@ -38,13 +38,20 @@ was lost. Plans can live anywhere: `paths` in `.ssdd/config.json` names the
 plans, specs and ledgers folders. The view, `status` and `update` list the
 onboarding steps still open.
 
+**Onboarding a repo whose backlog has another name.** `install` and `update`
+(not `status` or the view) name the file (`docs/TODO.md`, a `…requirements.md`) instead of seeding
+`BACKLOG.md`. `/migrate-backlog` moves it once: a report first (the rename,
+each section nested under the template's with its heading kept, the mentions
+it rewrites by group, short names for the user to approve), then the move,
+a check that every old line survives, and one commit.
+
 ## What's in the box
 
 | Layer | Path | What it is |
 |---|---|---|
 | **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover / backlog templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
-| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate-plans`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
+| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate-plans`, `migrate-backlog`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
 | **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
 | **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`). |
 | **Adapters** | [`adapters/`](../adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
