@@ -16,8 +16,8 @@ commit. Nothing is written until the user approves the report.
 
 A branch or worktree off the default branch, a clean tree, the user's
 go-ahead, and `.ssdd/ssdd.lock.json` at 3.6.0 or later. Without that lock,
-run `update` (or `install`) first: SSDD's own files must already say
-`BACKLOG.md`, since this skill doesn't touch them.
+run `update` (or `install`) first: SSDD's own text must already say
+`BACKLOG.md`, since this skill leaves managed files as installed alone.
 
 ## 2. The file
 
@@ -48,19 +48,25 @@ Show the user, and wait for approval:
   `CLAUDE.md`, Cursor rules), reviewers, skills, plans, ledgers, specs, other
   docs, code comments (migrations included: a comment changes nothing that
   runs). Find them with `git grep -n -F <old file name>`. The old file's
-  mentions of itself are rewritten too, counted on their own line. Skip
-  every path in the lock's `managed` list: `update` rewrites those.
+  mentions of itself are rewritten too, counted on their own line.
 - **Short names**, each with its count and its replacement: names that
   aren't the path ("REQUIREMENTS §3B", "the pre-launch doc", "the
   requirements file"). Find them by grepping the old file name's
   distinctive words. A section label the file keeps (`§3B`) stays; only the
   file's name changes ("BACKLOG §3B"). The user approves each short name;
   none is rewritten unasked.
+- **Managed files** (the lock's `managed` list), for mentions and short names
+  alike. A file as installed (its sha256 is the lock's) is SSDD's text: skip
+  it. A file the project edited may hold the project's own line, such as the
+  drift audit's domain list: list each such line, for the user to approve one
+  by one. A line SSDD's copy has too (`git -C <SSDD checkout> show <lock
+  commit>:<src>`) stays; without a checkout, say so on the listed line.
 
 ## 4. Apply
 
 `git mv <old> BACKLOG.md`, then restructure as the outline says. Rewrite
-every listed mention and each approved short name. A markdown link gets the
+every listed mention and each approved short name, and only those: never in
+a managed file as installed, never a managed line the user didn't approve. A markdown link gets the
 relative path from its own file to `BACKLOG.md`; a relative link inside the
 moved file is rewritten relative to the root. Change nothing else.
 
@@ -75,7 +81,7 @@ diff <(git show HEAD:<old> | sed -E 's/^#+ //' | sort) <(sed -E 's/^#+ //' BACKL
 ```
 
 Then `git grep -n -F <old file name>` and each approved short name print
-nothing outside the lock's managed paths, and every relative link to or in
+only the managed-file lines that rule left, and every relative link to or in
 `BACKLOG.md` resolves.
 
 ## 6. One commit
@@ -88,7 +94,7 @@ counts per group. After it, `git show --stat -M HEAD` shows the rename.
 
 | Mistake | Instead |
 |---|---|
-| Rewriting a file the lock manages | skip it; `update` owns it |
+| Rewriting a managed file as installed | skip it; `update` owns it |
 | Folding a long row into one line | move it with its words |
 | Renaming a project heading to the template's | nest it, heading kept |
 | Rewriting a short name the user didn't approve | list it; they choose |
