@@ -47,7 +47,8 @@ another name moves it once. See `SPEC.md` → v3.6.
 - `AGENTS.md` is project-owned: `update` prints the template's change. Add
   the `BACKLOG.md` row to your Documentation Map.
 - If `update` printed `not seeded BACKLOG.md`, run `/migrate-backlog` on a
-  branch. It needs this version's lock, so update first.
+  branch. It needs this version's lock, so update first, and `/migrate-plans`
+  before it: the commit rewrites plans, and the pre-commit checks them.
 
 ## [3.5.0] — 2026-11-02
 

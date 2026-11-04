@@ -23,3 +23,15 @@ What 3.4.0/3.5.0 changed for this plan:
       Found by the run: prizma's `.agents/skills/docs-drift-audit/SKILL.md:25` is a managed path holding the project's own line, so "skip managed paths" left it stale → the skill's Managed files rule (the lock's sha, line by line, approved). prizma rerun from a fresh clone: the only hit left is the installed skill's own example. The commit itself ran without the gate there (scratch).
       Reviews: docs-sync 2 ISSUE(S), both tagged pre-existing and fixed (Clarify 6's carve-out; "update to 3.5" → 3.6, a renumber slip); ⚠️s fixed (step 1's sentence, the plan's old rule, AC8's row count). gate-reviewer: ❌ a per-file test put SSDD's own lines in edited managed files in scope → made line by line with an SSDD-copy guard; ❌ the guard's `git show` can't run in a project → `git -C <SSDD checkout>` as the reviewer proposed, and its ⚠️ wording taken as proposed. That last fix was round 3, so it wasn't re-reviewed (`maxRounds`).
 - [x] Task 6 — release files (AC9), `6a51f97`; Verification and Deviations. Scratch: `install --ref HEAD` (claude-code,cursor) seeds BACKLOG.md, links the skill; installed selftests 1,092 pass, 3 fail, the same three v3.5 recorded. A v3.5.0 install with docs/TODO.md, `update --to HEAD`: exit 0, the candidate line, no BACKLOG.md, Upgrade steps printed. Suite 1636/1636.
+
+## Final whole-plan review
+
+Fresh-eyes pass over `origin/main...HEAD` at `1ea8b60`: 5 ISSUE(S), and ⚠️s.
+- ❌ Important: the migration's one commit is refused when it rewrites an old-format plan (reproduced) → step 1 says run `/migrate-plans` first; usage.md, CHANGELOG's Upgrade and the backlog's migrations item say so.
+- ❌ Minor: a candidate already named `BACKLOG.md`, in `docs/`, breaks the grep → the skill greps its path and the links beside it.
+- ❌ Minor: the installed selftests had no row → `[plan v3.5]` row added.
+- ❌ Minor: the Deviation's "verdicts in the ledger" had no verdict for `6a51f97`/`1ea8b60` → reviewed below, Deviation narrowed.
+- ❌ Minor: "before 3.5" renumber slip in Clarify 1 → 3.6.
+- ⚠️ taken: copy the template when a candidate isn't the backlog; the Deferred section carries the template's comment (SSDD's own too); relative links in the report; `%20` and stem greps; a code-and-config group; a lowercase `backlog.md` (listing, not existsSync, with a test that failed first on this Mac); `-M30%`; usage.md on a deleted seeded file; the stale "all five parts" wording; the control-character Deviation states the behaviour.
+Fixes reviewed: security-reviewer SECURE (⚠️ a dangling BACKLOG.md link now passes the candidate check too: the same deferred row). gate-reviewer CLEAN (⚠️ step 5 needs the stem grep → added). docs-sync 2 ISSUE(S) over `6a51f97`, `1ea8b60` and the fixes: Verification's 5,244 bytes and 1636 were stale → 5,991 and 1637; ⚠️ this entry was missing → this entry.
+Not re-run on clones: the skill's final-review additions; the clones were gone, and they change the report and checks, not the move. The scratch commits ran without the gate.

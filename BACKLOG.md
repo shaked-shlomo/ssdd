@@ -17,10 +17,10 @@ and the spec that closes it records that incident.
 
 ### Next: the end of v3
 
-- **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
-  until all five parts land; scratch clones only before then), with Part 1's
-  after-`/compact` session-start check, and `/migrate-backlog` once each
-  (scratch runs: spec v3.6, Verification).
+- **The real migrations of prizma and Hatedate** (owner, 2026-10-30: after
+  v3.4, v3.5 and v3.6; scratch clones only before then), with Part 1's
+  after-`/compact` session-start check, and `/migrate-backlog` once each,
+  after `/migrate-plans` (scratch runs: spec v3.6, Verification).
   - Both carry their own `/cleanup` (11.6 KB and 13.3 KB). The update merges
     or sidecars it against the thin one; what's project-specific moves into
     the skill's project section.
@@ -50,6 +50,17 @@ and the spec that closes it records that incident.
 
 ## Deferred review findings
 
+<!-- One line per finding a plan deferred:
+`- [F12] <severity> <the problem> — <path> (<reviewer>, plan NN, YYYY-MM-DD)`,
+with the gate's finding ID, or `[plan NN]` when the finding has none. A
+finding with no row here doesn't exist. Fixed: the row moves to Done with the
+fix commit. On a public repo the row is public: name the problem and where it
+is, never how to exploit it. -->
+
+- [plan v3.5] Minor three selftests shipped since 3.4.0 fail in an installed
+  repo: they read `.ssdd/config.example.json`, which an install doesn't ship
+  — `mechanisms/hooks/` (convention-lint's example hex rule, review-gate's
+  routing examples) (final review, plan v3.5, 2026-11-02)
 - [plan v3.6] Minor `seedOne` writes through a dangling symlink at a seeded
   path, for every seeded file — `bin/ssdd.mjs` (security-reviewer, plan v3.6,
   2026-11-03)

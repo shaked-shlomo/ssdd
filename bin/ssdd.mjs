@@ -298,11 +298,12 @@ function pruneEmpty(target, t) {
 // bidi character is never printed. → sorted relative paths.
 const BACKLOG_NAME = /^(?:(?:backlog|todo|roadmap)|requirements.*|.*(?:requirements|checklist))\.md$/i;
 function backlogCandidates(target) {
-  if (existsSync(join(target, 'BACKLOG.md'))) return [];
   const found = [];
   for (const dir of ['', 'docs']) {
     let entries = [];
     try { entries = readdirSync(join(target, dir), { withFileTypes: true }); } catch { /* absent */ }
+    // By listing, not existsSync: on a case-insensitive disk backlog.md would pass.
+    if (!dir && entries.some((e) => e.name === 'BACKLOG.md')) return [];
     for (const e of entries) if (e.isFile() && BACKLOG_NAME.test(e.name) && !/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/.test(e.name)) found.push(dir ? `${dir}/${e.name}` : e.name);
   }
   return found.sort();

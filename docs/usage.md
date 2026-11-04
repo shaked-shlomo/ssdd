@@ -43,7 +43,10 @@ onboarding steps still open.
 `BACKLOG.md`. `/migrate-backlog` moves it once: a report first (the rename,
 each section nested under the template's with its heading kept, the mentions
 it rewrites by group, short names for the user to approve), then the move,
-a check that every old line survives, and one commit.
+a check that every old line survives, and one commit. Run `/migrate-plans`
+first: the commit rewrites plans, and the pre-commit checks them. A file
+that isn't the backlog: copy the template to `BACKLOG.md`, and `update`
+stops naming it.
 
 ## What's in the box
 
@@ -142,7 +145,8 @@ adds or removes one. It keeps the optional parts the lock lists too (a lock
 from before 3.3.0 keeps the drift audit it has), and `update --with a,b|none`
 adds or removes one.
 
-Project-owned files are never touched; `update` prints how their templates
+Project-owned files are never touched (one that's deleted is seeded again);
+`update` prints how their templates
 changed so you can port what you need, and ends with the
 [CHANGELOG](../CHANGELOG.md) entries since your version, the manual Upgrade
 steps they name, and the onboarding steps still open. Review with `git diff`

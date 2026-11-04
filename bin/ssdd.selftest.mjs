@@ -296,6 +296,13 @@ describe('the backlog', () => {
     assert.match(r.out, NOT_SEEDED('docs/pre-launch-requirements.md'));
   });
 
+  it('a lowercase backlog.md at the root is a candidate, on any file system', () => {
+    put(tgt, 'backlog.md', 'theirs\n');
+    const r = ssdd('install', tgt);
+    assert.equal(get('backlog.md'), 'theirs\n');
+    assert.match(r.out, NOT_SEEDED('backlog.md'));
+  });
+
   it('two candidates are both named', () => {
     put(tgt, 'ROADMAP.md', 'a\n');
     put(tgt, 'docs/backlog.md', 'b\n');
@@ -923,7 +930,7 @@ describe('migrate-backlog skill', () => {
     const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
     for (const s of ['/migrate-plans', 'ssdd.lock.json', 'managed', '3.6.0', 'nothing is written', 'one heading level down',
       'word for word', 'Deferred review findings', 'short name', 'git grep', "sed -E 's/^#+ //'", 'git show --stat -M',
-      'one commit', 'relative path']) assert.ok(text.includes(s), s);
+      'one commit', 'relative path', 'close check', 'copy the template']) assert.ok(text.includes(s), s);
   });
 });
 
