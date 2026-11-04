@@ -1,4 +1,4 @@
-# SSDD backlog
+# Backlog
 
 The single list of remaining SSDD work. Updated 2026-11-02 at 3.5.0. All
 five parts of v3 (`SPEC.md` → v3), v3.4 and v3.5 have shipped; what's left
@@ -11,7 +11,11 @@ cooperating agent on the process; they aren't a sandbox. A new evasion
 shape is out of scope unless an agent was seen using it in a real project,
 and the spec that closes it records that incident.
 
-## Next: the end of v3
+## Now
+
+## Next
+
+### Next: the end of v3
 
 - **v3.6 — one backlog** (`SPEC.md` → v3.6, clarified 2026-10-30; plan
   `docs/superpowers/plans/2026-10-30-v3-6-backlog.md`): the standard
@@ -46,6 +50,10 @@ and the spec that closes it records that incident.
 |---|---|---|---|
 | **More `/skills-audit` catalog sources:** Supabase and stack-agnostic ones | v2.4 covers RN/Expo and Next.js/React. Supabase is used by both injected projects. | Needs an audit of each source first. The catalog records what an audit read. | M |
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
+
+## Deferred review findings
+
+## Done
 
 ## Accepted limitations (no plan)
 

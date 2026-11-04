@@ -494,7 +494,7 @@ scratchpad (they hold private paths and commit text).
 **Files:**
 - Modify: `CHANGELOG.md` (`## [3.1.0] — unreleased`), `README.md` (How it
   works paragraph on the gate; Known limitations: chained staging, merges,
-  `--check`), `docs/BACKLOG.md` (Part 3 row → plan written / shipped
+  `--check`), `BACKLOG.md` (Part 3 row → plan written / shipped
   unreleased; remove the open decision bullet), `process/SDD.md` §2 (a
   duplicate number: renumber the later plan and its references).
 - Test: `bin/ssdd.selftest.mjs` only if a doc test asserts on these files.

@@ -59,7 +59,7 @@ describe('the spec index', () => {
 
 describe('links', () => {
   it('every relative link resolves', () => {
-    const docs = ['SPEC.md', 'README.md', ...tracked().filter((p) => /^docs\/.*\.md$/.test(p) && !p.startsWith('docs/superpowers/'))];
+    const docs = ['SPEC.md', 'README.md', 'BACKLOG.md', ...tracked().filter((p) => /^docs\/.*\.md$/.test(p) && !p.startsWith('docs/superpowers/'))];
     const bad = [];
     for (const f of docs) {
       for (const { target, anchor } of links(read(f))) {
@@ -235,8 +235,17 @@ describe('README', () => {
     }
   });
 
+  it("SSDD's backlog is at the root", () => {
+    assert.ok(existsSync(join(REPO, 'BACKLOG.md')));
+    assert.ok(!existsSync(join(REPO, 'docs/BACKLOG.md')));
+    // The v3.6 spec and plan describe the move; this file's checks name the old path.
+    const bad = tracked().filter((p) => !/^docs\/specs\/v3\.6\.md$|^docs\/superpowers\/plans\/2026-10-30-v3-6-backlog\.md$|^bin\/repo\.selftest\.mjs$/.test(p))
+      .filter((p) => /\.(md|mjs)$/.test(p) && read(p).includes('docs/BACKLOG'));
+    assert.deepEqual(bad, []);
+  });
+
   it('the BACKLOG cites docs/limitations.md', () => {
-    const backlog = read('docs/BACKLOG.md');
+    const backlog = read('BACKLOG.md');
     assert.doesNotMatch(backlog, /README → Known limitations/);
     assert.match(backlog, /docs\/limitations\.md/);
   });

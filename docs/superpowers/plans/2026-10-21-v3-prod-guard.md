@@ -411,7 +411,7 @@ Clarify 28–43, AC26–AC38).
 
 **Files:**
 - Create: `packs/supabase/README.md` (what it judges, the options, `db-read`, the read-tool list, residues)
-- Modify: `README.md` (How it works paragraph, What's in the box row `packs/`, Quick start step, Known limitations), `process/SDD.md` (where it names the hooks), `CHANGELOG.md` (`## [3.2.0] — unreleased` with `### Upgrade`: merge the new `.claude/settings.json` entries), `docs/BACKLOG.md` (Part 4 row gone; the "ask" item retired), `SPEC.md` (v3 table: Plan 4 path)
+- Modify: `README.md` (How it works paragraph, What's in the box row `packs/`, Quick start step, Known limitations), `process/SDD.md` (where it names the hooks), `CHANGELOG.md` (`## [3.2.0] — unreleased` with `### Upgrade`: merge the new `.claude/settings.json` entries), `BACKLOG.md` (Part 4 row gone; the "ask" item retired), `SPEC.md` (v3 table: Plan 4 path)
 
 - [ ] **Step 1:** Write them; every claim matches a test or a Verification line.
 - [ ] **Step 2:** `node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs packs/*/*.selftest.mjs` → all pass.

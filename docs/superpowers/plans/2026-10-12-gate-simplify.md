@@ -18,7 +18,7 @@ lines; selftests (`mechanisms/hooks/` + `bin/`) 2,575 lines; 466 tests pass.
 |   | • README: drop "Keep the `gate-reviewer` route…" (Injecting, step 1), the gate-files bullet and the "first commit of a config" limitation. Put the threat-model rule first in Known limitations. Add what the Claude Code gate doesn't see (`/usr/bin/git`, `env` / `sudo`, shell wrappers). | `README.md` | |
 |   | • AGENTS template: drop the "once committed" paragraph. | `adapters/generic/AGENTS.md` | |
 |   | • D13: un-withdraw it, pointing at Clarify 9. | `docs/model-era-review.md` | |
-|   | • BACKLOG: add the threat-model rule; drop the "first commit" limitation and the v2.5 paste-the-route item; move the adoption items to the top. | `docs/BACKLOG.md` | |
+|   | • BACKLOG: add the threat-model rule; drop the "first commit" limitation and the v2.5 paste-the-route item; move the adoption items to the top. | `BACKLOG.md` | |
 | 8 | CHANGELOG 2.6.0 (Removed / Changed, then Upgrade: add the `if` line to `.claude/settings.json`, and optionally drop the `gate-reviewer` route), VERSION. | `CHANGELOG.md`, `VERSION` | update |
 | 9 | Verification (below), recorded under the spec's criteria. | `SPEC.md` | all |
 

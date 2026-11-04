@@ -14,7 +14,7 @@ Re-verify line numbers before citing them.
 You are adopting SSDD into Hatedate (`~/Developer/Hatedate`, React Native +
 Expo + Supabase) and tuning its production guard. Read `CLAUDE.md`, then
 SSDD's `SPEC.md` → v3 (work state, the production guard and the Supabase
-pack), then `docs/BACKLOG.md` in `~/Developer/ssdd`. Hatedate has never
+pack), then `BACKLOG.md` in `~/Developer/ssdd`. Hatedate has never
 adopted SSDD. Its gate, guards and routing are its own originals, which SSDD
 was extracted from. This is a spec → plan piece of work. Use a git worktree:
 the main checkout is shared with other sessions. The next free plan number
@@ -230,7 +230,7 @@ All owner rulings from 2026-10-17:
 ## Out of scope
 
 - Changes to SSDD itself. They're tracked in `~/Developer/ssdd`
-  `docs/BACKLOG.md` and `SPEC.md` → v3.
+  `BACKLOG.md` and `SPEC.md` → v3.
 - Branch protection and Supabase Pro branching (ruling 2).
 - Release guards (ruling 4).
 

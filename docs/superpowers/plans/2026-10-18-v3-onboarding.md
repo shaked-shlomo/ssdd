@@ -131,7 +131,7 @@ are the base.
 - Modify docs: `process/SDD.md`, `process/templates/*.md`,
   `skills/new-plan/SKILL.md`, `adapters/generic/AGENTS.md`,
   `mechanisms/config.example.json`, `README.md`, `CHANGELOG.md`,
-  `SPEC.md`, `docs/BACKLOG.md`
+  `SPEC.md`, `BACKLOG.md`
 
 ---
 
@@ -471,7 +471,7 @@ are the base.
 **Files:**
 - Create: `skills/migrate-plans/SKILL.md`
 - Modify: `CHANGELOG.md` (3.0.0 unreleased: Added, Upgrade), `README.md`,
-  `docs/BACKLOG.md`, `SPEC.md` (Part 2's plan link)
+  `BACKLOG.md`, `SPEC.md` (Part 2's plan link)
 - Test: `bin/ssdd.selftest.mjs` (skill text and the real CHANGELOG)
 
 - [ ] **Step 1: Failing tests**, describe `migrate-plans skill`:

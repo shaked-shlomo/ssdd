@@ -110,7 +110,7 @@ node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs packs/*/*.selftes
 Tests are named `*.selftest.mjs` so no injected project's test runner
 collects them; CI runs them on Node 22 and 24. [SPEC.md](SPEC.md) indexes
 SSDD's own design specs, one per version; remaining work is in
-[docs/BACKLOG.md](docs/BACKLOG.md); releasing is in
+[BACKLOG.md](BACKLOG.md); releasing is in
 [docs/usage.md](docs/usage.md#releasing).
 
 ## License
