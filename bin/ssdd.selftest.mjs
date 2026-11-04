@@ -902,6 +902,13 @@ describe('migrate-plans skill', () => {
 describe('migrate-backlog skill', () => {
   const REPO = join(dirname(SCRIPT), '..');
   const SKILL = join(REPO, 'skills', 'migrate-backlog', 'SKILL.md');
+  it("the real CHANGELOG's 3.6.0 Upgrade section names /migrate-backlog", () => {
+    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith('## [3.6.0]'));
+    const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
+    assert.match(upgrade, /\/migrate-backlog/);
+    assert.match(upgrade, /Documentation Map/);
+  });
+
   it('frontmatter', () => {
     const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
     assert.match(fm, /^name: migrate-backlog$/m);

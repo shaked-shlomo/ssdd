@@ -1,8 +1,8 @@
 # Backlog
 
-The single list of remaining SSDD work. Updated 2026-11-02 at 3.5.0. All
-five parts of v3 (`SPEC.md` → v3), v3.4 and v3.5 have shipped; what's left
-of v3 is v3.6 and the migrations below. Not hardening. When an item
+The single list of remaining SSDD work. Updated 2026-11-04 at 3.6.0. All
+five parts of v3 (`SPEC.md` → v3), v3.4, v3.5 and v3.6 have shipped; what's
+left of v3 is the migrations below. Not hardening. When an item
 ships, delete it here and record it in `CHANGELOG.md`. When one is planned,
 it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
 
@@ -17,13 +17,10 @@ and the spec that closes it records that incident.
 
 ### Next: the end of v3
 
-- **v3.6 — one backlog** (`SPEC.md` → v3.6, clarified 2026-10-30; plan
-  `docs/superpowers/plans/2026-10-30-v3-6-backlog.md`): the standard
-  `BACKLOG.md` and `/migrate-backlog`, split from v3.5. It ships after
-  v3.5 and before the migrations (owner, 2026-10-30).
 - **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
   until all five parts land; scratch clones only before then), with Part 1's
-  after-`/compact` session-start check.
+  after-`/compact` session-start check, and `/migrate-backlog` once each
+  (scratch runs: spec v3.6, Verification).
   - Both carry their own `/cleanup` (11.6 KB and 13.3 KB). The update merges
     or sidecars it against the thin one; what's project-specific moves into
     the skill's project section.
@@ -52,6 +49,10 @@ and the spec that closes it records that incident.
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
 
 ## Deferred review findings
+
+- [plan v3.6] Minor `seedOne` writes through a dangling symlink at a seeded
+  path, for every seeded file — `bin/ssdd.mjs` (security-reviewer, plan v3.6,
+  2026-11-03)
 
 ## Done
 
