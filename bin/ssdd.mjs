@@ -312,7 +312,7 @@ function backlogCandidates(target) {
 function seedOne(target, t, tree, s, log) {
   if (t === 'BACKLOG.md') {
     const found = backlogCandidates(target);
-    if (found.length) { log(`not seeded BACKLOG.md: ${found.join(', ')} looks like this repo's backlog — run /migrate-backlog`); return; }
+    if (found.length) { log(`not seeded BACKLOG.md: ${found.join(', ')} looks like this repo's backlog — run /migrate`); return; }
   }
   let dst = t;
   if (t === 'AGENTS.md' && existsSync(join(target, 'AGENTS.md'))) dst = 'AGENTS.ssdd.md';

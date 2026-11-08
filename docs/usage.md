@@ -29,22 +29,24 @@ SQL, MCP tools, the HTTP APIs and `psql`, and adds `db-read`, a read path that
 never asks. A project adds its own rules (`productionGuard.extraRules`, e.g.
 `vercel deploy --prod`).
 
-**Onboarding a repo that already has plans.** Plans written before v3 (checkbox
-criteria, criteria without IDs, Status words like DONE) are migrated once with
-`/migrate-plans`: `work-state.mjs --migrate` does the mechanical half, an agent
+**Onboarding a repo that predates v3.** `/migrate` runs once, in two halves on
+one branch, each its own commit: plans first, then the backlog.
+
+Plans written before v3 (checkbox criteria, criteria without IDs, Status words
+like DONE): `work-state.mjs --migrate` does the mechanical half, an agent
 cites each Verification entry's ID from the plan's own record and fixes Status
 against git, a second agent checks it, and `--migrate-check` makes sure no text
 was lost. Plans can live anywhere: `paths` in `.ssdd/config.json` names the
 plans, specs and ledgers folders. The view, `status` and `update` list the
 onboarding steps still open.
 
-**Onboarding a repo whose backlog has another name.** `install` and `update`
-(not `status` or the view) name the file (`docs/TODO.md`, a `…requirements.md`) instead of seeding
-`BACKLOG.md`. `/migrate-backlog` moves it once: a report first (the rename,
+A backlog with another name: `install` and `update` (not `status` or the
+view) name the file (`docs/TODO.md`, a `…requirements.md`) instead of seeding
+`BACKLOG.md`, and `/migrate` moves it: a report first (the rename,
 each section nested under the template's with its heading kept, the mentions
 it rewrites by group, short names for the user to approve), then the move,
-a check that every old line survives, and one commit. Run `/migrate-plans`
-first: the commit rewrites plans, and the pre-commit checks them. A file
+a check that every old line survives, and one commit. Plans go first because
+that commit rewrites mentions in them, and the pre-commit checks them. A file
 that isn't the backlog: copy the template to `BACKLOG.md`, and `update`
 stops naming it.
 
@@ -54,7 +56,7 @@ stops naming it.
 |---|---|---|
 | **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover / backlog templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
-| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate-plans`, `migrate-backlog`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
+| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
 | **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
 | **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`). |
 | **Adapters** | [`adapters/`](../adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
@@ -77,7 +79,7 @@ drift-audit` adds the drift-audit runbook and `/docs-drift-audit`. It seeds the 
 prints what's left. A repo whose backlog has another name (a `.md` at the
 root or in `docs/` named like `TODO`, `ROADMAP` or `…requirements`) gets no
 `BACKLOG.md`: install and update name that file and point to
-`/migrate-backlog`. Then fill in the per-project half:
+`/migrate`. Then fill in the per-project half:
 
 1. **`.ssdd/config.json`**: reviewer routing (which staged paths need which
    reviewers; a route may carry a `$comment` and an `exclude`), lint rules,

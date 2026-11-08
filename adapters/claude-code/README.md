@@ -25,8 +25,8 @@ none adds a rule of its own, and a missing one costs only what it adds.
    (the next `install`/`update` creates it).
 3. **Skills** — the skills tree is `.agents/skills/` (harness-neutral; Cursor
    reads it natively). `.claude/skills/<name>` are symlinks to it. Invoke
-   `/new-plan`, `/new-reviewer`, `/skills-audit`, `/cleanup`, `/migrate-plans`,
-   `/migrate-backlog`, and `/docs-drift-audit` when installed with `--with
+   `/new-plan`, `/new-reviewer`, `/skills-audit`, `/cleanup`, `/migrate`, and
+   `/docs-drift-audit` when installed with `--with
    drift-audit`.
 4. **Instructions** — `AGENTS.md` is canonical; `CLAUDE.md` is
    [`@AGENTS.md`](CLAUDE.md), plus any Claude-only notes the project adds.

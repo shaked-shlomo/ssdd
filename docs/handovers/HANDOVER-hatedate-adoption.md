@@ -222,8 +222,8 @@ All owner rulings from 2026-10-17:
 - Whether a rejected MCP `apply_migration` still runs (§2).
 - `git add -u` and directory adds: block, warn or allow.
 - How Hatedate's plans move into SSDD's layout. With SSDD v3's `paths`
-  config, plans can stay in `.claude/plans`; then run `/migrate-plans`
-  (SSDD v3, Part 2) over the 90 plans.
+  config, plans can stay in `.claude/plans`; then run `/migrate`
+  (SSDD v3, Part 2; 3.7.0) over the 90 plans.
 - Where its ledgers go: tracked `.superpowers/sdd/*/progress.md` needs the
   root `.gitignore:58` rule (`.superpowers/`) removed.
 

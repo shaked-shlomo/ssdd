@@ -346,7 +346,7 @@ export function collect(repo) {
   // `status` print the same lines. They come right after a config error, so
   // the session-start cap keeps them over ledger and numbering warnings.
   const onboarding = [];
-  if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate-plans`);
+  if (oldFormat) onboarding.push(`${plural(oldFormat, 'plan')} in the old format: run /migrate`);
   if (!skillsAudited(root)) onboarding.push("/skills-audit hasn't run here");
   warnings.splice(loaded.error ? 1 : 0, 0, ...onboarding.map((l) => `! ${l}`));
   // A dormant pre-commit hook: commits made outside the agent aren't gated.
@@ -549,7 +549,7 @@ function migrate(repo) {
     if (m.changed) { writeFileSync(join(r.root, p), m.text); changed++; }
     out.push(`  ${basename(p)}: ${m.changed ? m.changes.join('; ') : 'unchanged'}`, ...m.todo.map((t) => `    to do: ${t}`));
   }
-  out.push(`${changed} changed, ${plans.length - changed} unchanged. Next: the agent pass in /migrate-plans.`);
+  out.push(`${changed} changed, ${plans.length - changed} unchanged. Next: the agent pass in /migrate.`);
   process.stdout.write(out.join('\n') + '\n');
   return 0;
 }

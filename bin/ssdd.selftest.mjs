@@ -242,7 +242,7 @@ describe('update', () => {
 });
 
 describe('the backlog', () => {
-  const NOT_SEEDED = (paths) => new RegExp(`not seeded BACKLOG\\.md: ${paths.replace(/\./g, '\\.')} looks like this repo's backlog — run /migrate-backlog`);
+  const NOT_SEEDED = (paths) => new RegExp(`not seeded BACKLOG\\.md: ${paths.replace(/\./g, '\\.')} looks like this repo's backlog — run /migrate`);
 
   it('install seeds BACKLOG.md', () => {
     const r = ssdd('install', tgt);
@@ -811,7 +811,7 @@ describe('upgrade steps and onboarding', () => {
     commitAll(tgt, 'existing plan');
     const r = ssdd('install', tgt);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /^onboarding: 1 plan in the old format: run \/migrate-plans$/m);
+    assert.match(r.out, /^onboarding: 1 plan in the old format: run \/migrate$/m);
   });
 
   it('a +sha update repeats no unreleased section the locked commit already had', () => {
@@ -833,7 +833,7 @@ describe('upgrade steps and onboarding', () => {
     installed();
     put(tgt, '.ssdd/plans/01-a.md', '# Plan\n\n**Status:** DRAFT\n\n## Acceptance criteria\n- [ ] a\n');
     commitAll(tgt, 'old plan');
-    const OLD_LINE = /^onboarding: 1 plan in the old format: run \/migrate-plans$/m;
+    const OLD_LINE = /^onboarding: 1 plan in the old format: run \/migrate$/m;
     const AUDIT_LINE = /^onboarding: \/skills-audit hasn't run here$/m;
     let r = ssdd('status', tgt);
     assert.match(r.out, OLD_LINE);
@@ -877,48 +877,16 @@ describe('paths everywhere', () => {
 });
 
 
-describe('migrate-plans skill', () => {
+describe('migrate skill', () => {
   const REPO = join(dirname(SCRIPT), '..');
-  const SKILL = join(REPO, 'skills', 'migrate-plans', 'SKILL.md');
+  const SKILL = join(REPO, 'skills', 'migrate', 'SKILL.md');
+  const upgradeOf = (v) => {
+    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith(`## [${v}]`));
+    return section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
+  };
   it('frontmatter', () => {
     const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
-    assert.match(fm, /^name: migrate-plans$/m);
-    const desc = fm.match(/^description: (.+)$/m)[1];
-    assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
-    assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
-    assert.match(desc, /once/);
-  });
-
-  it('names the procedure', () => {
-    const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
-    for (const s of ['--migrate', '--migrate-check HEAD', 'NOT RECORDED (migrated', 'refute-by-default', 'one commit',
-      'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep',
-      '## Status:', 'STATUS (date):', 'was: (no Status line)', 'no criteria', 'word for word',
-      'Never write criteria of your own', 'split across phases', 'records the build',
-      'list of unfinished work', 'a summary line']) assert.ok(text.includes(s), s);
-  });
-
-  it("the real CHANGELOG's 3.0.0 Upgrade section names both steps", () => {
-    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith('## [3.0.0]'));
-    const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
-    assert.match(upgrade, /\/migrate-plans/);
-    assert.match(upgrade, /SessionStart/);
-  });
-});
-
-describe('migrate-backlog skill', () => {
-  const REPO = join(dirname(SCRIPT), '..');
-  const SKILL = join(REPO, 'skills', 'migrate-backlog', 'SKILL.md');
-  it("the real CHANGELOG's 3.6.0 Upgrade section names /migrate-backlog", () => {
-    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith('## [3.6.0]'));
-    const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
-    assert.match(upgrade, /\/migrate-backlog/);
-    assert.match(upgrade, /Documentation Map/);
-  });
-
-  it('frontmatter', () => {
-    const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
-    assert.match(fm, /^name: migrate-backlog$/m);
+    assert.match(fm, /^name: migrate$/m);
     assert.match(fm, /^disable-model-invocation: true$/m);
     const desc = fm.match(/^description: (.+)$/m)[1];
     assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
@@ -926,11 +894,34 @@ describe('migrate-backlog skill', () => {
     assert.match(desc, /once/);
   });
 
-  it('names the procedure', () => {
+  it('names the plans procedure', () => {
     const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
-    for (const s of ['/migrate-plans', 'ssdd.lock.json', 'managed', '3.6.0', 'nothing is written', 'one heading level down',
-      'word for word', 'Deferred review findings', 'short name', 'git grep', "sed -E 's/^#+ //'", 'git show --stat -M',
-      'one commit', 'relative path', 'close check', 'copy the template']) assert.ok(text.includes(s), s);
+    for (const s of ['--migrate', '--migrate-check HEAD', 'NOT RECORDED (migrated', 'refute-by-default', 'One commit',
+      'paths.plans', 'paths.specs', 'paths.ledgers', 'git grep',
+      '## Status:', 'STATUS (date):', 'was: (no Status line)', 'no criteria', 'word for word',
+      'Never write criteria of your own', 'split across phases', 'records the build',
+      'list of unfinished work', 'a summary line']) assert.ok(text.includes(s), s);
+  });
+
+  it('names the backlog procedure', () => {
+    const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
+    for (const s of ['ssdd.lock.json', 'managed', '3.7.0', 'Nothing is written', 'one heading level down',
+      'Deferred review findings', 'short name', "sed -E 's/^#+ //'", 'git show --stat -M',
+      'relative path', 'close check', 'copy the template']) assert.ok(text.includes(s), s);
+  });
+
+  it('plans land before the backlog, each in its own commit', () => {
+    const text = readFileSync(SKILL, 'utf8');
+    assert.ok(text.indexOf('## 2. Plans') < text.indexOf('## 3. The backlog'));
+    assert.match(text.replace(/\s+/g, ' '), /its own commit, plans first/);
+  });
+
+  it("the real CHANGELOG's 3.0.0 and 3.6.0 Upgrade sections keep their steps; 3.7.0 points them at /migrate", () => {
+    assert.match(upgradeOf('3.0.0'), /\/migrate-plans/);
+    assert.match(upgradeOf('3.0.0'), /SessionStart/);
+    assert.match(upgradeOf('3.6.0'), /\/migrate-backlog/);
+    assert.match(upgradeOf('3.6.0'), /Documentation Map/);
+    assert.match(upgradeOf('3.7.0'), /\/migrate-plans[\s\S]*\/migrate-backlog[\s\S]*`\/migrate`/);
   });
 });
 
