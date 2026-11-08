@@ -407,7 +407,7 @@ describe('session start', () => {
     const { out } = run(['--session-start']);
     assert.ok(out.trimEnd().split('\n').length <= 12, out);
     assert.ok(Buffer.byteLength(out) <= 1536, `${Buffer.byteLength(out)} bytes`);
-    assert.match(out, /^ {2}! 40 plans in the old format: run \/migrate-plans$/m);
+    assert.match(out, /^ {2}! 40 plans in the old format: run \/migrate$/m);
     assert.match(out, /^ {2}! \/skills-audit hasn't run here$/m);
   });
 
@@ -418,7 +418,7 @@ describe('session start', () => {
     commitAll('ledgers and an old plan');
     const { out } = run(['--session-start']);
     assert.ok(out.trimEnd().split('\n').length <= 12, out);
-    assert.match(out, /! 1 plan in the old format: run \/migrate-plans/);
+    assert.match(out, /! 1 plan in the old format: run \/migrate/);
     assert.match(out, /! \/skills-audit hasn't run here/);
   });
 
@@ -721,7 +721,7 @@ describe('migrate', () => {
     assert.match(out, /^ {4}to do: no Verification entry: AC1$/m);
     assert.match(out, /^ {2}02-b\.md: numbered AC1–AC2$/m);
     assert.match(out, /^ {2}03-c\.md: unchanged$/m);
-    assert.match(out, /^2 changed, 1 unchanged\. Next: the agent pass in \/migrate-plans\.$/m);
+    assert.match(out, /^2 changed, 1 unchanged\. Next: the agent pass in \/migrate\.$/m);
     assert.match(read('.ssdd/plans/01-a.md'), /^- \*\*AC1\*\* — \*\*t\.\*\* r$/m);
     assert.match(read('.ssdd/plans/02-b.md'), /^- \*\*AC2\*\* — y$/m);
   });
@@ -825,16 +825,16 @@ describe('migrate-check', () => {
 });
 
 describe('onboarding', () => {
-  const OLD_LINE = /! (\d+) plans? in the old format: run \/migrate-plans/;
+  const OLD_LINE = /! (\d+) plans? in the old format: run \/migrate/;
   it('old-format plans are counted', () => {
     put('.ssdd/plans/01-a.md', oldPlan('IN PROGRESS', ['- [ ] AC1 a']));
     put('.ssdd/plans/02-b.md', oldPlan('DRAFT', ['- [ ] b']));
     put('.ssdd/plans/03-c.md', planText({ status: 'IN PROGRESS', ac: ['AC1'] }));
     commitAll('plans');
-    assert.match(run().out, /^ {2}! 2 plans in the old format: run \/migrate-plans$/m);
+    assert.match(run().out, /^ {2}! 2 plans in the old format: run \/migrate$/m);
     git('rm', '-q', '.ssdd/plans/02-b.md');
     commitAll('one');
-    assert.match(run().out, /^ {2}! 1 plan in the old format: run \/migrate-plans$/m);
+    assert.match(run().out, /^ {2}! 1 plan in the old format: run \/migrate$/m);
     git('rm', '-q', '.ssdd/plans/01-a.md');
     commitAll('none');
     assert.doesNotMatch(run().out, OLD_LINE);
@@ -849,7 +849,7 @@ describe('onboarding', () => {
     git('switch', '-q', 'main');
     assert.doesNotMatch(run().out, /in the old format/);
     git('merge', '-q', '--no-edit', 'old');
-    assert.match(run().out, /! 1 plan in the old format: run \/migrate-plans/);
+    assert.match(run().out, /! 1 plan in the old format: run \/migrate/);
   });
 
   it('a SHIPPED plan with a missing entry counts', () => {

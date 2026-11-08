@@ -10,6 +10,28 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.7.0] — 2026-11-08
+
+One onboarding command: `/migrate` replaces `/migrate-plans` and
+`/migrate-backlog`.
+
+### Changed
+- **`/migrate`**, run once by name, does both halves in order on one branch:
+  plans to v3's format, then the backlog to `BACKLOG.md`, each its own commit
+  and each skipped when there's nothing to do. Plans go first: both checks
+  compare against `HEAD`, the backlog half rewrites mentions inside plans,
+  and the pre-commit refuses a staged plan in the old format. Each half's
+  procedure is unchanged.
+- The session view, `install` and `update` point to `/migrate`.
+
+### Removed
+- `/migrate-plans` and `/migrate-backlog`. `update` removes them where they're
+  as installed; a copy the project edited stays beside `/migrate`.
+
+### Upgrade
+- Where an earlier version's step says `/migrate-plans` or `/migrate-backlog`,
+  run `/migrate` once instead.
+
 ## [3.6.0] — 2026-11-04
 
 v3.6, one backlog: every SSDD repo keeps its remaining work, deferred review

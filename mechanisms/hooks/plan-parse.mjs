@@ -86,7 +86,7 @@ const CRITERION = new RegExp(`^\\s*[-*]\\s+(?:${CHECKBOX}\\s+)?(?:\\*\\*)?(${AC_
 // An entry's checkbox, if it has one, is ticked: `- [ ] **AC1** — run the
 // suite` is a check still to do, not a record of one. A head naming a run of
 // IDs (`**AC1–AC3`, `**AC2/AC3`) is no ID's entry: each ID gets its own line
-// (`/migrate-plans` adds one per ID after a kept run).
+// (`/migrate` adds one per ID after a kept run).
 export const ENTRY = new RegExp(`^\\s*[-*]\\s+(?:\\[[xX~]\\]\\s+)?\\*\\*(${AC_ID})\\b(?!\\s*[–/,&-]\\s*AC\\d)`);
 const ITEM = /^\s*(?:[-*]|\d+[.)])\s+(.*\S)/;
 
