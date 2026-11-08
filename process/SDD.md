@@ -62,7 +62,7 @@ Template: [templates/plan-template.md](templates/plan-template.md).
 
 For multi-task plans, the ledger is the cross-session execution record: one
 line per task (commits, review verdicts, test count, fixes with their commit)
-and one line per deferred finding, which gets a home before the plan closes.
+and one line per deferred finding, which gets a row in `BACKLOG.md` before the plan closes.
 A finding not fixed gets an outcome and a one-line reason: `wrong`,
 `intentional`, `minor`, `deferred` or `pre-existing`; the gate records
 `fixed` and `pre-existing` itself.
@@ -159,7 +159,7 @@ that can't be checked yet (an operator-gated deploy, missing credentials),
 - **Promote gotchas**: anything that cost real time becomes a rule (if it must
   be enforced), a memory entry (if it's cross-session context), or a line in
   the project instructions file — so it bites once.
-- Update the requirements/production checklist if the work affects readiness.
+- Update `BACKLOG.md` if the work affects readiness.
 - When the instructions, skills or reviewers changed — or a new model
   generation is adopted — run Claude Code's `/doctor prompt-audit` and act on
   what it finds.

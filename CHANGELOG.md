@@ -10,6 +10,46 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.6.0] — 2026-11-04
+
+v3.6, one backlog: every SSDD repo keeps its remaining work, deferred review
+findings included, in one `BACKLOG.md` at its root. A repo that keeps it under
+another name moves it once. See `SPEC.md` → v3.6.
+
+### Added
+- **`BACKLOG.md`.** `install` and `update` seed it from
+  `process/templates/backlog-template.md`: Now, Next, Later, Deferred review
+  findings, Done. A deferred finding gets one row with its `F<n>` ID. It's a
+  process rule; the gate doesn't check it.
+- **The candidate line.** A repo with a `.md` at the root or in `docs/` named
+  like a backlog (`backlog`, `todo`, `roadmap`, `requirements…`,
+  `…requirements`, `…checklist`) and no `BACKLOG.md` gets none. `install` and
+  `update` print `not seeded BACKLOG.md: <path> looks like this repo's backlog
+  — run /migrate-backlog`.
+- **`/migrate-backlog`**, run once by name. A report first: the rename, each
+  section nested under the template's with its heading kept, rows moved with
+  their words, the mentions it rewrites by group, short names to approve one
+  by one. Then the move, a check that every old line survives, and one commit
+  on a branch. Done history stays, and managed files as installed are skipped.
+
+### Changed
+- `SDD.md` §3 and §7, the ledger template, `/new-reviewer`, the docs-sync
+  reviewer and the AGENTS template's Documentation Map name `BACKLOG.md`
+  where they named a requirements checklist four ways. docs-sync checks that
+  a deferred finding has its row, and no longer asks for a dated changelog
+  bullet.
+- The security reviewer: a deferred finding's row never carries the exploit
+  path, since on a public repo it's public. Its threat-model citation moved
+  to SSDD's `docs/limitations.md`.
+- SSDD's own backlog moved to `BACKLOG.md` at the root.
+
+### Upgrade (optional)
+- `AGENTS.md` is project-owned: `update` prints the template's change. Add
+  the `BACKLOG.md` row to your Documentation Map.
+- If `update` printed `not seeded BACKLOG.md`, run `/migrate-backlog` on a
+  branch. It needs this version's lock, so update first, and `/migrate-plans`
+  before it: the commit rewrites plans, and the pre-commit checks them.
+
 ## [3.5.0] — 2026-11-02
 
 v3.5, findings have outcomes: the gate loop converges. A re-review is told

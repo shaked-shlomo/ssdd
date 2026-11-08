@@ -508,7 +508,7 @@ The rules:
 - Modify:
   - `README.md`: a short "Where the work is" section.
   - `CHANGELOG.md`: a `## [3.0.0] — unreleased` entry, Part 1 lines only.
-  - `docs/BACKLOG.md`: Plan 1 marked done.
+  - `BACKLOG.md`: Plan 1 marked done.
 - Replace: this repo's `.superpowers/sdd/.gitignore` with
   `mechanisms/superpowers-sdd.gitignore`, and commit it. That makes this
   plan's own `progress.md` the first tracked ledger.

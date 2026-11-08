@@ -37,8 +37,8 @@ commits, and the refute-by-default re-check of each fix.>
 
 ## Follow-ups
 
-<One line per `deferred` finding with its home: fixed this session / its own task /
-the requirements checklist. Nothing is silently dropped.>
+<One line per `deferred` finding: fixed this session, or its row in `BACKLOG.md`
+(its own task included). Nothing is silently dropped.>
 
 ## Operator-gated deploy steps
 

@@ -1,8 +1,8 @@
-# SSDD backlog
+# Backlog
 
-The single list of remaining SSDD work. Updated 2026-11-02 at 3.5.0. All
-five parts of v3 (`SPEC.md` → v3), v3.4 and v3.5 have shipped; what's left
-of v3 is v3.6 and the migrations below. Not hardening. When an item
+The single list of remaining SSDD work. Updated 2026-11-04 at 3.6.0. All
+five parts of v3 (`SPEC.md` → v3), v3.4, v3.5 and v3.6 have shipped; what's
+left of v3 is the migrations below. Not hardening. When an item
 ships, delete it here and record it in `CHANGELOG.md`. When one is planned,
 it gets a spec in `docs/specs/` and a row in `SPEC.md` first.
 
@@ -11,14 +11,16 @@ cooperating agent on the process; they aren't a sandbox. A new evasion
 shape is out of scope unless an agent was seen using it in a real project,
 and the spec that closes it records that incident.
 
-## Next: the end of v3
+## Now
 
-- **v3.6 — one backlog** (`SPEC.md` → v3.6, draft): the standard
-  `BACKLOG.md` and `/migrate-backlog`, split from v3.5. Whether it also
-  ships before the migrations is its Open 1.
-- **The real migrations of prizma and Hatedate** (owner, 2026-10-20: none
-  until all five parts land; scratch clones only before then), with Part 1's
-  after-`/compact` session-start check.
+## Next
+
+### Next: the end of v3
+
+- **The real migrations of prizma and Hatedate** (owner, 2026-10-30: after
+  v3.4, v3.5 and v3.6; scratch clones only before then), with Part 1's
+  after-`/compact` session-start check, and `/migrate-backlog` once each,
+  after `/migrate-plans` (scratch runs: spec v3.6, Verification).
   - Both carry their own `/cleanup` (11.6 KB and 13.3 KB). The update merges
     or sidecars it against the thin one; what's project-specific moves into
     the skill's project section.
@@ -45,6 +47,25 @@ and the spec that closes it records that incident.
 |---|---|---|---|
 | **More `/skills-audit` catalog sources:** Supabase and stack-agnostic ones | v2.4 covers RN/Expo and Next.js/React. Supabase is used by both injected projects. | Needs an audit of each source first. The catalog records what an audit read. | M |
 | **Enable `claude-code-setup` in the settings template?** | v2.4 decided against it by default (every plugin's descriptions cost context). `/skills-audit` says how to enable it per repo. | Owner decision; revisit after a few real `/skills-audit` runs. | S |
+
+## Deferred review findings
+
+<!-- One line per finding a plan deferred:
+`- [F12] <severity> <the problem> — <path> (<reviewer>, plan NN, YYYY-MM-DD)`,
+with the gate's finding ID, or `[plan NN]` when the finding has none. A
+finding with no row here doesn't exist. Fixed: the row moves to Done with the
+fix commit. On a public repo the row is public: name the problem and where it
+is, never how to exploit it. -->
+
+- [plan v3.5] Minor three selftests shipped since 3.4.0 fail in an installed
+  repo: they read `.ssdd/config.example.json`, which an install doesn't ship
+  — `mechanisms/hooks/` (convention-lint's example hex rule, review-gate's
+  routing examples) (final review, plan v3.5, 2026-11-02)
+- [plan v3.6] Minor `seedOne` writes through a dangling symlink at a seeded
+  path, for every seeded file — `bin/ssdd.mjs` (security-reviewer, plan v3.6,
+  2026-11-03)
+
+## Done
 
 ## Accepted limitations (no plan)
 

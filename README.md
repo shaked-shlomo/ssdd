@@ -67,7 +67,8 @@ flowchart TB
 - **Production changes go one way.** `prod-guard.mjs` asks a person before
   anything else that would change production; stacks come as packs.
 - **Onboarding.** `/migrate-plans` brings older plans to the format the view
-  reads.
+  reads; `/migrate-backlog` moves a backlog kept under another name to
+  `BACKLOG.md`.
 
 What's in the box, and how each part works: [docs/usage.md](docs/usage.md#how-it-works).
 Full lifecycle: [process/SDD.md](process/SDD.md).
@@ -109,7 +110,7 @@ node --test mechanisms/hooks/*.selftest.mjs bin/*.selftest.mjs packs/*/*.selftes
 Tests are named `*.selftest.mjs` so no injected project's test runner
 collects them; CI runs them on Node 22 and 24. [SPEC.md](SPEC.md) indexes
 SSDD's own design specs, one per version; remaining work is in
-[docs/BACKLOG.md](docs/BACKLOG.md); releasing is in
+[BACKLOG.md](BACKLOG.md); releasing is in
 [docs/usage.md](docs/usage.md#releasing).
 
 ## License

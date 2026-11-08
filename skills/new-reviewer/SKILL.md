@@ -18,7 +18,7 @@ creates nothing until the user picks one.
   files that route to no reviewer, by directory. Unrouted code is a lead, not
   a verdict: docs and fixtures are often fine unrouted.
 - **History:** the ledgers' fixed Important/Critical findings and Follow-ups,
-  the requirements checklist, README limitations. Group them by defect class.
+  `BACKLOG.md`, README limitations. Group them by defect class.
   A class that shows up across two or more plans is a candidate.
 - **Existing lenses:** `.ssdd/reviewers/*.md`, so a candidate doesn't
   overlap one. Also any best-practices skill in `.agents/skills/` or in

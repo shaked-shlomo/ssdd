@@ -22,4 +22,4 @@ that date use the old numbers.
 | v3 | [v3 — SSDD knows where the work is](docs/specs/v3.md) | 3.0.0–3.3.1 (Parts 1–5) |
 | v3.4 | [v3.4 — the gate lives in git](docs/specs/v3.4.md) | 3.4.0 |
 | v3.5 | [v3.5 — findings have outcomes](docs/specs/v3.5.md) | 3.5.0 |
-| v3.6 | [v3.6 — one backlog](docs/specs/v3.6.md) | — (draft) |
+| v3.6 | [v3.6 — one backlog](docs/specs/v3.6.md) | 3.6.0 |

@@ -78,6 +78,7 @@ function buildSource() {
   rmSync(join(src, 'process/old.md'));
   put(src, 'skills/new-plan/SKILL.md', edit(lines(6, 'skill'), 6, 'skill 6 UPSTREAM'));
   put(src, 'mechanisms/config.example.json', '{\n  "routing": [],\n  "reviewGate": { "maxRoutedFiles": 10 }\n}\n');
+  put(src, 'process/templates/backlog-template.md', '# Backlog\n');
   put(src, 'VERSION', '2.0.0\n');
   put(src, 'CHANGELOG.md', '# Changelog\n\n## [2.0.0]\n\n- per-file stamps\n\n## [1.1.0]\n\n- moved skills\n');
   commitAll(src, 'v2.0.0');
@@ -237,6 +238,84 @@ describe('update', () => {
     assert.equal(r.code, 0, r.out);
     assert.equal(get('.cursor/hooks.json'), '{"version":1}\n');
     assert.deepEqual(JSON.parse(get('.ssdd/ssdd.lock.json')).adapters, ['claude-code', 'cursor']);
+  });
+});
+
+describe('the backlog', () => {
+  const NOT_SEEDED = (paths) => new RegExp(`not seeded BACKLOG\\.md: ${paths.replace(/\./g, '\\.')} looks like this repo's backlog — run /migrate-backlog`);
+
+  it('install seeds BACKLOG.md', () => {
+    const r = ssdd('install', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('BACKLOG.md'), '# Backlog\n');
+    assert.equal(JSON.parse(get('.ssdd/ssdd.lock.json')).seeded['BACKLOG.md'].src, 'process/templates/backlog-template.md');
+    assert.match(r.out, /seeded {4}BACKLOG\.md/);
+  });
+
+  it('an existing BACKLOG.md is never touched', () => {
+    put(tgt, 'BACKLOG.md', 'mine\n');
+    assert.equal(ssdd('install', tgt).code, 0);
+    assert.equal(get('BACKLOG.md'), 'mine\n');
+    commitAll(tgt, 'install');
+    put(src, 'process/templates/backlog-template.md', '# Backlog\n\n## Now\n');
+    put(src, 'VERSION', '2.1.0\n');
+    commitAll(src, 'v2.1.0');
+    git(src, 'tag', 'v2.1.0');
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('BACKLOG.md'), 'mine\n');
+    assert.match(r.out, /template for BACKLOG\.md changed[\s\S]*\+## Now/);
+  });
+
+  it('update from a lock without it seeds it', () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v1.1.0').code, 0);
+    assert.ok(!existsSync(join(tgt, 'BACKLOG.md')));
+    commitAll(tgt, 'install 1.1.0');
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('BACKLOG.md'), '# Backlog\n');
+  });
+
+  for (const path of ['docs/TODO.md', 'X_REQUIREMENTS.md', 'release-checklist.md', 'docs/Requirements Before Launch.md']) {
+    it(`install names a candidate and seeds nothing: ${path}`, () => {
+      put(tgt, path, 'theirs\n');
+      const r = ssdd('install', tgt);
+      assert.equal(r.code, 0, r.out);
+      assert.ok(!existsSync(join(tgt, 'BACKLOG.md')));
+      assert.match(r.out, NOT_SEEDED(path));
+    });
+  }
+
+  it('update names a candidate and seeds nothing', () => {
+    assert.equal(ssdd('install', tgt, '--ref', 'v1.1.0').code, 0);
+    put(tgt, 'docs/pre-launch-requirements.md', 'theirs\n');
+    commitAll(tgt, 'install 1.1.0');
+    const r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(join(tgt, 'BACKLOG.md')));
+    assert.match(r.out, NOT_SEEDED('docs/pre-launch-requirements.md'));
+  });
+
+  it('a lowercase backlog.md at the root is a candidate, on any file system', () => {
+    put(tgt, 'backlog.md', 'theirs\n');
+    const r = ssdd('install', tgt);
+    assert.equal(get('backlog.md'), 'theirs\n');
+    assert.match(r.out, NOT_SEEDED('backlog.md'));
+  });
+
+  it('two candidates are both named', () => {
+    put(tgt, 'ROADMAP.md', 'a\n');
+    put(tgt, 'docs/backlog.md', 'b\n');
+    const r = ssdd('install', tgt);
+    assert.ok(!existsSync(join(tgt, 'BACKLOG.md')));
+    assert.match(r.out, NOT_SEEDED('ROADMAP.md, docs/backlog.md'));
+  });
+
+  it('not candidates', () => {
+    for (const p of ['docs/a/b-checklist.md', 'requirements.txt', 'CHANGELOG.md', 'docs/requirements-notes.txt', '\x1b[2Krequirements.md', 'docs/\u202etodo-checklist.md']) put(tgt, p, 'x\n');
+    const r = ssdd('install', tgt);
+    assert.equal(get('BACKLOG.md'), '# Backlog\n');
+    assert.doesNotMatch(r.out, /not seeded BACKLOG/);
   });
 });
 
@@ -824,6 +903,34 @@ describe('migrate-plans skill', () => {
     const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
     assert.match(upgrade, /\/migrate-plans/);
     assert.match(upgrade, /SessionStart/);
+  });
+});
+
+describe('migrate-backlog skill', () => {
+  const REPO = join(dirname(SCRIPT), '..');
+  const SKILL = join(REPO, 'skills', 'migrate-backlog', 'SKILL.md');
+  it("the real CHANGELOG's 3.6.0 Upgrade section names /migrate-backlog", () => {
+    const section = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8').split(/^(?=## \[)/m).find((s) => s.startsWith('## [3.6.0]'));
+    const upgrade = section.split(/^(?=### )/m).find((s) => s.startsWith('### Upgrade'));
+    assert.match(upgrade, /\/migrate-backlog/);
+    assert.match(upgrade, /Documentation Map/);
+  });
+
+  it('frontmatter', () => {
+    const fm = readFileSync(SKILL, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)[1];
+    assert.match(fm, /^name: migrate-backlog$/m);
+    assert.match(fm, /^disable-model-invocation: true$/m);
+    const desc = fm.match(/^description: (.+)$/m)[1];
+    assert.ok(desc.length <= 300, `description is ${desc.length} chars`);
+    assert.ok(!desc.includes(': '), 'plain YAML value contains ": "');
+    assert.match(desc, /once/);
+  });
+
+  it('names the procedure', () => {
+    const text = readFileSync(SKILL, 'utf8').replace(/\s+/g, ' ');
+    for (const s of ['/migrate-plans', 'ssdd.lock.json', 'managed', '3.6.0', 'nothing is written', 'one heading level down',
+      'word for word', 'Deferred review findings', 'short name', 'git grep', "sed -E 's/^#+ //'", 'git show --stat -M',
+      'one commit', 'relative path', 'close check', 'copy the template']) assert.ok(text.includes(s), s);
   });
 });
 

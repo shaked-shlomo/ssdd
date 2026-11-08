@@ -59,7 +59,7 @@ describe('the spec index', () => {
 
 describe('links', () => {
   it('every relative link resolves', () => {
-    const docs = ['SPEC.md', 'README.md', ...tracked().filter((p) => /^docs\/.*\.md$/.test(p) && !p.startsWith('docs/superpowers/'))];
+    const docs = ['SPEC.md', 'README.md', 'BACKLOG.md', ...tracked().filter((p) => /^docs\/.*\.md$/.test(p) && !p.startsWith('docs/superpowers/'))];
     const bad = [];
     for (const f of docs) {
       for (const { target, anchor } of links(read(f))) {
@@ -162,7 +162,7 @@ describe('text budgets', () => {
 
   it('the skills the user calls by name are kept out of model invocation', () => {
     assert.deepEqual(skills().filter((f) => frontmatter(f).manual).sort(),
-      ['skills/migrate-plans/SKILL.md', 'skills/new-reviewer/SKILL.md', 'skills/skills-audit/SKILL.md']);
+      ['skills/migrate-backlog/SKILL.md', 'skills/migrate-plans/SKILL.md', 'skills/new-reviewer/SKILL.md', 'skills/skills-audit/SKILL.md']);
   });
 
   it('a default Claude Code install loads at most 5,000 bytes', () => {
@@ -181,6 +181,45 @@ describe('text budgets', () => {
   });
 });
 
+describe('the backlog template', () => {
+  it('has the five sections and the row form', () => {
+    const text = read('process/templates/backlog-template.md');
+    assert.match(text, /^# Backlog\n/);
+    assert.deepEqual(text.replace(/<!--[\s\S]*?-->/g, '').match(/^## .+$/gm),
+      ['## Now', '## Next', '## Later', '## Deferred review findings', '## Done']);
+    const deferred = text.split(/^## /m).find((s) => s.startsWith('Deferred review findings'));
+    for (const s of ['- [F12]', '[plan NN]', "doesn't exist", 'never how to exploit it']) assert.ok(deferred.includes(s), s);
+  });
+});
+
+describe('one name for the backlog', () => {
+  it('the process names BACKLOG.md', () => {
+    const sdd = read('process/SDD.md');
+    const section = (n) => sdd.split(/^(?=## )/m).find((x) => x.startsWith(`## ${n}. `)).replace(/\s+/g, ' ');
+    assert.ok(section(3).includes('a row in `BACKLOG.md` before the plan closes'), '§3');
+    assert.ok(section(7).includes('Update `BACKLOG.md` if the work affects readiness'), '§7');
+    const followUps = read('process/templates/task-ledger-template.md').split(/^## /m).find((x) => x.startsWith('Follow-ups'));
+    assert.ok(followUps.includes('BACKLOG.md'), 'ledger Follow-ups');
+    for (const f of ['skills/new-reviewer/SKILL.md', 'reviewers/docs-sync-reviewer.md']) assert.ok(read(f).includes('BACKLOG.md'), f);
+  });
+
+  it('no shipped file uses the old names', () => {
+    const shipped = tracked().filter((p) => /^(process|skills|reviewers|adapters|mechanisms)\//.test(p));
+    const bad = shipped.filter((p) => /requirements[ /](production )?checklist|production-readiness checklist/i.test(read(p).replace(/\s+/g, ' ')));
+    assert.deepEqual(bad, []);
+  });
+
+  it('the AGENTS template has the BACKLOG.md row', () => {
+    assert.match(read('adapters/generic/AGENTS.md'), /^\| `BACKLOG\.md` \|/m);
+  });
+
+  it('the security reviewer on deferred rows', () => {
+    const text = read('reviewers/security-reviewer.md').replace(/\s+/g, ' ');
+    for (const s of ['BACKLOG.md', 'never the exploit path', 'docs/limitations.md']) assert.ok(text.includes(s), s);
+    assert.ok(!text.includes('docs/BACKLOG.md'), 'cites SSDD\'s own backlog path');
+  });
+});
+
 describe('README', () => {
   it('one page', () => {
     const n = read('README.md').split('\n').length - 1;
@@ -196,8 +235,17 @@ describe('README', () => {
     }
   });
 
+  it("SSDD's backlog is at the root", () => {
+    assert.ok(existsSync(join(REPO, 'BACKLOG.md')));
+    assert.ok(!existsSync(join(REPO, 'docs/BACKLOG.md')));
+    // The v3.6 spec and plan describe the move; this file's checks name the old path.
+    const bad = tracked().filter((p) => !/^docs\/specs\/v3\.6\.md$|^docs\/superpowers\/plans\/2026-10-30-v3-6-backlog\.md$|^bin\/repo\.selftest\.mjs$/.test(p))
+      .filter((p) => /\.(md|mjs)$/.test(p) && read(p).includes('docs/BACKLOG'));
+    assert.deepEqual(bad, []);
+  });
+
   it('the BACKLOG cites docs/limitations.md', () => {
-    const backlog = read('docs/BACKLOG.md');
+    const backlog = read('BACKLOG.md');
     assert.doesNotMatch(backlog, /README → Known limitations/);
     assert.match(backlog, /docs\/limitations\.md/);
   });
