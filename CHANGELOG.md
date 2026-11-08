@@ -18,10 +18,10 @@ One onboarding command: `/migrate` replaces `/migrate-plans` and
 ### Changed
 - **`/migrate`**, run once by name, does both halves in order on one branch:
   plans to v3's format, then the backlog to `BACKLOG.md`, each its own commit
-  and each skipped when there's nothing to do. Plans go first: both checks
-  compare against `HEAD`, the backlog half rewrites mentions inside plans,
-  and the pre-commit refuses a staged plan in the old format. Each half's
-  procedure is unchanged.
+  and each skipped when there's nothing to do. Plans go first: the backlog half
+  rewrites mentions inside plans, and the pre-commit refuses a staged plan
+  with a Status outside the six or a closed one missing entries. Each
+  half's steps are the old skill's; the lock floor is 3.7.0.
 - The session view, `install` and `update` point to `/migrate`.
 
 ### Removed

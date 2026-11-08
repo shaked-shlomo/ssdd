@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: Use once per repo, when SSDD v3 is first injected into a repo that predates it - the session view says plans are in the old format, or install or update says "not seeded BACKLOG.md". Brings plans to v3's format, then moves the backlog to BACKLOG.md. Not for writing a plan or editing the backlog.
+description: Use once per repo, when SSDD v3 first lands in an older repo - the session view says plans are in the old format, or install or update says "not seeded BACKLOG.md". Brings plans to v3's format, then moves the backlog to BACKLOG.md. Not for writing or closing a plan, or editing the backlog.
 disable-model-invocation: true
 ---
 
@@ -9,17 +9,18 @@ disable-model-invocation: true
 Two halves, in this order, on one branch. Skip a half with nothing to do.
 
 1. **Plans** (§2), when `node .ssdd/hooks/work-state.mjs` lists plans in the
-   old format: checkbox criteria, criteria without AC IDs, Status words like
-   DONE or CLOSED.
+   old format (checkbox criteria, criteria without AC IDs) or plans with a
+   status outside the six (DONE, CLOSED).
 2. **The backlog** (§3), when `install` or `update` said `not seeded
    BACKLOG.md` because the repo keeps its backlog under another name (TODO,
    ROADMAP, a requirements or checklist file).
 
 Each half lands as its own commit, plans first. Both checks compare against
-`HEAD`, and the backlog half rewrites mentions inside plans, so one commit
-would hide one half's changes from the other's check. The pre-commit also
-refuses a staged plan that fails its close check, which an old-format plan
-does.
+`HEAD`: left uncommitted, the backlog half's rewrites inside plans read as lost
+text to `--migrate-check`. Plans go first because the pre-commit refuses a
+staged plan that fails its close check (a Status outside the six, or a BUILT
+or SHIPPED plan missing an entry), which old plans often do, and the backlog
+half stages the plans whose mentions it rewrites.
 
 Folders, from `paths` in `.ssdd/config.json`:
 - the plans folder (`paths.plans`, default `.ssdd/plans`)
@@ -30,7 +31,7 @@ Folders, from `paths` in `.ssdd/config.json`:
 
 A branch or worktree off the default branch, a clean tree, the user's
 go-ahead, and `.ssdd/ssdd.lock.json` at 3.7.0 or later. Without that lock,
-run `update` (or `install`) first: SSDD's own text must already say
+run `update` (or `install`) first: for §3, SSDD's own text must already say
 `BACKLOG.md`, since §3 leaves managed files as installed alone. Nothing is
 committed until §2.5 and §3.5.
 

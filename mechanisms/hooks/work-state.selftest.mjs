@@ -418,7 +418,7 @@ describe('session start', () => {
     commitAll('ledgers and an old plan');
     const { out } = run(['--session-start']);
     assert.ok(out.trimEnd().split('\n').length <= 12, out);
-    assert.match(out, /! 1 plan in the old format: run \/migrate/);
+    assert.match(out, /! 1 plan in the old format: run \/migrate$/m);
     assert.match(out, /! \/skills-audit hasn't run here/);
   });
 
@@ -825,7 +825,7 @@ describe('migrate-check', () => {
 });
 
 describe('onboarding', () => {
-  const OLD_LINE = /! (\d+) plans? in the old format: run \/migrate/;
+  const OLD_LINE = /! (\d+) plans? in the old format: run \/migrate$/m;
   it('old-format plans are counted', () => {
     put('.ssdd/plans/01-a.md', oldPlan('IN PROGRESS', ['- [ ] AC1 a']));
     put('.ssdd/plans/02-b.md', oldPlan('DRAFT', ['- [ ] b']));
@@ -849,7 +849,7 @@ describe('onboarding', () => {
     git('switch', '-q', 'main');
     assert.doesNotMatch(run().out, /in the old format/);
     git('merge', '-q', '--no-edit', 'old');
-    assert.match(run().out, /! 1 plan in the old format: run \/migrate/);
+    assert.match(run().out, /! 1 plan in the old format: run \/migrate$/m);
   });
 
   it('a SHIPPED plan with a missing entry counts', () => {
