@@ -148,7 +148,7 @@ framework file three ways (your locked version, yours, the new release):
 says when the repo now matches a pack it lacks, and `update --packs a,b`
 adds or removes one. It keeps the optional parts the lock lists too (a lock
 from before 3.3.0 keeps the drift audit it has), and `update --with a,b|none`
-adds or removes one.
+sets the whole list: name every part to keep.
 
 Project-owned files are never touched (one that's deleted is seeded again);
 `update` prints how their templates

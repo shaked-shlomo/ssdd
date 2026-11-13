@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Peer compatibility over the whole tree: every installed package's required
-// (non-optional) peerDependencies are installed at a version that satisfies them.
+// Peer compatibility: every package at the top of node_modules has its required
+// (non-optional) peerDependencies installed there at a version that satisfies them.
 // `legacy-peer-deps` in .npmrc hides these conflicts at install time.
 //
 // Usage: node .agents/skills/dependency-versioning/scripts/peer-check.mjs

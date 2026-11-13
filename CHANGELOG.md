@@ -21,8 +21,8 @@ skill.
   Install the newest version published at least 7 days ago and inside the
   project's compatibility range; the one exception is a younger version that
   fixes a known, disclosed advisory. `age-scan.mjs` checks every changed
-  version in `package-lock.json`, transitive ones included, and
-  `peer-check.mjs` every required peer across the tree. The project section
+  version in `package-lock.json`, transitive and nested ones included, and
+  `peer-check.mjs` the required peers of every top-level installed package. The project section
   holds the compatibility range, the checks and where versions are recorded.
 
 ### Changed
@@ -35,9 +35,16 @@ skill.
   reviewers after their cache had expired.
 
 ### Upgrade (optional)
-- An npm repo with its own dependency skill: `update --with
-  dependency-versioning`, move its compatibility table and checks into the
-  project section, then delete the old copy.
+- An npm repo with its own dependency skill: run `update --with <the lock's
+  parts>,dependency-versioning` (`--with` sets the whole list, so name
+  `drift-audit` too if you have it). Then move the old skill's compatibility
+  table and checks into the new project section and delete the old copy.
+  - The old copy is in `.agents/skills/dependency-versioning/`: `update`
+    writes `SKILL.md.ssdd-new` beside it, and the `.mjs` scripts beside the
+    old `.js` ones. Merge, then delete the `.ssdd-new` file and the `.js` ones.
+  - The old copy is a real folder in `.claude/skills/dependency-versioning/`:
+    `update` warns instead of linking it. Move what's project-specific, delete
+    the folder, and run `update` again.
 
 ## [3.7.0] — 2026-11-08
 
