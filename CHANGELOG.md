@@ -10,18 +10,34 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
-## [3.7.1] — 2026-11-13
+## [3.8.0] — 2026-11-13
 
-Review rounds cost less. Measured on prizma PR 130: rounds 2–5 were 5.5M of
-the session's 10.5M input-token equivalents, because each round resumed all
-six reviewers after their cache had expired.
+Review rounds cost less, and npm repos can opt into a dependency-versioning
+skill.
+
+### Added
+- **`/dependency-versioning`**, an optional part (`--with
+  dependency-versioning`), from the skill prizma and Hatedate each carry.
+  Install the newest version published at least 7 days ago and inside the
+  project's compatibility range; the one exception is a younger version that
+  fixes a known, disclosed advisory. `age-scan.mjs` checks every changed
+  version in `package-lock.json`, transitive ones included, and
+  `peer-check.mjs` every required peer across the tree. The project section
+  holds the compatibility range, the checks and where versions are recorded.
 
 ### Changed
 - `SDD.md` §4 and the gate's block message: each review dispatch is a new
   agent given its delta and open findings, not one resumed from an earlier
   round, which re-reads its whole history. A round's findings are all fixed
   or triaged before the next round: one re-review per round of fixes, not
-  per fix.
+  per fix. Measured on prizma PR 130: rounds 2–5 were 5.5M of the session's
+  10.5M input-token equivalents, because each round resumed all six
+  reviewers after their cache had expired.
+
+### Upgrade (optional)
+- An npm repo with its own dependency skill: `update --with
+  dependency-versioning`, move its compatibility table and checks into the
+  project section, then delete the old copy.
 
 ## [3.7.0] — 2026-11-08
 

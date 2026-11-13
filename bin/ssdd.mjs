@@ -14,8 +14,8 @@
 // can't appear or vanish between updates; `status` says when the repo now
 // matches a pack it doesn't have. --packs a,b or --packs none overrides both.
 // parts: optional framework files (drift-audit: the runbook and
-// /docs-drift-audit), installed only with --with and recorded in the lock's
-// `with`. `update` keeps the lock's parts (a lock from before `with` keeps
+// /docs-drift-audit; dependency-versioning: its skill and scripts), installed
+// only with --with and recorded in the lock's `with`. `update` keeps the lock's parts (a lock from before `with` keeps
 // the ones whose files it manages); --with a,b or --with none changes them.
 // A part turned off goes whole or not at all: with any file edited, all its
 // files stay, and their lock entries with them, so turning it back on can
@@ -56,7 +56,10 @@ const ADAPTERS = ['claude-code', 'cursor', 'generic'];
 // Used only to find a pre-lock install's base copy (`adopt`).
 const LEGACY_SOURCES = [['skills/', 'adapters/claude-code/skills/']];
 // Optional parts → the source paths each owns (a trailing / is a folder).
-const PARTS = { 'drift-audit': ['mechanisms/drift-audit.md', 'skills/docs-drift-audit/'] };
+const PARTS = {
+  'drift-audit': ['mechanisms/drift-audit.md', 'skills/docs-drift-audit/'],
+  'dependency-versioning': ['skills/dependency-versioning/'],
+};
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -380,6 +383,7 @@ function nextSteps(target, adapters, armed, packs = [], parts = []) {
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
     'Fill the Documentation Map and Gotchas in AGENTS.md (or merge AGENTS.ssdd.md into it, then delete it)',
     ...(parts.includes('drift-audit') ? ['Fill the project domain list in .agents/skills/docs-drift-audit/SKILL.md'] : []),
+    ...(parts.includes('dependency-versioning') ? ['Fill the project section in .agents/skills/dependency-versioning/SKILL.md'] : []),
     'Run /skills-audit to pick the stack\'s best-practice skills (in Claude Code it also offers the automation recommender)',
   ];
   if (existsSync(join(target, 'package.json'))) {
