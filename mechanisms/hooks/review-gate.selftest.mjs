@@ -866,6 +866,13 @@ describe('the block message names the delta', () => {
     assert.match(stderr, /• beta — never stamped on this diff \(2 routed file\(s\)\):\n\s+src\/a\.ts\n\s+src\/b\.ts/);
     assert.doesNotMatch(stderr, /• alpha/);
   });
+  it('the block message asks for a new agent per round and one round per round of fixes', () => {
+    write(dir, 'src/a.ts', 'a\n');
+    const { stderr } = preCommit(dir);
+    const text = stderr.replace(/\s+/g, ' ');
+    assert.match(text, /each a new agent \(not one resumed from an earlier round\)/);
+    assert.match(text, /fix\/triage all of the round's findings before the next round/);
+  });
   it('a file added after a partial stamp is "never stamped" under a reviewer that owes only it', () => {
     write(dir, 'src/a.ts', 'a\n');
     stamp(dir, 'alpha,beta');

@@ -10,6 +10,19 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.7.1] — 2026-11-13
+
+Review rounds cost less. Measured on prizma PR 130: rounds 2–5 were 5.5M of
+the session's 10.5M input-token equivalents, because each round resumed all
+six reviewers after their cache had expired.
+
+### Changed
+- `SDD.md` §4 and the gate's block message: each review dispatch is a new
+  agent given its delta and open findings, not one resumed from an earlier
+  round, which re-reads its whole history. A round's findings are all fixed
+  or triaged before the next round: one re-review per round of fixes, not
+  per fix.
+
 ## [3.7.0] — 2026-11-08
 
 One onboarding command: `/migrate` replaces `/migrate-plans` and

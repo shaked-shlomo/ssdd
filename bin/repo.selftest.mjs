@@ -282,6 +282,14 @@ describe('the outcome words (v3.5)', () => {
   });
 });
 
+describe('review rounds (3.7.1)', () => {
+  it('SDD.md: each dispatch is a new agent, one re-review per round of fixes', () => {
+    const t = read('process/SDD.md').replace(/\s+/g, ' ');
+    assert.match(t, /each a new agent: a resumed one re-reads its whole history/);
+    assert.match(t, /one re-review per round of fixes, not per fix/);
+  });
+});
+
 describe('reviewer contracts', () => {
   const REVIEWERS = ['convention-compliance', 'performance', 'resilience', 'security', 'docs-sync', 'gate'].map((n) => `reviewers/${n}-reviewer.md`)
     .concat('reviewers/domain-reviewer-template.md');
