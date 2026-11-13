@@ -10,6 +10,44 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.9.0] — 2026-11-13
+
+The Supabase pack reviews `supabase/` and checks the migration history before
+a merge.
+
+### Added
+- **A pack can ship reviewers.** `packs/<name>/reviewers/*.md` install into
+  `.ssdd/reviewers/` beside the framework's (the claude-code adapter links
+  them into `.claude/agents/`), and leave with the pack. A name that clashes
+  with a framework reviewer is refused. A pack's `routes.json` holds its
+  suggested routes: `install`, `update` and `status` print one while no route
+  in `.ssdd/config.json` names its reviewer, and never write the config.
+- **`supabase-security-reviewer`**, from Hatedate's reviewer, kept to the
+  invariants that hold in any Supabase project: RLS with `WITH CHECK` in the
+  creating migration, grants in the same migration (a new function is
+  EXECUTE-able by PUBLIC), `SECURITY DEFINER` with a pinned `search_path`,
+  trigger functions with EXECUTE revoked, the caller's identity from the
+  token, realtime filters that aren't a boundary, applied migrations never
+  edited, proofs that assert as `authenticated`. With no advisor output in its
+  prompt it reports `⚠️ ADVISOR NOT RUN`. Project facts (the ref, privileged
+  fields, the service-role holders, the advisor baseline) go in its Project
+  section.
+- **`sync-check.mjs`**, from Hatedate's `/migration` skill: before a merge, it
+  fails on what the GitHub integration's deploy-on-merge can't catch: an
+  out-of-order version, an edited applied migration, a version applied early
+  without an `applied-early:` line in the PR, a version applied with no file.
+  Versions may be 14-digit timestamps or a `0001_` sequence: the width is the
+  oldest applied version's, or `--digits`.
+
+### Upgrade (optional)
+- A Supabase repo: run `update` (the lock keeps the pack), fill the Project
+  section of `.ssdd/reviewers/supabase-security-reviewer.md`, and add the
+  printed route to `.ssdd/config.json`.
+- A repo with its own `.claude/agents/supabase-security-reviewer.md` (a file,
+  not a link): `update` warns instead of linking. Move its project facts into
+  the Project section, delete the file, and run `update` again. A repo with
+  its own migration check can switch to `sync-check.mjs`.
+
 ## [3.8.0] — 2026-11-13
 
 Review rounds cost less, and npm repos can opt into a dependency-versioning

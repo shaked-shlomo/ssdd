@@ -1030,6 +1030,69 @@ export function detect(root) {
   });
 });
 
+describe('pack reviewers and routes (3.9.0)', () => {
+  // v2.1.0: a pack with no reviewer. v2.2.0: it ships one, a project section
+  // and a suggested route.
+  const REVIEWER = 'packs/supabase/reviewers/supabase-security-reviewer.md';
+  const ROUTES = { routes: [{ reviewer: 'supabase-security-reviewer', paths: ['^supabase/'], exclude: ['\\.test\\.'] }] };
+  beforeEach(() => {
+    put(src, 'packs/supabase/guard.mjs', 'export const name = "supabase";\n');
+    put(src, 'packs/supabase/README.md', 'pack\n');
+    put(src, 'VERSION', '2.1.0\n');
+    commitAll(src, 'v2.1.0');
+    git(src, 'tag', 'v2.1.0');
+    put(src, REVIEWER, '---\nname: supabase-security-reviewer\n---\nchecks\n\n## Project\n- ref: <ref>\n');
+    put(src, 'packs/supabase/routes.json', JSON.stringify(ROUTES));
+    put(src, 'VERSION', '2.2.0\n');
+    commitAll(src, 'v2.2.0');
+    git(src, 'tag', 'v2.2.0');
+  });
+  const lock = () => JSON.parse(get('.ssdd/ssdd.lock.json'));
+  const linked = (p) => { try { return readlinkSync(join(tgt, p)); } catch { return null; } };
+  const AGENT = '.claude/agents/supabase-security-reviewer.md';
+
+  it("install puts the pack's reviewer beside the framework's, links it, and names the route and project section", () => {
+    const r = ssdd('install', tgt, 'claude-code', '--packs', 'supabase');
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(join(tgt, '.ssdd/reviewers/supabase-security-reviewer.md')));
+    assert.ok(!existsSync(join(tgt, '.ssdd/packs/supabase/reviewers')));
+    assert.equal(lock().managed['.ssdd/reviewers/supabase-security-reviewer.md'].src, REVIEWER);
+    assert.equal(linked(AGENT), '../../.ssdd/reviewers/supabase-security-reviewer.md');
+    assert.match(r.out, /Fill the project section in \.ssdd\/reviewers\/supabase-security-reviewer\.md/);
+    assert.match(r.out, /supabase-security-reviewer has no route in \.ssdd\/config\.json/);
+    assert.match(get('.ssdd/config.json'), /"routing": \[\]/, 'the project config is never written');
+  });
+
+  it('update adds the reviewer, status suggests the route until one names it, --packs none removes both', () => {
+    assert.equal(ssdd('install', tgt, 'claude-code', '--packs', 'supabase', '--ref', 'v2.1.0').code, 0);
+    commitAll(tgt, 'ssdd');
+    let r = ssdd('update', tgt);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /\.ssdd\/reviewers\/supabase-security-reviewer\.md/);
+    assert.equal(linked(AGENT), '../../.ssdd/reviewers/supabase-security-reviewer.md');
+    assert.match(r.out, /has no route in \.ssdd\/config\.json/);
+    commitAll(tgt, 'update');
+    assert.match(ssdd('status', tgt).out, /supabase-security-reviewer has no route/);
+    put(tgt, '.ssdd/config.json', JSON.stringify({ routing: [{ reviewer: 'supabase-security-reviewer', paths: ['^db/'] }] }));
+    assert.doesNotMatch(ssdd('status', tgt).out, /has no route/);
+    commitAll(tgt, 'route');
+    r = ssdd('update', tgt, '--packs', 'none');
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(join(tgt, '.ssdd/reviewers/supabase-security-reviewer.md')));
+    assert.equal(linked(AGENT), null);
+    assert.ok(existsSync(join(tgt, '.ssdd/reviewers/alpha-reviewer.md')));
+  });
+
+  it("a pack reviewer named like a framework reviewer is refused", () => {
+    put(src, 'packs/supabase/reviewers/alpha-reviewer.md', 'clash\n');
+    commitAll(src, 'clash');
+    const r = ssdd('install', tgt, '--packs', 'supabase', '--ref', 'HEAD');
+    assert.equal(r.code, 2);
+    assert.match(r.out, /pack supabase: packs\/supabase\/reviewers\/alpha-reviewer\.md would replace reviewers\/alpha-reviewer\.md/);
+    assert.ok(!existsSync(join(tgt, '.ssdd/ssdd.lock.json')));
+  });
+});
+
 describe('optional parts', () => {
   const lock = () => JSON.parse(get('.ssdd/ssdd.lock.json'));
   const linked = (p) => { try { return readlinkSync(join(tgt, p)); } catch { return null; } };
