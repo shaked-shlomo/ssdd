@@ -45,7 +45,10 @@ never `pkill -f`.
 ## 4. One plan
 
 Check each SSDD reviewer's finding against the cited file and drop what the code
-refutes; a claim about data is checked against the data. Dedupe against the known
+refutes; a claim about data is checked against the data. A file called dead
+stands only after a grep for its name in any quote style, with and without its
+extension, rerun right before the deletion: never delete on a remembered result.
+Dedupe against the known
 list by file and mechanism, keeping the more concrete failure. Lead with the checks
 and CI, then findings by file, each tagged `harness` or `ssdd`, plus Documentation Map
 gaps. If the session has `ReportFindings` and the harness's review didn't call it,

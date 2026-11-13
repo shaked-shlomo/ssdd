@@ -29,6 +29,8 @@ the same change** — a stale canonical doc actively misleads the next session.
      with placeholder-only examples.
    - **Plan/spec/ledger**: status, verification, and deviations synced if the
      diff completes or changes planned work.
+   - **The map itself**: a doc, map or rule the diff adds gets a Documentation
+     Map row with its trigger; a map nothing is wired to update goes stale.
 
 ## How to run
 
@@ -40,7 +42,8 @@ the same change** — a stale canonical doc actively misleads the next session.
    inconsistent with the code (wrong name, count, or path) = ❌ with evidence.
 3. Spot-verify a sample of doc claims the diff touches against the actual code
    (paths exist, exports match) — a doc "updated" with wrong content is worse
-   than not updated.
+   than not updated. User-facing copy that restates a code constant (a limit,
+   a count, a price) should read it from the constant: retyped is ⚠️.
 4. Report `❌ <coupling> — <what's missing> — <doc + section>`, `⚠️` for
    judgment calls, `✅ <coupling>` when satisfied. Do NOT edit. End with
    **`CLEAN`** or **`N ISSUE(S)`**; with an empty or unnamed input, answer

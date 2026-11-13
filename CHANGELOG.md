@@ -10,6 +10,41 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.8.1] — 2026-11-13
+
+Lessons prizma and Hatedate learned in their own copies of SSDD's rules,
+ported as one line each.
+
+### Changed
+- **Reviewers.**
+  - docs-sync: a doc, map or rule the diff adds gets a Documentation Map
+    row; copy that retypes a code constant is ⚠️.
+  - convention: a dumping-ground file the diff grows is ⚠️ at any size.
+  - performance: a claim about live database state is `⚠️ verify live`;
+    tuning outside the default classes cites a measurement.
+  - resilience: check 7 asks every new behavior's test to fail without the
+    code (prizma's convention reviewer caught green-on-deletion tests);
+    check 8 asks a rule change that produced stored data for its recompute
+    path.
+  - security: an empty or short shared secret is misconfigured, never
+    authorized; a comparison secret is never a database or admin key; a
+    public env prefix puts the value in the client bundle; rate limiting is a
+    security control.
+- `/cleanup`: a dead file is deleted only on a fresh grep that matches any
+  quote style, with and without its extension.
+- The drift audit checks decision records (a changed decision needs a
+  supersession note) and generated docs; a snapshot doc gets ⚠️ at most.
+- The AGENTS template: never invent a name, path or value; say so before an
+  edit outside the task's scope.
+- `config.example.json`: `git push --force-with-lease` asks
+  (`productionGuard.extraRules`). It used to pass silently while git-guard's
+  message said "only after the user's explicit go-ahead".
+
+### Upgrade (optional)
+- `AGENTS.md` and `.ssdd/config.json` are project-owned: `update` prints the
+  template's changes. Copy the two template lines and the force-with-lease
+  rule in if you want them.
+
 ## [3.8.0] — 2026-11-13
 
 Review rounds cost less, and npm repos can opt into a dependency-versioning

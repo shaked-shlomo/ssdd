@@ -29,7 +29,9 @@ against them. Dimensions that recur across projects:
    exactly as the project defines it: honor its exemptions (e.g. test files)
    and its allowed exceptions (e.g. a stated reason for going over). Flag only
    what that definition flags; a file already over the limit that the diff
-   grows is reported as pre-existing + the growth added.
+   grows is reported as pre-existing + the growth added. A dumping ground (a
+   `utils`/`helpers`/`misc` file gathering unrelated code) that the diff grows
+   is ⚠️ at any size.
 4. **State-management contract** — new state lives in the sanctioned layer
    (server state vs. client state split, store shape conventions, no ad-hoc
    caches where a declared mechanism exists).

@@ -76,7 +76,12 @@ from a success continuation. Stacked continuations (a deduped promise
 collected by several callers) must be idempotent — re-read current state and
 re-check guards inside the continuation, never act on pre-await snapshots.
 
-**7. Tests exist for the failure paths.** Each new failure/race behavior in
-the diff has a regression test that fails against the pre-fix code. Be
-suspicious of observables that a dedupe/caching layer could mask — ask for
-proof the test actually exercises the race.
+**7. Tests fail without the code.** Each new behavior in the diff, failure
+and race paths first, has a test that fails against the pre-fix code; a test
+that stays green with the new code deleted proves nothing. Be suspicious of
+observables that a dedupe/caching layer could mask — ask for proof the test
+actually exercises the race.
+
+**8. Stored outputs get their recompute path.** A change to a rule that
+produced stored data (a classifier, a scoring rule, a derived column) names
+how existing rows are recomputed, or why they may stay as they are.
