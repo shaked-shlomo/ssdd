@@ -10,6 +10,14 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.9.1] — 2026-11-13
+
+### Docs
+- README: packs can add a reviewer and checks, not only a guard; the optional
+  parts (`--with drift-audit`, `--with dependency-versioning`); `adopt` before
+  `update` for a repo that copied SSDD in before lock files; `/doctor
+  prompt-audit` is Claude Code's.
+
 ## [3.9.0] — 2026-11-13
 
 The Supabase pack reviews `supabase/` and checks the migration history before

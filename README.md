@@ -83,10 +83,9 @@ git clone https://github.com/shaked-shlomo/ssdd ~/ssdd
 node ~/ssdd/bin/ssdd.mjs install /path/to/project claude-code,cursor
 ```
 
-Optional parts install only when named: `--with drift-audit`,
-`--with dependency-versioning` (npm repos). Then fill in the per-project half
-(routing, the Documentation Map, domain reviewers, `/skills-audit`):
-[docs/usage.md](docs/usage.md#setup).
+Optional parts install only when named (`--with drift-audit`, `--with
+dependency-versioning` for npm repos). Then fill in the per-project half
+(routing, the Documentation Map, domain reviewers, `/skills-audit`): [docs/usage.md](docs/usage.md#setup).
 
 ## Updating an injected repo
 
