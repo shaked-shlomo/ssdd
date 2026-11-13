@@ -29,6 +29,8 @@ the same change** — a stale canonical doc actively misleads the next session.
      with placeholder-only examples.
    - **Plan/spec/ledger**: status, verification, and deviations synced if the
      diff completes or changes planned work.
+   - **The map itself**: a doc, map or rule the diff adds gets a Documentation
+     Map row with its trigger; a map nothing is wired to update goes stale.
 
 ## How to run
 

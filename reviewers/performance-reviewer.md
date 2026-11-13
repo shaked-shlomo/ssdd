@@ -23,7 +23,11 @@ timeouts, fire-and-forget and tests are resilience's lane.
    default classes below still cover what such a skill doesn't (data layer,
    jobs, database).
 2. Judge each touched file against the matching domain rules; open actual
-   files — hot paths are about what surrounds the change.
+   files — hot paths are about what surrounds the change. Migration files are
+   history, not the live schema: a claim about live state (an index, a
+   policy) you can't check against the database is `⚠️ verify live`, never
+   `❌`. Tuning outside the classes below cites a measurement, else it's
+   `⚠️ needs a before/after`.
 3. Report `❌ <rule> — file:line — <fix>`, `⚠️` for judgment calls, `✅ <domain>`
    when clean. Do NOT edit. End with **`CLEAN`** or **`N ISSUE(S)`**; with an
    empty or unnamed input, answer `NO DIFF — scope not provided`.

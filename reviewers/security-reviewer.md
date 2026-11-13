@@ -36,12 +36,18 @@ in its `docs/limitations.md`).
 **1. Secrets.** No key/token/password in source, config committed to git, or
 client-side code. Secrets used by backend code read from the sanctioned secret
 store; secrets needed by external APIs are called only from server-side code,
-never the client.
+never the client. A public prefix (`NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_`)
+inlines the value into the client bundle: a value that grants access can't
+carry one.
 
 **2. AuthN/authZ gates.** Every new endpoint/function/RPC states who may call
 it and enforces it server-side (the client is never the gate). Inbound
 service-to-service calls authenticate with constant-time comparison and fail
-CLOSED (missing secret → reject, not allow). Caller-supplied identifiers that
+CLOSED: a missing, empty or implausibly short secret is misconfigured →
+reject (`token !== env.SECRET` lets everyone in when both are `""`). A
+comparison secret is never also a database or admin key: least credential
+power. A public endpoint that costs money or sends messages is rate-limited;
+that limit is a security control. Caller-supplied identifiers that
 select whose data is touched are validated against the authenticated identity
 (IDOR). Privileged fields are writable only by the privileged path — verify
 the enforcement mechanism (trigger/policy/service boundary) actually blocks

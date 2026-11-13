@@ -45,8 +45,9 @@ never `pkill -f`.
 ## 4. One plan
 
 Check each SSDD reviewer's finding against the cited file and drop what the code
-refutes; a claim about data is checked against the data. Dedupe against the known
-list by file and mechanism, keeping the more concrete failure. Lead with the checks
+refutes; a claim about data is checked against the data. A file called dead
+stands only after a grep for its basename, quoted or not, with and without its
+extension. Dedupe against the known list by file and mechanism, keeping the more concrete failure. Lead with the checks
 and CI, then findings by file, each tagged `harness` or `ssdd`, plus Documentation Map
 gaps. If the session has `ReportFindings` and the harness's review didn't call it,
 call it once with the merged list. Nothing worth fixing → say so and stop. Otherwise
@@ -54,7 +55,8 @@ ask which items to apply.
 
 ## 5. After approval
 
-Apply only the approved items and rerun the checks; if `ReportFindings` was used, call
+Apply only the approved items and rerun the checks; rerun the dead-file grep
+right before each deletion, never trusting a remembered result; if `ReportFindings` was used, call
 it again with each item's outcome. The fix is a staged change no reviewer has seen:
 commit it through the review gate (`.ssdd/process/SDD.md` §4). Re-check
 `git status --short` before a commit that follows agent activity.
