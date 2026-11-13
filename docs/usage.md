@@ -183,4 +183,6 @@ each injected repo:
 ## Releasing
 
 Update `CHANGELOG.md` and `VERSION`, commit, then `git tag -a vX.Y.Z -m "…"`
-and `git push origin main --follow-tags`.
+and `git push origin main --follow-tags`. A tag alone doesn't reach GitHub's
+Releases page: `gh release create vX.Y.Z --verify-tag --notes-file <that
+version's CHANGELOG section>`.
