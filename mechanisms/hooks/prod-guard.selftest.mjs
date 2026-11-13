@@ -146,11 +146,13 @@ describe('prod-guard', () => {
   it("the example config's lease-guarded force push asks; a plain push doesn't", () => {
     const example = JSON.parse(readFileSync(join(HOOKS, '..', 'config.example.json'), 'utf8'));
     const repo = layout({ packs: {}, config: { productionGuard: { extraRules: example.productionGuard.extraRules } } });
-    for (const cmd of ['git push --force-with-lease origin feat', 'git push --force-if-includes --force-with-lease=main:abc origin main']) {
+    for (const cmd of ['git push --force-with-lease origin feat', 'git push --force-if-includes --force-with-lease=main:abc origin main',
+      'git -C ../app push --force-with-lease', 'git -c push.default=current push --force-with-lease']) {
       const v = verdict(claude(repo, cmd));
       assert.equal(v.decision, 'ask', cmd);
       assert.match(v.reason, /rewrites the remote branch's history/);
     }
+    assert.equal(verdict(cursor(repo, 'git push --force-with-lease origin feat')).decision, 'deny');
     for (const cmd of ['git push origin feat', 'git commit -m "git push --force-with-lease"']) {
       assert.equal(verdict(claude(repo, cmd)).decision, 'allow', cmd);
     }

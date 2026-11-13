@@ -35,9 +35,10 @@ from the project's Documentation Map — typical domains:
 7. **Flow/legal maps** (if any) vs. actual routes, permission prompts, and
    third-party integrations.
 8. **Decision records** (specs, plans, the backlog): a decision the code or a
-   later doc changed without a supersession note is drift; a done row still
-   holds and a deferred one is still open. A doc generated from code: run its
-   check, and a failure is a finding (fix by regenerating).
+   later doc changed without a supersession note is drift; check that a done
+   row still holds and a deferred one is still open.
+9. **Generated docs**: run the check that regenerates or verifies each; a
+   failure is a finding, fixed by regenerating.
 
 A doc that says it's a point-in-time snapshot gets ⚠️ at most, unless it's
 actively wrong about the present.

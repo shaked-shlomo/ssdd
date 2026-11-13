@@ -76,9 +76,9 @@ from a success continuation. Stacked continuations (a deduped promise
 collected by several callers) must be idempotent — re-read current state and
 re-check guards inside the continuation, never act on pre-await snapshots.
 
-**7. Tests fail without the code.** Each new behavior in the diff, failure
-and race paths first, has a test that fails against the pre-fix code; a test
-that stays green with the new code deleted proves nothing. Be suspicious of
+**7. Tests fail without the change.** Each new behavior in your scope,
+failure and race paths first, has a test that fails without the change; a
+test that stays green with the new code deleted proves nothing. Be suspicious of
 observables that a dedupe/caching layer could mask — ask for proof the test
 actually exercises the race.
 

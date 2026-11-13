@@ -18,27 +18,29 @@ ported as one line each.
 ### Changed
 - **Reviewers.**
   - docs-sync: a doc, map or rule the diff adds gets a Documentation Map
-    row; copy that retypes a code constant is ⚠️.
+    row.
   - convention: a dumping-ground file the diff grows is ⚠️ at any size.
   - performance: a claim about live database state is `⚠️ verify live`;
     tuning outside the default classes cites a measurement.
-  - resilience: check 7 asks every new behavior's test to fail without the
-    code (prizma's convention reviewer caught green-on-deletion tests);
+  - resilience and `SDD.md` §4: every new behavior's test fails without
+    the change (prizma's convention reviewer caught green-on-deletion tests);
     check 8 asks a rule change that produced stored data for its recompute
     path.
   - security: an empty or short shared secret is misconfigured, never
     authorized; a comparison secret is never a database or admin key; a
     public env prefix puts the value in the client bundle; rate limiting is a
     security control.
-- `/cleanup`: a dead file is deleted only on a fresh grep that matches any
-  quote style, with and without its extension.
+- `/cleanup`: a dead file is deleted only on a grep for its basename, quoted
+  or not, rerun right before the deletion.
 - The drift audit checks decision records (a changed decision needs a
-  supersession note) and generated docs; a snapshot doc gets ⚠️ at most.
-- The AGENTS template: never invent a name, path or value; say so before an
+  supersession note) and runs generated docs' checks; a snapshot doc gets ⚠️
+  at most.
+- The AGENTS template: never invent a name, path or value; ask before an
   edit outside the task's scope.
-- `config.example.json`: `git push --force-with-lease` asks
-  (`productionGuard.extraRules`). It used to pass silently while git-guard's
-  message said "only after the user's explicit go-ahead".
+- `config.example.json`: `git push --force-with-lease`, `git -C <dir>` and
+  `-c` forms included, asks in Claude Code and is refused in Cursor, which
+  can't ask (`productionGuard.extraRules`). It used to pass silently while the
+  example's force-push rule said "only after the user's explicit go-ahead".
 
 ### Upgrade (optional)
 - `AGENTS.md` and `.ssdd/config.json` are project-owned: `update` prints the

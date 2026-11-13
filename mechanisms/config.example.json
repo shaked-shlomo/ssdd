@@ -34,8 +34,8 @@
     "writePath": "migrations on merge to main",
     "extraRules": [
       {
-        "$comment": "A lease-guarded force push still rewrites the remote branch's history; git-guard blocks the plain forms.",
-        "match": "\\bgit\\s+push\\b.*\\s--force-(with-lease|if-includes)\\b",
+        "$comment": "A lease-guarded force push still rewrites the remote branch's history: Claude Code asks, Cursor refuses (the user runs it). gitGuard.extraRules below blocks the plain forms.",
+        "match": "\\bgit(\\s+-[^\\s]+(\\s+[^-\\s][^\\s]*)?)*\\s+push\\b.*\\s--force-(with-lease|if-includes)\\b",
         "decision": "ask",
         "reason": "rewrites the remote branch's history (--force-with-lease)"
       }

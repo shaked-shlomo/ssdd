@@ -73,8 +73,8 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
 
 ## 4. Implement, task by task
 
-- Tests first where practical; every new failure/race behavior gets a
-  regression test that fails against the pre-fix code.
+- Tests first where practical; every new behavior, failure and race paths
+  first, gets a test that fails without the change.
 - Stage specific files by path (bulk staging warns). Re-check
   `git status --short` before a commit that follows agent activity: a later
   `git add` sweeps earlier staged files along, and a `git stash`/`pop`

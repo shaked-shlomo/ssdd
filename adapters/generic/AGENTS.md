@@ -18,7 +18,7 @@ Before starting work, run `node .ssdd/hooks/work-state.mjs` to see where the wor
 - A change that trips a Documentation Map trigger updates that doc in the same commit.
 - Fixing one instance of a describable bug means every instance, or the root.
 - Never invent a name, path or value: look it up, or record that it's absent.
-- Say so before an edit outside the task's scope; report it under its own heading.
+- Ask before an edit outside the task's scope; report it under its own heading.
 
 ## Review gate and git
 
