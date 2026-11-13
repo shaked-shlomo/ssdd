@@ -167,9 +167,10 @@ describe('text budgets', () => {
 
   it('a default Claude Code install loads at most 5,000 bytes', () => {
     // AGENTS.md and CLAUDE.md load whole; skills and reviewers by description,
-    // except a skill with disable-model-invocation. docs-drift-audit is opt-in
-    // (--with drift-audit); the template isn't an agent.
-    const descs = [...skills().filter((f) => !f.includes('docs-drift-audit') && !frontmatter(f).manual), ...reviewers().filter((f) => !f.includes('template'))]
+    // except a skill with disable-model-invocation. docs-drift-audit and
+    // dependency-versioning are opt-in (--with); the template isn't an agent.
+    const optIn = ['docs-drift-audit', 'dependency-versioning'];
+    const descs = [...skills().filter((f) => !optIn.some((n) => f.includes(n)) && !frontmatter(f).manual), ...reviewers().filter((f) => !f.includes('template'))]
       .reduce((n, f) => n + frontmatter(f).description.length, 0);
     const total = bytes('adapters/generic/AGENTS.md') + bytes('adapters/claude-code/CLAUDE.md') + descs;
     assert.ok(total <= 5000, `${total} bytes`);
@@ -279,6 +280,14 @@ describe('the outcome words (v3.5)', () => {
     }
     assert.match(read('process/SDD.md'), /--report/);
     assert.match(read('process/SDD.md'), /maxRounds/);
+  });
+});
+
+describe('review rounds (3.8.0)', () => {
+  it('SDD.md: each dispatch is a new agent, one re-review per round of fixes', () => {
+    const t = read('process/SDD.md').replace(/\s+/g, ' ');
+    assert.match(t, /each a new agent: a resumed one re-reads its whole history/);
+    assert.match(t, /one re-review per round of fixes, not per fix/);
   });
 });
 

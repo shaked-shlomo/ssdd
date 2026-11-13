@@ -56,7 +56,7 @@ stops naming it.
 |---|---|---|
 | **Process** | [`process/`](../process/) | The lifecycle, principles, and plan / spec / ledger / handover / backlog templates. Pure markdown. |
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
-| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate`, and `docs-drift-audit` with `--with drift-audit`, installed into the harness-neutral `.agents/skills/`. |
+| **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate`, `docs-drift-audit` with `--with drift-audit`, and `dependency-versioning` with `--with dependency-versioning`, installed into the harness-neutral `.agents/skills/`. |
 | **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
 | **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`). |
 | **Adapters** | [`adapters/`](../adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
@@ -73,7 +73,10 @@ the newest release: `process/`, `reviewers/` and the hooks into
 `<project>/.ssdd/`, the git pre-commit hook, the skills, and each adapter's
 wiring, and each pack the repo matches (`--packs a,b` or `--packs none`
 overrides that). Optional parts install only when named: `--with
-drift-audit` adds the drift-audit runbook and `/docs-drift-audit`. It seeds the project-owned files (`.ssdd/config.json`,
+drift-audit` adds the drift-audit runbook and `/docs-drift-audit`, and `--with
+dependency-versioning` adds `/dependency-versioning` for npm repos: the newest
+version published at least 7 days ago, unless a newer one fixes a known
+advisory, with a whole-tree age scan and peer check. It seeds the project-owned files (`.ssdd/config.json`,
 `.ssdd/skills.json`, `AGENTS.md`, or `AGENTS.ssdd.md` to merge if one exists,
 `BACKLOG.md`, `CLAUDE.md`, `.claude/settings.json`), writes the lock, and
 prints what's left. A repo whose backlog has another name (a `.md` at the
@@ -145,7 +148,7 @@ framework file three ways (your locked version, yours, the new release):
 says when the repo now matches a pack it lacks, and `update --packs a,b`
 adds or removes one. It keeps the optional parts the lock lists too (a lock
 from before 3.3.0 keeps the drift audit it has), and `update --with a,b|none`
-adds or removes one.
+sets the whole list: name every part to keep.
 
 Project-owned files are never touched (one that's deleted is seeded again);
 `update` prints how their templates

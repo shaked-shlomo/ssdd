@@ -554,8 +554,9 @@ function blockMessage({ owed, unrouted, warning, merged }, repoHint = '') {
     lines.join('\n') +
     `\nRun each reviewer checklist (.ssdd/reviewers/<name>.md) against the files it owes —\n` +
     `for a file with a \`git diff\` line, that diff is its input; dispatch them in\n` +
-    `parallel if your harness supports subagents, handing each its open findings —\n` +
-    `fix/triage findings, save each reviewer's reply to a file outside the work tree\n` +
+    `parallel if your harness supports subagents, each a new agent (not one resumed\n` +
+    `from an earlier round), handing each its open findings — fix/triage all of the\n` +
+    `round's findings before the next round, save each reviewer's reply to a file outside the work tree\n` +
     `(or pipe it with --report -), then attest each:\n` +
     owed.map(({ name }) => `  node .ssdd/hooks/review-gate.mjs --stamp ${name} --report <its reply>${repoHint}\n`).join('') +
     `(without --report a stamp records no findings; add --files <path,…> when a\n` +

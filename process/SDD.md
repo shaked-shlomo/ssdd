@@ -85,26 +85,25 @@ Template: [templates/task-ledger-template.md](templates/task-ledger-template.md)
   Stamps are per reviewer × per file, so after a fix only the changed files
   are owed again; unrouted files (ledgers, docs) never void a stamp. To
   see what the index owes without committing, run
-  `node .ssdd/hooks/review-gate.mjs --check` (exit 1 when a commit would
-  be blocked); never a probe commit. The procedure:
+  `node .ssdd/hooks/review-gate.mjs --check`; never a probe commit. The procedure:
   1. Read the block message: per reviewer, the files it owes and why.
-  2. Dispatch those reviewers in parallel. Name each one's input (`git diff
-     HEAD` for its files, a range, or a file list), with the open findings
-     the message lists for it. For a file a reviewer
-     stamped before, the message gives `git diff <stamped blob> <staged
-     blob>`: that change is its input, not the whole file. A reviewer
-     given nothing answers `NO DIFF — scope not provided`, and that is
-     never stamped. Dispatched reviewers are read-only: no edits, commits,
+  2. Dispatch those reviewers in parallel, each a new agent: a resumed one
+     re-reads its whole history. Name each one's input (`git diff HEAD` for
+     its files, a range, or a file list) and the open findings the message
+     lists for it. For a file a reviewer stamped before, the input is the
+     message's `git diff <stamped blob> <staged blob>`, not the whole file.
+     A reviewer given nothing answers `NO DIFF — scope not provided`, never
+     stamped. Dispatched reviewers are read-only: no edits, commits,
      stamps, or `git stash`.
-  3. Fix or triage the findings, then stamp each reviewer with its reply,
-     saved outside the work tree:
+  3. Fix or triage all of a round's findings before the next round: one
+     re-review per round of fixes, not per fix. Stamp each reviewer with
+     its reply, saved outside the work tree:
      `node .ssdd/hooks/review-gate.mjs --stamp <reviewer> --report <file>`
      (`-` reads stdin; without `--report` no findings are recorded), adding
      `--files <path,…>` when a reviewer re-read only those files and
-     `--repo <path>` for another work tree (the message prints it). A stamp
-     keys the work tree as `git add` would, so stage, stamp and commit in
-     any order or one call; a file whose staged copy differs stays owed
-     until added.
+     `--repo <path>` for another work tree. A stamp keys the work tree as
+     `git add` would, so stage, stamp and commit in any order; a file whose
+     staged copy differs stays owed until added.
 
   **Comment-only changes.** A change only to comments in a JS/TS file
   keeps the other reviewers' clean stamps when `reviewGate.commentReviewer`

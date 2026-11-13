@@ -1060,10 +1060,22 @@ describe('optional parts', () => {
     assert.match(r.out, /Fill the project domain list/);
   });
 
+  it('install --with dependency-versioning writes its skill and scripts, and links it', () => {
+    put(src, 'skills/dependency-versioning/SKILL.md', 'deps skill\n');
+    put(src, 'skills/dependency-versioning/scripts/age-scan.mjs', 'scan\n');
+    commitAll(src, 'deps part');
+    const r = ssdd('install', tgt, 'claude-code', '--ref', 'HEAD', '--with', 'dependency-versioning');
+    assert.equal(r.code, 0, r.out);
+    assert.equal(get('.agents/skills/dependency-versioning/scripts/age-scan.mjs'), 'scan\n');
+    assert.equal(linked('.claude/skills/dependency-versioning'), '../../.agents/skills/dependency-versioning');
+    assert.deepEqual(lock().with, ['dependency-versioning']);
+    assert.match(r.out, /Fill the project section in \.agents\/skills\/dependency-versioning\/SKILL\.md/);
+  });
+
   it('--with names only known parts', () => {
     let r = ssdd('install', tgt, '--with', 'nope');
     assert.equal(r.code, 2);
-    assert.match(r.out, /unknown part: nope \(known parts: drift-audit\)/);
+    assert.match(r.out, /unknown part: nope \(known parts: drift-audit, dependency-versioning\)/);
     r = ssdd('install', tgt, '--with', '');
     assert.equal(r.code, 2);
     assert.match(r.out, /--with needs a part/);

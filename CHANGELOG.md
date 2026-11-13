@@ -10,6 +10,42 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.8.0] — 2026-11-13
+
+Review rounds cost less, and npm repos can opt into a dependency-versioning
+skill.
+
+### Added
+- **`/dependency-versioning`**, an optional part (`--with
+  dependency-versioning`), from the skill prizma and Hatedate each carry.
+  Install the newest version published at least 7 days ago and inside the
+  project's compatibility range; the one exception is a younger version that
+  fixes a known, disclosed advisory. `age-scan.mjs` checks every changed
+  version in `package-lock.json`, transitive and nested ones included, and
+  `peer-check.mjs` the required peers of every top-level installed package. The project section
+  holds the compatibility range, the checks and where versions are recorded.
+
+### Changed
+- `SDD.md` §4 and the gate's block message: each review dispatch is a new
+  agent given its delta and open findings, not one resumed from an earlier
+  round, which re-reads its whole history. A round's findings are all fixed
+  or triaged before the next round: one re-review per round of fixes, not
+  per fix. Measured on prizma PR 130: rounds 2–5 were 5.5M of the session's
+  10.5M input-token equivalents, because each round resumed all six
+  reviewers after their cache had expired.
+
+### Upgrade (optional)
+- An npm repo with its own dependency skill: run `update --with <the lock's
+  parts>,dependency-versioning` (`--with` sets the whole list, so name
+  `drift-audit` too if you have it). Then move the old skill's compatibility
+  table and checks into the new project section and delete the old copy.
+  - The old copy is in `.agents/skills/dependency-versioning/`: `update`
+    writes `SKILL.md.ssdd-new` beside it, and the `.mjs` scripts beside the
+    old `.js` ones. Merge, then delete the `.ssdd-new` file and the `.js` ones.
+  - The old copy is a real folder in `.claude/skills/dependency-versioning/`:
+    `update` warns instead of linking it. Move what's project-specific, delete
+    the folder, and run `update` again.
+
 ## [3.7.0] — 2026-11-08
 
 One onboarding command: `/migrate` replaces `/migrate-plans` and
