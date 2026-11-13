@@ -1,7 +1,8 @@
 # The Supabase pack
 
 Knowledge prod-guard (`.ssdd/hooks/prod-guard.mjs`) needs for a Supabase
-project. `bin/ssdd.mjs install` adds it when the repo has
+project, a security reviewer for `supabase/`, and a pre-merge check of the
+migration history. `bin/ssdd.mjs install` adds it when the repo has
 `supabase/config.toml`, or `@supabase/supabase-js` / `supabase` in the root
 `package.json`; `--packs` overrides that. Design and evidence: SPEC.md → v3 →
 Part 4.
@@ -44,6 +45,55 @@ isn't a read with exit 2. A read runs as `supabase db query --linked -f
 <private temp file>`. Prefer it to an inline or plain-file query: Postgres
 then enforces what the classifier checked. `--workdir` and `-o` pass through;
 `SSDD_SUPABASE_BIN` names another CLI binary.
+
+## The reviewer: `supabase-security-reviewer`
+
+Installed as `.ssdd/reviewers/supabase-security-reviewer.md` (linked into
+`.claude/agents/` by the claude-code adapter). Its checks are the ones that
+held across projects: RLS with `WITH CHECK` in the creating migration, grants
+in the same migration, `SECURITY DEFINER` with a pinned `search_path`,
+trigger functions with EXECUTE revoked, the caller's identity from the token,
+realtime filters that are not a boundary, applied migrations never edited, and
+proofs that assert as `authenticated`. Two steps after install:
+
+1. Fill its **Project** section: the project ref, the privileged fields and
+   what enforces them, who may hold the service-role key, the advisor
+   baseline. `update` keeps the lines you write.
+2. Route it. `.ssdd/config.json` is the project's, so `install`, `update` and
+   `status` print the suggested route (from `routes.json`) until one names the
+   reviewer:
+   `{ "reviewer": "supabase-security-reviewer", "paths": ["^supabase/"], "exclude": ["\\.test\\.", "__tests__/"] }`
+   Add `^supabase/functions/` to `security-reviewer`'s paths too: it owns the
+   inbound gates of an edge function (a constant-time, fail-closed secret
+   compare), which this reviewer leaves to it.
+
+The advisors read the live project, and a reviewer subagent may not reach
+them: the orchestrator runs Supabase's security and performance advisors and
+pastes their output into the dispatch. Without it the reviewer reports
+`⚠️ ADVISOR NOT RUN`. The gate notes a `⚠️` but never holds a commit on one,
+so run the advisors and dispatch again, or record why not.
+
+## `sync-check`: the migration history before a merge
+
+```bash
+node .ssdd/packs/supabase/sync-check.mjs [--pr <number>] [--base main] [--digits 14]
+```
+
+For a project where only the Supabase GitHub integration applies migrations,
+on merge. Run it from the branch's checkout before opening the PR and again
+before merging. It compares `supabase migration list --linked` (run in the
+main checkout, which holds the link) with `supabase/migrations/` here and on
+`origin/<base>`, and fails on a version applied with no file (out of band, or
+the branch is behind), a pending file older than the newest applied one, a
+version this branch adds that is already applied (unless the open PR's
+description has an `applied-early: <versions>` line), an edited applied
+migration, and a version of the wrong width. The width is the oldest applied
+version's: 14 for `supabase migration new` timestamps, 4 for a `0001_`
+sequence; `--digits` overrides it, and a history mixing widths fails. It reads
+the history table only, so DDL run outside a migration (dashboard SQL, MCP
+`execute_sql`) is invisible to it. Needs the `supabase` CLI logged in and
+linked, `git`, and `gh` for the PR description (without it, no
+`applied-early` line is read).
 
 ## Options (`.ssdd/config.json` → `productionGuard.supabase`)
 

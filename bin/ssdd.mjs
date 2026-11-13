@@ -8,7 +8,9 @@
 //
 // adapters: comma-separated claude-code, cursor, generic (default: generic).
 // packs: knowledge for one stack (packs/<name>/, e.g. supabase), installed as
-// managed files in .ssdd/packs/<name>/. `install` runs each pack's detect.mjs
+// managed files in .ssdd/packs/<name>/, except its reviewers/*.md, which join
+// the framework's in .ssdd/reviewers/ (and its routes.json suggests their
+// routes: config.json is the project's). `install` runs each pack's detect.mjs
 // from the release it installs and records the matches in the lock's
 // `packs`; `update` installs what the lock lists and never detects, so packs
 // can't appear or vanish between updates; `status` says when the repo now
@@ -183,6 +185,26 @@ function parsePacks(value, tree) {
   return [...new Set(list)].sort();
 }
 
+// Each installed pack's suggested routes (.ssdd/packs/<name>/routes.json)
+// whose reviewer no route in the project's .ssdd/config.json names. Report
+// only: the config is project-owned. → lines, none when the config can't be read.
+function missingRoutes(target, packs) {
+  const json = (f) => { try { return JSON.parse(readFileSync(join(target, f), 'utf8')); } catch { return null; } };
+  const routing = json('.ssdd/config.json')?.routing;
+  if (!Array.isArray(routing)) return [];
+  const have = new Set(routing.map((r) => r?.reviewer));
+  const lines = [];
+  for (const name of packs) {
+    const routes = json(`.ssdd/packs/${name}/routes.json`)?.routes;
+    for (const r of Array.isArray(routes) ? routes : []) {
+      if (typeof r?.reviewer === 'string' && !have.has(r.reviewer)) {
+        lines.push(`the ${name} pack's ${r.reviewer} has no route in .ssdd/config.json — add to "routing" (adjust the paths): ${JSON.stringify(r)}`);
+      }
+    }
+  }
+  return lines;
+}
+
 // ── optional parts ───────────────────────────────────────────────────────────
 function partOf(src) {
   for (const [now, then] of LEGACY_SOURCES) if (src.startsWith(then)) src = now + src.slice(then.length);
@@ -223,7 +245,14 @@ function plan(tree, adapters, packs = [], parts = []) {
   add(managed, '.githooks/pre-commit', 'mechanisms/hooks/pre-commit');
   add(managed, SP_GITIGNORE, 'mechanisms/superpowers-sdd.gitignore');
   for (const f of walk(tree, 'skills')) managed[`.agents/${f}`] = f;
-  for (const name of packs) for (const f of walk(tree, `packs/${name}`)) managed[`.ssdd/${f}`] = f;
+  for (const name of packs) {
+    for (const f of walk(tree, `packs/${name}`)) {
+      const reviewer = f.match(/^packs\/[^/]+\/reviewers\/([^/]+\.md)$/)?.[1];
+      const t = reviewer ? `.ssdd/reviewers/${reviewer}` : `.ssdd/${f}`;
+      if (managed[t]) die(`pack ${name}: ${f} would replace ${managed[t]} — rename it`);
+      managed[t] = f;
+    }
+  }
   if (adapters.includes('cursor')) {
     add(managed, '.cursor/hooks.json', 'adapters/cursor/hooks.json');
     add(managed, '.cursor/rules/ssdd.mdc', 'adapters/cursor/rules/ssdd.mdc');
@@ -377,7 +406,7 @@ function armHook(target, log) {
   return true;
 }
 
-function nextSteps(target, adapters, armed, packs = [], parts = []) {
+function nextSteps(target, adapters, armed, packs = [], parts = [], managed = {}) {
   const steps = [
     ...(armed ? [] : [`git -C '${target}' config core.hooksPath .githooks`]),
     "Edit .ssdd/config.json routing/lint for THIS project's paths (the shipped values are examples)",
@@ -393,6 +422,13 @@ function nextSteps(target, adapters, armed, packs = [], parts = []) {
     steps.push('If .claude/settings.json already existed, merge adapters/claude-code/settings-hooks.json into it');
     steps.push('Make sure CLAUDE.md starts with @AGENTS.md (see adapters/claude-code/CLAUDE.md)');
   }
+  // A pack's reviewer with a project section to fill.
+  for (const [t, s] of Object.entries(managed)) {
+    if (/^packs\/[^/]+\/reviewers\//.test(s) && /^## Project\b/m.test(read(join(target, t))?.toString('utf8') ?? '')) {
+      steps.push(`Fill the project section in ${t}`);
+    }
+  }
+  steps.push(...missingRoutes(target, packs).map((l) => l[0].toUpperCase() + l.slice(1)));
   steps.push(`Reload the agent session so hooks take effect; run: node --test .ssdd/hooks/*.selftest.mjs${packs.length ? ' .ssdd/packs/*/*.selftest.mjs' : ''}`);
   steps.push(`Commit the whole setup, including ${LOCK} — the framework travels with the repo`);
   console.log('\nManual steps left:');
@@ -435,7 +471,7 @@ async function install(target) {
   linkAll(target, adapters, log);
   writeLock(target, lockFrom(version, ref, commit, adapters, packs, parts, p, tree));
   log(`locked    ${LOCK} @ v${version}`);
-  nextSteps(target, adapters, armHook(target, log), packs, parts);
+  nextSteps(target, adapters, armHook(target, log), packs, parts, p.managed);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
 }
@@ -626,7 +662,7 @@ function update(target) {
   if (steps.length) console.log(`\n── Upgrade steps (manual), from the CHANGELOG:\n${steps.join('\n\n')}`);
   const open = onboarding(target);
   if (open.length) console.log(`\n${open.join('\n')}`);
-  const wiring = [...obsoleteLines(target), ...wiringLines(target, newTree, adapters)];
+  const wiring = [...obsoleteLines(target), ...wiringLines(target, newTree, adapters), ...missingRoutes(target, packs)];
   if (wiring.length) console.log(`\n${wiring.join('\n')}`);
   console.log(`\nlocked ${LOCK} @ v${version}. Review with: git -C '${target}' diff`);
   if (rows.conflict.length || rows.sidecar.length) process.exit(1);
@@ -859,7 +895,7 @@ async function status(target) {
     }
   }
   gateWarnings(target);
-  for (const l of obsoleteLines(target)) console.log(l);
+  for (const l of [...obsoleteLines(target), ...missingRoutes(target, installed)]) console.log(l);
   if (lock.adapters.includes('claude-code')) {
     // The template at the lock's commit; a commit this source lacks can't be compared.
     if (tryGit(SRC, 'rev-parse', '--verify', `${lock.commit}^{commit}`)) {

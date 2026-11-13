@@ -5,7 +5,7 @@
 // (SPEC v3 Part 4, Clarify 32 and 36–38).
 // Run: node --test packs/supabase/guard.selftest.mjs
 import { spawnSync } from 'node:child_process';
-import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -181,6 +181,15 @@ describe("Part 4's fixes", () => {
   it('a loop whose $(…) holds a parenthesis in quotes passes', () => {
     expectPass(L, 'for f in tests/db/*.sql supabase/tests/*.sql; do a=$(grep -c "get_candidates(" "$f"); echo "$f $a"; done');
   });
+});
+
+describe('the migration-history check (3.9.0)', () => {
+  for (const c of [
+    'node .ssdd/packs/supabase/sync-check.mjs',
+    'node .ssdd/packs/supabase/sync-check.mjs --pr 12 --base main',
+    'node .ssdd/packs/supabase/sync-check.mjs --digits 4',
+    'supabase migration list --linked',
+  ]) it(`passes: ${c}`, () => expectPass(L, c));
 });
 
 describe('db query against production, by its SQL', () => {
@@ -558,6 +567,14 @@ describe('installed by bin/ssdd.mjs', { skip: !existsSync(INSTALLER) && 'not in 
     assert.match(out, /packs: supabase \(supabase\/config\.toml\)/);
     assert.ok(existsSync(join(repo, '.ssdd', 'packs', 'supabase', 'guard.mjs')));
     assert.match(out, /node --test \.ssdd\/hooks\/\*\.selftest\.mjs \.ssdd\/packs\/\*\/\*\.selftest\.mjs/);
+  });
+  it("the pack's reviewer joins .ssdd/reviewers/, is linked, and its route and project section are next steps (3.9.0)", () => {
+    const name = 'supabase-security-reviewer.md';
+    assert.ok(existsSync(join(repo, '.ssdd', 'reviewers', name)));
+    assert.ok(!existsSync(join(repo, '.ssdd', 'packs', 'supabase', 'reviewers')));
+    assert.equal(readlinkSync(join(repo, '.claude', 'agents', name)), `../../.ssdd/reviewers/${name}`);
+    assert.match(out, /Fill the project section in \.ssdd\/reviewers\/supabase-security-reviewer\.md/);
+    assert.match(out, /supabase-security-reviewer has no route in \.ssdd\/config\.json .*"paths":\["\^supabase\/"\]/);
   });
   it('a write asks in Claude Code and is denied in Cursor', () => {
     assert.equal(claude('supabase db push'), 'ask');

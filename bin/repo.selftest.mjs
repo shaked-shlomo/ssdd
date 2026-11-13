@@ -139,15 +139,30 @@ describe('text budgets', () => {
   const skills = () => readdirSync(join(REPO, 'skills')).map((d) => `skills/${d}/SKILL.md`).filter((f) => existsSync(join(REPO, f)));
   const reviewers = () => readdirSync(join(REPO, 'reviewers')).filter((f) => f.endsWith('.md')).map((f) => `reviewers/${f}`);
 
+  const packReviewers = () => readdirSync(join(REPO, 'packs')).flatMap((p) => {
+    const d = join(REPO, 'packs', p, 'reviewers');
+    return existsSync(d) ? readdirSync(d).filter((f) => f.endsWith('.md')).map((f) => `packs/${p}/reviewers/${f}`) : [];
+  });
+
   it('every skill and reviewer description is short and plain', () => {
     const bad = [];
-    for (const f of [...skills(), ...reviewers()]) {
+    for (const f of [...skills(), ...reviewers(), ...packReviewers()]) {
       const { description, block } = frontmatter(f);
       if (block || !description) bad.push(`${f}: not a one-line description`);
       else if (description.length > 300) bad.push(`${f}: ${description.length} chars`);
       else if (description.includes(': ')) bad.push(`${f}: ": " in a plain YAML value`);
     }
     assert.deepEqual(bad, []);
+  });
+
+  it('a pack reviewer fits 5,000 bytes and is harness-neutral (3.9.0)', () => {
+    assert.ok(packReviewers().length, 'no pack reviewer found');
+    for (const f of packReviewers()) {
+      assert.ok(bytes(f) <= 5000, `${f} is ${bytes(f)}`);
+      const fm = read(f).split('---')[1];
+      assert.doesNotMatch(fm, /^model:/m, `${f} pins a model`);
+      assert.doesNotMatch(read(f), /ToolSearch|mcp__|claude-(opus|sonnet|haiku|fable)|\.claude\//, `${f} names a harness`);
+    }
   });
 
   it('the AGENTS template is at most 45 lines', () => {
@@ -293,7 +308,7 @@ describe('review rounds (3.8.0)', () => {
 
 describe('reviewer contracts', () => {
   const REVIEWERS = ['convention-compliance', 'performance', 'resilience', 'security', 'docs-sync', 'gate'].map((n) => `reviewers/${n}-reviewer.md`)
-    .concat('reviewers/domain-reviewer-template.md');
+    .concat('reviewers/domain-reviewer-template.md', 'packs/supabase/reviewers/supabase-security-reviewer.md');
   it('every reviewer reads git diff HEAD', () => {
     for (const f of REVIEWERS) {
       assert.match(read(f), /`git diff HEAD`/, `${f} does not read git diff HEAD`);
@@ -310,6 +325,16 @@ describe('reviewer contracts', () => {
         assert.ok(t.includes(want), `${f} lacks ${want}`);
       }
     }
+  });
+  it("the Supabase pack's reviewer keeps the generic invariants and leaves project facts to its project section (3.9.0)", () => {
+    const t = read('packs/supabase/reviewers/supabase-security-reviewer.md').replace(/\s+/g, ' ');
+    for (const want of ['RLS on every new table, in the same migration', '`WITH CHECK`', 'pins `search_path`',
+      'Trigger functions revoke EXECUTE', 'comes from the validated token', 'client filters are not a security boundary',
+      'An applied migration file is never edited', 'Grants live in the same migration', 'Proofs assert, never return rows',
+      'as `authenticated`', 'the owner role bypasses RLS', '`⚠️ ADVISOR NOT RUN', 'sync-check.mjs', '## Project']) {
+      assert.ok(t.includes(want), want);
+    }
+    assert.doesNotMatch(t, /keychain|security find-generic-password|fmgcpeohklpvaowqilye|is_pro|HateDate/i);
   });
   it("gate-reviewer's check 5 names the finding line --report parses", () => {
     assert.match(read('reviewers/gate-reviewer.md').replace(/\s+/g, ' '), /the verdict line or the finding line changed \(`--stamp --report` parses/);

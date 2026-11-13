@@ -1,0 +1,6 @@
+{
+  "$comment": "Routes the Supabase pack suggests. install / update / status print each one whose reviewer no route in .ssdd/config.json names; copy it into \"routing\" and adjust the paths (regex sources on repo-relative paths). Nothing writes the project's config.",
+  "routes": [
+    { "reviewer": "supabase-security-reviewer", "paths": ["^supabase/"], "exclude": ["\\.test\\.", "__tests__/"] }
+  ]
+}

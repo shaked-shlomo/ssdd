@@ -26,7 +26,11 @@ beside a command change nothing. What production means for a stack lives in a
 **pack**, installed only where that stack is used: the
 [Supabase pack](../packs/supabase/README.md) judges the CLI, `db query` by its
 SQL, MCP tools, the HTTP APIs and `psql`, and adds `db-read`, a read path that
-never asks. A project adds its own rules (`productionGuard.extraRules`, e.g.
+never asks. It also ships `supabase-security-reviewer` (RLS, grants,
+`SECURITY DEFINER`, caller identity, proofs, the live advisors) and
+`sync-check.mjs`, which checks the migration history before a merge: what
+deploy-on-merge can't catch (an out-of-order version, an edited applied
+migration, an undeclared early apply, a version applied out of band). A project adds its own rules (`productionGuard.extraRules`, e.g.
 `vercel deploy --prod`).
 
 **Onboarding a repo that predates v3.** `/migrate` runs once, in two halves on
@@ -58,7 +62,7 @@ stops naming it.
 | **Reviewers** | [`reviewers/`](../reviewers/) | Self-contained review checklists an agent *or a human* runs against a diff: security, performance, resilience, docs-sync, convention compliance, the gate's own files, and a template for domain reviewers. Frontmatter lets harnesses load them as subagents. |
 | **Skills** | [`skills/`](../skills/) | `new-plan`, `new-reviewer`, `skills-audit`, `cleanup`, `migrate`, `docs-drift-audit` with `--with drift-audit`, and `dependency-versioning` with `--with dependency-versioning`, installed into the harness-neutral `.agents/skills/`. |
 | **Mechanisms** | [`mechanisms/`](../mechanisms/) | Config-driven enforcement (review gate, git-guard, production guard, convention lint). The review gate runs in the git pre-commit and as a CLI, the same on every harness; git-guard, the production guard and the lint also run from Claude Code / Cursor hook payloads, for earlier checks. |
-| **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`). |
+| **Packs** | [`packs/`](../packs/) | Knowledge for one stack, installed only where it's used: [`supabase`](../packs/supabase/README.md) (what reaches the production project, `db-read`, a reviewer, the pre-merge migration check). A pack's `reviewers/*.md` install beside the framework's in `.ssdd/reviewers/`; its `routes.json` routes are suggested, never written into the project's config. |
 | **Adapters** | [`adapters/`](../adapters/) | Per-harness wiring for `claude-code/`, `cursor/`, and a `generic/AGENTS.md` every adapter shares. |
 | **Installer** | [`bin/ssdd.mjs`](../bin/ssdd.mjs) | Installs a tagged release, writes a lock, and later three-way merges updates. |
 
@@ -146,7 +150,8 @@ framework file three ways (your locked version, yours, the new release):
 
 `update` keeps the packs the lock lists and never detects new ones; `status`
 says when the repo now matches a pack it lacks, and `update --packs a,b`
-adds or removes one. It keeps the optional parts the lock lists too (a lock
+adds or removes one. `install`, `update` and `status` print a pack's
+suggested route while no route in `.ssdd/config.json` names its reviewer. It keeps the optional parts the lock lists too (a lock
 from before 3.3.0 keeps the drift audit it has), and `update --with a,b|none`
 sets the whole list: name every part to keep.
 
