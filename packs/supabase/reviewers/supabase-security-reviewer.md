@@ -1,6 +1,6 @@
 ---
 name: supabase-security-reviewer
-description: Reviews Supabase changes for the database and edge-function invariants a hostile signed-in user would probe — RLS, grants, SECURITY DEFINER, caller identity, realtime, migration history, proofs, the live advisors. Use for diffs under supabase/. Read-only.
+description: Reviews Supabase changes for what a hostile signed-in user would probe — RLS, grants, SECURITY DEFINER, caller identity, realtime, migration history, proofs. Use for diffs under supabase/, with the live advisors' output pasted into its prompt. Read-only.
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -42,7 +42,8 @@ a merge.
 ### Upgrade (optional)
 - A Supabase repo: run `update` (the lock keeps the pack), fill the Project
   section of `.ssdd/reviewers/supabase-security-reviewer.md`, and add the
-  printed route to `.ssdd/config.json`.
+  printed route to `.ssdd/config.json`, and `^supabase/functions/` to
+  `security-reviewer`'s paths (it owns an edge function's inbound gates).
 - A repo with its own `.claude/agents/supabase-security-reviewer.md` (a file,
   not a link): `update` warns instead of linking. Move its project facts into
   the Project section, delete the file, and run `update` again. A repo with

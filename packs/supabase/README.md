@@ -63,11 +63,15 @@ proofs that assert as `authenticated`. Two steps after install:
    `status` print the suggested route (from `routes.json`) until one names the
    reviewer:
    `{ "reviewer": "supabase-security-reviewer", "paths": ["^supabase/"], "exclude": ["\\.test\\.", "__tests__/"] }`
+   Add `^supabase/functions/` to `security-reviewer`'s paths too: it owns the
+   inbound gates of an edge function (a constant-time, fail-closed secret
+   compare), which this reviewer leaves to it.
 
 The advisors read the live project, and a reviewer subagent may not reach
 them: the orchestrator runs Supabase's security and performance advisors and
 pastes their output into the dispatch. Without it the reviewer reports
-`⚠️ ADVISOR NOT RUN`, an open finding to triage like any other.
+`⚠️ ADVISOR NOT RUN`. The gate notes a `⚠️` but never holds a commit on one,
+so run the advisors and dispatch again, or record why not.
 
 ## `sync-check`: the migration history before a merge
 
