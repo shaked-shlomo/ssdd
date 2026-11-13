@@ -65,9 +65,11 @@ flowchart TB
 - **Where the work is.** `work-state.mjs` prints every open plan at session
   start, and the pre-commit hook checks a plan before it closes.
 - **Production changes go one way.** `prod-guard.mjs` asks a person before
-  anything else that would change production; stacks come as packs.
+  anything else that would change production. Stacks come as packs, which
+  add a guard, and can add a reviewer and checks (Supabase ships all three).
 - **Onboarding.** `/migrate` brings older plans to the format the view reads,
-  then moves a backlog kept under another name to `BACKLOG.md`.
+  then moves a backlog kept under another name to `BACKLOG.md`. A repo that
+  copied SSDD in before lock files runs `adopt` first.
 
 What's in the box, and how each part works: [docs/usage.md](docs/usage.md#how-it-works).
 Full lifecycle: [process/SDD.md](process/SDD.md).
@@ -81,8 +83,9 @@ git clone https://github.com/shaked-shlomo/ssdd ~/ssdd
 node ~/ssdd/bin/ssdd.mjs install /path/to/project claude-code,cursor
 ```
 
-Then fill in the per-project half (routing, the Documentation Map, domain
-reviewers, `/skills-audit`): [docs/usage.md](docs/usage.md#setup).
+Optional parts install only when named (`--with drift-audit`, `--with
+dependency-versioning` for npm repos). Then fill in the per-project half
+(routing, the Documentation Map, domain reviewers, `/skills-audit`): [docs/usage.md](docs/usage.md#setup).
 
 ## Updating an injected repo
 
@@ -91,8 +94,8 @@ and keeps the project's edits: [docs/usage.md](docs/usage.md#updating-an-injecte
 
 ## When a new model generation ships
 
-Instructions tuned for one generation drift with the next. Run `/doctor
-prompt-audit` and re-run a recent plan's task on it: [docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
+Instructions tuned for one generation drift with the next. Audit them (in
+Claude Code, `/doctor prompt-audit`) and re-run a recent plan's task on it: [docs/usage.md](docs/usage.md#when-a-new-model-generation-ships).
 
 ## Known limitations
 
