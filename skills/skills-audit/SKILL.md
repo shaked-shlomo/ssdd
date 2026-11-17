@@ -27,9 +27,9 @@ sha drift, and name clashes. `--offline` skips the upstream check.
 
 ## 2. Read each source at a pinned sha
 
-Clone outside the repo, into a fresh `mktemp -d` directory, and check out the full upstream sha step 1 printed. The
-shell may not persist between commands, so reuse the literal path `mktemp`
-printed in later steps:
+Clone into a fresh `mktemp -d` directory outside the repo and check out the
+full sha step 1 printed; reuse the literal path in later steps (the shell may
+not persist):
 
 ```bash
 D=$(mktemp -d)
@@ -110,19 +110,19 @@ collisions, verdict, and a one-line reason. Then list any project-side findings 
   /plugin install <id>
   ```
 
-  Version strings often don't change, so the ledger sha is what tracks the
-  plugin.
+  The ledger sha, not the version string, tracks the plugin.
 - **Vendored:** copy the folder into `.agents/skills/<name>`, and only
   when no enabled plugin ships the same skill. Claude Code also needs the
   symlink `.claude/skills/<name>` → `../../.agents/skills/<name>`. The next
   SSDD `install` or `update` creates it, or create it by hand.
-- **Routing:** if `AGENTS.md` routes situations to skills, add the adopted
-  ones there.
+- **Routing:** per adopted skill, one line in `AGENTS.md` under `## Skills`
+  (create it above the Documentation Map): `- Before <the work it covers>,
+  load <name>.` Without it, a skill loads only when its description matches.
 
 ## 6. Automation recommender (Claude Code only)
 
-Skip this step outside Claude Code. Run it in the proposing pass, before
-stopping at step 4's question, so its suggestions join the proposal.
+Skip this step outside Claude Code. Run it before step 4's question, so its
+suggestions join the proposal.
 
 - **If `claude-code-setup@claude-plugins-official` is enabled** in
   `enabledPlugins` of `~/.claude/settings.json`, `.claude/settings.json` or
@@ -141,8 +141,7 @@ End every run with:
 node .agents/skills/skills-audit/skills-audit.mjs record
 ```
 
-Every run counts, even one that matched nothing or where the user approved
-nothing. It sets `"audited"` to today in `.ssdd/skills.json` (creating the
-ledger if it's missing). Until it's set, `ssdd.mjs update`, `status` and the session-start
+Every run counts, even one that matched nothing. It sets `"audited"` to today in `.ssdd/skills.json` (creating the
+ledger if missing). Until it's set, `ssdd.mjs update`, `status` and the session-start
 view say `/skills-audit hasn't run here`. Commit the ledger with the rest of
 the run's changes.
