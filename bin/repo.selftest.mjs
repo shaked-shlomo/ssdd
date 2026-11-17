@@ -298,6 +298,14 @@ describe('the outcome words (v3.5)', () => {
   });
 });
 
+describe('skills-audit routing (3.9.2)', () => {
+  it('each adopted skill gets a load line under ## Skills in AGENTS.md', () => {
+    const t = read('skills/skills-audit/SKILL.md').replace(/\s+/g, ' ');
+    assert.match(t, /per adopted skill, one line in `AGENTS\.md` under `## Skills`/);
+    assert.match(t, /`- Before <the work it covers>, load <name>\.`/);
+  });
+});
+
 describe('review rounds (3.8.0)', () => {
   it('SDD.md: each dispatch is a new agent, one re-review per round of fixes', () => {
     const t = read('process/SDD.md').replace(/\s+/g, ' ');

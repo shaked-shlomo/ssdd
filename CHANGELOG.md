@@ -10,6 +10,21 @@ Versions follow semver, adapted to a framework that lives inside other repos:
 `bin/ssdd.mjs update` prints every entry between a repo's locked version and
 the target, so upgrade steps belong here and not only in commit messages.
 
+## [3.9.2] — 2026-11-17
+
+### Changed
+- `/skills-audit` writes a load rule for every skill it adopts: one line in
+  the project's `AGENTS.md` under `## Skills`, `- Before <the work it
+  covers>, load <name>.` It used to route skills only when `AGENTS.md`
+  already had a routing section, which the template doesn't, so an adopted
+  skill loaded only when its description happened to match. Hatedate's
+  "MUST-USE before any RN code" line for `react-native-best-practices` is
+  the shape.
+
+### Upgrade (optional)
+- A repo that already ran `/skills-audit`: add the `## Skills` lines for
+  what `.ssdd/skills.json` lists as adopted.
+
 ## [3.9.1] — 2026-11-13
 
 ### Docs
